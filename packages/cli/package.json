@@ -19,6 +19,7 @@
   },
   "devDependencies": {
     "@compyla/docx": "workspace:*",
+    "@compyla/pptx": "workspace:*",
     "@types/node": "^24.0.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"

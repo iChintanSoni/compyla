@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 const CLI_ENTRY = fileURLToPath(new URL("../dist/index.js", import.meta.url));
 const GOOD_MD = fileURLToPath(new URL("./fixtures/good.md", import.meta.url));
 const BROKEN_MD = fileURLToPath(new URL("./fixtures/broken.md", import.meta.url));
+const DECK_MD = fileURLToPath(new URL("./fixtures/deck.md", import.meta.url));
 
 interface CliResult {
   readonly code: number;
@@ -46,9 +47,9 @@ describe("compyla lint", () => {
   });
 
   it("prints a clean error (not a stack trace) for an unsupported format", async () => {
-    const result = await runCli(["lint", GOOD_MD, "--format", "pptx"]);
+    const result = await runCli(["lint", GOOD_MD, "--format", "xlsx"]);
     expect(result.code).toBe(1);
-    expect(result.stderr).toContain('Unknown format "pptx"');
+    expect(result.stderr).toContain('Unknown format "xlsx"');
     expect(result.stderr).not.toContain(" at "); // no stack trace frames
   });
 });
@@ -97,5 +98,39 @@ describe("compyla template inspect", () => {
     const report = JSON.parse(result.stdout);
     expect(report.kind).toBe("docx");
     expect(report.styles.some((s: { id: string }) => s.id === "Heading1")).toBe(true);
+  });
+
+  it("dispatches to the pptx introspector for a .pptx file", async () => {
+    const templatePath = fileURLToPath(new URL("./fixtures/deck.pptx", import.meta.url));
+    outputsToClean.push(templatePath);
+    await runCli(["convert", DECK_MD, "--format", "pptx", "--out", templatePath]);
+
+    const result = await runCli(["template", "inspect", templatePath]);
+    expect(result.code).toBe(0);
+    const report = JSON.parse(result.stdout);
+    expect(report.kind).toBe("pptx");
+  });
+});
+
+describe("compyla convert — pptx", () => {
+  it("writes a pptx file and exits 0 for a clean deck", async () => {
+    const outPath = fileURLToPath(new URL("./fixtures/deck.pptx", import.meta.url));
+    outputsToClean.push(outPath);
+
+    const result = await runCli(["convert", DECK_MD, "--format", "pptx", "--out", outPath]);
+    expect(result.code).toBe(0);
+    expect(existsSync(outPath)).toBe(true);
+  });
+
+  it("produces byte-identical pptx output across separate process invocations", async () => {
+    const outA = fileURLToPath(new URL("./fixtures/deck-a.pptx", import.meta.url));
+    const outB = fileURLToPath(new URL("./fixtures/deck-b.pptx", import.meta.url));
+    outputsToClean.push(outA, outB);
+
+    await runCli(["convert", DECK_MD, "--format", "pptx", "--out", outA]);
+    await runCli(["convert", DECK_MD, "--format", "pptx", "--out", outB]);
+
+    const { readFileSync } = await import("node:fs");
+    expect(Buffer.compare(readFileSync(outA), readFileSync(outB))).toBe(0);
   });
 });

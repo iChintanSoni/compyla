@@ -65,7 +65,7 @@ template: acme-brand-v2
 
 ## Revenue vs. Target
 
-::: layout two-col
+::: layout Two Content
 Left column content.
 <!-- col -->
 Right column content.

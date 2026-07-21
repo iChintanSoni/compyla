@@ -1,10 +1,12 @@
 import type { Diagnostic } from "./diagnostics.js";
 import type { Profile, ValidateOptions } from "./profile.js";
 import { docxProfile } from "./profiles/docx.js";
+import { pptxProfile } from "./profiles/pptx.js";
 import type { CompylaDocument } from "./types.js";
 
 const PROFILES: Record<string, Profile> = {
   docx: docxProfile,
+  pptx: pptxProfile,
 };
 
 export interface ValidateCallOptions extends ValidateOptions {

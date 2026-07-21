@@ -104,6 +104,7 @@ function buildDirective(node: CompylaDirectiveMdastNode): DirectiveNode {
     type: "directive",
     name: node.name,
     args: node.argsRaw.length > 0 ? node.argsRaw.split(/\s+/) : [],
+    argsRaw: node.argsRaw,
     children: buildBody(node.children),
     position: { line: node.position.start.line, column: node.position.start.column },
   };
@@ -114,7 +115,7 @@ const LEAF_MARKER_RE = /^<!--\s*([A-Za-z][\w-]*)\s*-->$/;
 function tryBuildLeafDirective(node: Html): DirectiveNode | null {
   const match = LEAF_MARKER_RE.exec(node.value.trim());
   if (!match) return null;
-  return { type: "directive", name: match[1]!, args: [], children: [], position: positionOf(node) };
+  return { type: "directive", name: match[1]!, args: [], argsRaw: "", children: [], position: positionOf(node) };
 }
 
 function tryBuildMedia(node: Paragraph): MediaNode | null {

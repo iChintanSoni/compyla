@@ -58,7 +58,7 @@ Overrides are scoped by format, either as a directive block or a format-scoped f
 
 ```markdown
 ::: pptx
-layout: two-col
+layout: Two Content
 accent: theme.color2
 :::
 ```
@@ -126,7 +126,7 @@ margins: normal | narrow
 
 ---
 
-## 7. Profile: pptx
+## 7. Profile: pptx *(Phase-1)*
 
 ### 7.1 Slide segmentation
 
@@ -161,7 +161,7 @@ Layout names bind to template layouts by (a) explicit alias map provided at temp
 ### 7.4 Directives (pptx)
 
 ```markdown
-::: layout two-col          → pick layout
+::: layout Two Content      → pick layout
 ::: notes                   → children become speaker notes (any markdown)
 ::: image fit=contain       → image sizing within its placeholder
 ```

@@ -24,9 +24,10 @@ const TTF_URL_RE = /url\((https:\/\/fonts\.gstatic\.com\/[^)]+\.ttf)\)/;
 
 /**
  * Fonts are never named in markdown (see markdown-spec.md §3) — the template supplies the family
- * name, and this resolves it to embeddable bytes. Template-embedded font *reuse* (de-obfuscating
- * OOXML .fntdata parts) is out of Phase-0 scope; template introspection only reports whether a
- * font is referenced, it does not re-embed it.
+ * name, and this resolves it to embeddable bytes. Shared by every renderer that binds to a
+ * template's theme fonts (docx, pptx, ...). Template-embedded font *reuse* (de-obfuscating OOXML
+ * .fntdata parts) is out of scope; template introspection only reports whether a font is
+ * referenced, it does not re-embed it.
  */
 export async function resolveFont(family: string, options: FontResolverOptions = {}): Promise<ResolvedFont> {
   const userFont = options.userFonts?.get(family);

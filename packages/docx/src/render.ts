@@ -16,8 +16,8 @@ import {
   WidthType,
 } from "docx";
 import { imageSize } from "image-size";
-import { resolveFonts, type ResolvedFont } from "./fonts.js";
-import { repackageDeterministically } from "./repackage.js";
+import { resolveFonts, type ResolvedFont } from "@compyla/fonts";
+import { repackageDeterministically } from "@compyla/ooxml";
 import { defaultTemplateReport, introspectTemplate, type TemplateReport } from "./template.js";
 
 export interface RenderOptions {

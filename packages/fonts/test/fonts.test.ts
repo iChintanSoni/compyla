@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveFont, resolveFonts } from "../src/fonts.js";
+import { resolveFont, resolveFonts } from "../src/index.js";
 
 function fakeFetch(handlers: Record<string, () => Response>): typeof fetch {
   return (async (input: string | URL | Request) => {

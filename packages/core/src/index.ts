@@ -12,6 +12,10 @@ export type { Diagnostic, Severity } from "./diagnostics.js";
 export type { Profile, ValidateOptions } from "./profile.js";
 export { walkBody } from "./walk.js";
 export type { WalkVisitor } from "./walk.js";
+export { groupSlides, resolveSlideContent } from "./slides.js";
+export type { ResolvedSlideContent, Slide } from "./slides.js";
+export { KNOWN_PPTX_LAYOUTS, resolvePptxLayoutName } from "./pptx-layouts.js";
+export type { PptxLayoutName } from "./pptx-layouts.js";
 export * from "./types.js";
 
 /** Parse markdown straight to a Compyla document — the common entry point. */

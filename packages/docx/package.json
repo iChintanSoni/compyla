@@ -17,6 +17,8 @@
   },
   "dependencies": {
     "@compyla/core": "workspace:*",
+    "@compyla/fonts": "workspace:*",
+    "@compyla/ooxml": "workspace:*",
     "docx": "^9.7.1",
     "fast-xml-parser": "^4.5.0",
     "image-size": "^1.2.0",

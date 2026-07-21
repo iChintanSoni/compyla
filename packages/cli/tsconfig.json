@@ -6,5 +6,5 @@
     "composite": true
   },
   "include": ["src"],
-  "references": [{ "path": "../core" }, { "path": "../docx" }]
+  "references": [{ "path": "../core" }, { "path": "../docx" }, { "path": "../pptx" }]
 }

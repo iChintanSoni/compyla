@@ -192,6 +192,13 @@ Module boundaries mirror the pipeline: `packages/core` (`parser/`, `ir/`, `profi
 `packages/{docx,pptx,xlsx,pdf}` (renderers), `packages/cli`, and an optional `packages/server`. The
 `core` package has no dependency on any renderer.
 
+Two more packages exist purely to avoid duplicating logic that turned out to be needed by more
+than one renderer, discovered empirically once a second OOXML renderer (pptx) was built alongside
+docx: `packages/fonts` (the Google Fonts resolution chain — §"Template + Font Engine") and
+`packages/ooxml` (the deterministic zip repackaging step from D6, and the DrawingML theme parser,
+since docx and pptx templates share the identical `<a:theme>` schema). Both are internal
+implementation-sharing packages, not renderers in their own right.
+
 ## Non-Goals (for now)
 
 - WYSIWYG editing or live preview (teams-phase feature).

@@ -1,0 +1,23 @@
+{
+  "name": "@compyla/fonts",
+  "version": "0.1.0",
+  "description": "Google Fonts resolution shared by Compyla's OOXML renderers (fonts are never named in markdown — templates supply the family, this resolves it).",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "vitest run",
+    "typecheck": "tsc -b --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

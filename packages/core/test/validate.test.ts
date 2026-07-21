@@ -58,7 +58,7 @@ describe("validate — docx profile", () => {
 
   it("throws a clear error for an unsupported format", () => {
     const doc = parse(`# One\n`);
-    expect(() => validate(doc, { format: "pptx" })).toThrow(/Unknown format "pptx"/);
+    expect(() => validate(doc, { format: "xlsx" })).toThrow(/Unknown format "xlsx"/);
   });
 });
 

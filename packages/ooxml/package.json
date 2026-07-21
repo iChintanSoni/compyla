@@ -1,0 +1,27 @@
+{
+  "name": "@compyla/ooxml",
+  "version": "0.1.0",
+  "description": "Shared OOXML package plumbing for docx/pptx/xlsx renderers: deterministic zip repackaging and DrawingML theme parsing.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "vitest run",
+    "typecheck": "tsc -b --noEmit"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^4.5.0",
+    "jszip": "^3.10.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

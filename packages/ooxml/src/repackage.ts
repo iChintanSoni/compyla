@@ -4,16 +4,19 @@ import JSZip from "jszip";
 const FIXED_DATE = new Date(Date.UTC(2000, 0, 1));
 const FIXED_TIMESTAMP = "2000-01-01T00:00:00Z";
 
-// The `docx` library assigns hyperlink relationship IDs via nanoid (unseeded Math.random()),
-// with no override in its public API — verified the only other non-deterministic part of its
-// output (headings, tables, images, TOC, and sequential relationship IDs like fontTable are all
-// already stable across runs). Relationship IDs are opaque cross-reference tokens by spec — Word
-// doesn't care what they equal, only that references match — so renumbering them canonically in
-// first-appearance order is a safe, meaning-preserving normalization, not a content change.
+// Every OOXML package (docx/pptx/xlsx alike, per ECMA-376 Part 2 OPC) stamps
+// docProps/core.xml with the current time, and some generators (verified: the `docx` npm
+// library, for hyperlink relationship IDs specifically) assign relationship IDs via unseeded
+// randomness with no override in their public API. Relationship IDs are opaque cross-reference
+// tokens by spec — the file format doesn't care what they equal, only that references match —
+// so renumbering them canonically in first-appearance order is a safe, meaning-preserving
+// normalization, not a content change. This runs against any part's *.rels file, so it applies
+// uniformly to word/_rels, ppt/_rels, ppt/slides/_rels, etc.
+const RELS_PATH_RE = /(^|\/)_rels\/[^/]+\.rels$/;
 const HYPERLINK_RELATIONSHIP_RE = /<Relationship Id="([^"]+)"[^>]*Type="[^"]*\/hyperlink"[^>]*\/>/g;
 
 async function canonicalizeHyperlinkIds(zip: JSZip): Promise<void> {
-  const relsFiles = Object.keys(zip.files).filter((name) => name.startsWith("word/_rels/") && name.endsWith(".rels"));
+  const relsFiles = Object.keys(zip.files).filter((name) => RELS_PATH_RE.test(name));
 
   for (const relsPath of relsFiles) {
     const relsFile = zip.file(relsPath);
@@ -34,7 +37,7 @@ async function canonicalizeHyperlinkIds(zip: JSZip): Promise<void> {
     }
     zip.file(relsPath, newRelsContent);
 
-    // word/_rels/foo.xml.rels describes word/foo.xml.
+    // foo/_rels/bar.xml.rels describes foo/bar.xml.
     const partPath = relsPath.replace("_rels/", "").replace(/\.rels$/, "");
     const partFile = zip.file(partPath);
     if (!partFile) continue;
@@ -47,11 +50,10 @@ async function canonicalizeHyperlinkIds(zip: JSZip): Promise<void> {
 }
 
 /**
- * The `docx` library stamps docProps/core.xml with `new Date()` on every Packer.toBuffer() call
- * and does not expose an override for it. Combined with hyperlink relationship IDs (above),
- * these are the only non-deterministic bytes in an otherwise deterministic zip. This repackages
- * the zip with both pinned and every entry rebuilt in a fixed, sorted order so identical input
- * yields byte-identical output (D6).
+ * Repackages an OOXML zip (docx/pptx/xlsx) so identical input yields byte-identical output (D6):
+ * pins the docProps/core.xml timestamp, canonicalizes hyperlink relationship IDs, and rebuilds
+ * every entry (including directory entries, which JSZip's own `folder()` helper does not let you
+ * date-pin) in a fixed, sorted order with fixed compression settings.
  */
 export async function repackageDeterministically(raw: Buffer): Promise<Buffer> {
   const zip = await JSZip.loadAsync(raw);
@@ -71,8 +73,6 @@ export async function repackageDeterministically(raw: Buffer): Promise<Buffer> {
   for (const name of names) {
     const entry = zip.files[name]!;
     if (entry.dir) {
-      // zip.folder() does not accept a date option and defaults directory entries to "now" —
-      // use file() with dir:true directly so folder entries are pinned too.
       out.file(name, null, { dir: true, date: FIXED_DATE, unixPermissions: "755" });
       continue;
     }

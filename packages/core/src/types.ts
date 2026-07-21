@@ -84,8 +84,11 @@ export interface BreakNode {
 export interface DirectiveNode {
   readonly type: "directive";
   readonly name: string;
-  /** Raw whitespace-tokenized arguments; each directive/profile interprets its own shape. */
+  /** Whitespace-tokenized arguments — convenient for keyword/key=value forms (`width=50%`), but
+   *  splits multi-word phrases (a layout name like "Title and Content"). Use `argsRaw` for those. */
   readonly args: readonly string[];
+  /** The unsplit argument text, e.g. "Title and Content" or "B:currency, C:percent". */
+  readonly argsRaw: string;
   readonly children: readonly BodyNode[];
   readonly position: Position;
 }

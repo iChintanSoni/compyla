@@ -20,14 +20,20 @@ interface RendererEntry {
   readonly load: () => Promise<RendererModule>;
 }
 
-// Phase 0 ships one renderer. Adding pptx/xlsx/pdf later means one more entry here — each
-// renderer package independently opt-in installed, per the core+opt-in packaging model.
+// Each renderer package is independently opt-in installed, per the core+opt-in packaging model.
 const REGISTRY: Record<string, RendererEntry> = {
   docx: {
     pkg: "@compyla/docx",
     load: async () => {
       const mod = await import("@compyla/docx");
       return { render: mod.renderDocx };
+    },
+  },
+  pptx: {
+    pkg: "@compyla/pptx",
+    load: async () => {
+      const mod = await import("@compyla/pptx");
+      return { render: mod.renderPptx };
     },
   },
 };
