@@ -1,0 +1,26 @@
+{
+  "name": "@compyla/cli",
+  "version": "0.1.0",
+  "description": "Compyla command-line interface: convert, lint, and template inspect. Runs the engine locally.",
+  "type": "module",
+  "bin": {
+    "compyla": "./dist/index.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "vitest run",
+    "typecheck": "tsc -b --noEmit"
+  },
+  "dependencies": {
+    "@compyla/core": "workspace:*",
+    "commander": "^13.0.0"
+  },
+  "devDependencies": {
+    "@compyla/docx": "workspace:*",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

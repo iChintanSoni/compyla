@@ -1,0 +1,30 @@
+{
+  "name": "@compyla/docx",
+  "version": "0.1.0",
+  "description": "Native docx renderer: tokens -> Word document, template introspection, Google Fonts resolution.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "vitest run",
+    "typecheck": "tsc -b --noEmit"
+  },
+  "dependencies": {
+    "@compyla/core": "workspace:*",
+    "docx": "^9.7.1",
+    "fast-xml-parser": "^4.5.0",
+    "image-size": "^1.2.0",
+    "jszip": "^3.10.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
