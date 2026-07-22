@@ -47,9 +47,9 @@ describe("compyla lint", () => {
   });
 
   it("prints a clean error (not a stack trace) for an unsupported format", async () => {
-    const result = await runCli(["lint", GOOD_MD, "--format", "xlsx"]);
+    const result = await runCli(["lint", GOOD_MD, "--format", "pdf"]);
     expect(result.code).toBe(1);
-    expect(result.stderr).toContain('Unknown format "xlsx"');
+    expect(result.stderr).toContain('Unknown format "pdf"');
     expect(result.stderr).not.toContain(" at "); // no stack trace frames
   });
 });

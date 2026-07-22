@@ -25,7 +25,7 @@ program
   .command("convert")
   .argument("<file>", "markdown file to convert")
   .description("Convert a markdown file to the target format")
-  .requiredOption("--format <format>", "output format (docx)")
+  .requiredOption("--format <format>", "output format (docx | pptx | xlsx)")
   .option("--template <path>", "template file path")
   .option("--out <path>", "output file path")
   .option("--assets <dir>", "directory relative image paths resolve against")
@@ -36,7 +36,7 @@ program
   .command("lint")
   .argument("<file>", "markdown file to validate")
   .description("Validate a markdown file against a format profile, without rendering")
-  .requiredOption("--format <format>", "target format profile (docx)")
+  .requiredOption("--format <format>", "target format profile (docx | pptx | xlsx)")
   .option("--assets <dir>", "directory relative image paths resolve against")
   .option("--strict", "escalate fidelity warnings to errors", false)
   .action(handle(runLint));

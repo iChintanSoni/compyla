@@ -30,7 +30,12 @@ with identical bytes**, and a deliberately broken document produces useful line-
       API, unlike docx). Layout names bind to an uploaded template's own layouts (see alias mapping
       below); a template without a name/alias match for a given layout falls back to Compyla's
       house layout set.
-- [ ] xlsx renderer: sheets, tables, **parsed + allowlisted** formulas, `columns` directive, type inference
+- [x] xlsx renderer (`@compyla/xlsx`): H1 sections -> sheets (`groupSheets`, shared with the core
+      validator), H2 range titles, note paragraphs, `columns`/`anchor`/`table` directives, per-column
+      type inference, **parsed + allowlisted** formulas (function allowlist, not a denylist —
+      `@compyla/core`'s `formula.ts`, offline so `compyla lint` needs no renderer), byte-reproducible
+      output. No xlsx template introspection yet (house header style only; `--template` warns) —
+      unlike pptx's alias mapping, this wasn't called out as in-scope for Phase 1.
 - [x] Template theme introspection (docx, pptx) — shared DrawingML theme parser (`@compyla/ooxml`)
 - [x] Template alias mapping: pptx layout names bind to an uploaded template's *own* real layouts
       by explicit alias, then case-insensitive name match, else the house layout set

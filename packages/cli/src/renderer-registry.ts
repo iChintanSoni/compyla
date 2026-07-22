@@ -36,6 +36,13 @@ const REGISTRY: Record<string, RendererEntry> = {
       return { render: mod.renderPptx };
     },
   },
+  xlsx: {
+    pkg: "@compyla/xlsx",
+    load: async () => {
+      const mod = await import("@compyla/xlsx");
+      return { render: mod.renderXlsx };
+    },
+  },
 };
 
 export class UnsupportedFormatError extends Error {
