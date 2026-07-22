@@ -27,12 +27,14 @@ with identical bytes**, and a deliberately broken document produces useful line-
 - [x] pptx renderer (`@compyla/pptx`): slide segmentation (`groupSlides`, shared with the core
       validator), layout directives + layout inference v1, `<!-- col -->` columns, speaker notes,
       byte-reproducible output. Fonts are name-only (no embedding — pptxgenjs has no font-embedding
-      API, unlike docx), and layout names resolve against Compyla's house layout set, not a real
-      uploaded template's own layouts (still deferred, see below).
+      API, unlike docx). Layout names bind to an uploaded template's own layouts (see alias mapping
+      below); a template without a name/alias match for a given layout falls back to Compyla's
+      house layout set.
 - [ ] xlsx renderer: sheets, tables, **parsed + allowlisted** formulas, `columns` directive, type inference
 - [x] Template theme introspection (docx, pptx) — shared DrawingML theme parser (`@compyla/ooxml`)
-- [ ] Template alias mapping (bind layout names to an uploaded template's *own* real layouts —
-      pptx currently binds only to the fixed house layout set)
+- [x] Template alias mapping: pptx layout names bind to an uploaded template's *own* real layouts
+      by explicit alias, then case-insensitive name match, else the house layout set
+      (`@compyla/ooxml` slide-layout parser + `@compyla/pptx`'s `bindLayouts`)
 - [ ] Docs site: spec, quickstart (< 5 min to first file), and an honest "when to just use Pandoc" page
 - [ ] Published OSS packages (core + opt-in renderers) with semver
 

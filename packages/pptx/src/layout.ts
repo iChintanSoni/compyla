@@ -42,16 +42,18 @@ export const SLIDE_LAYOUTS: Record<PptxLayoutName, readonly PlaceholderSpec[]> =
   ],
 };
 
-/** Priority-2 inference from content shape (markdown-spec.md §6.3), used when no explicit
- *  `::: layout` directive is given. */
-export function inferLayout(content: readonly BodyNode[]): PptxLayoutName {
+/** Priority-2 inference from content shape (markdown-spec.md §7.3), used when no explicit
+ *  `::: layout` directive is given. `hasQuoteLayout` is false only when a template was supplied
+ *  and it has no layout bound to "Quote" — the lone-blockquote case then infers "Title and
+ *  Content" instead ("Quote layout if template has one, else Title and Content"). */
+export function inferLayout(content: readonly BodyNode[], hasQuoteLayout = true): PptxLayoutName {
   if (content.length === 0) return "Section Header";
   if (content.some((n) => n.type === "directive" && n.name === "col")) return "Two Content";
   if (content.length === 1) {
     const only = content[0]!;
     if (only.type === "table") return "Title and Content"; // table fills the body placeholder
     if (only.type === "media") return "Picture with Caption";
-    if (only.type === "quote") return "Quote";
+    if (only.type === "quote") return hasQuoteLayout ? "Quote" : "Title and Content";
   }
   return "Title and Content";
 }

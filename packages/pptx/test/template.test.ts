@@ -23,6 +23,18 @@ async function buildFixtureZip(files: Record<string, string>): Promise<Buffer> {
   return zip.generateAsync({ type: "nodebuffer" });
 }
 
+const SLIDE_LAYOUT_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sldLayout xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <p:cSld name="Title and Content">
+    <p:spTree>
+      <p:sp>
+        <p:nvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr>
+        <p:spPr><a:xfrm><a:off x="365760" y="274320"/><a:ext cx="8412480" cy="822960"/></a:xfrm></p:spPr>
+      </p:sp>
+    </p:spTree>
+  </p:cSld>
+</p:sldLayout>`;
+
 describe("introspectTemplate (pptx)", () => {
   it("reads theme fonts and colors from ppt/theme/theme1.xml", async () => {
     const buffer = await buildFixtureZip({ "ppt/theme/theme1.xml": THEME_XML });
@@ -38,5 +50,19 @@ describe("introspectTemplate (pptx)", () => {
     const report = await introspectTemplate(buffer);
     expect(report.theme).toEqual({ fonts: [], colors: [] });
     expect(report.issues).toContainEqual(expect.objectContaining({ code: "no_theme" }));
+  });
+
+  it("reads the template's own slide layouts", async () => {
+    const buffer = await buildFixtureZip({ "ppt/slideLayouts/slideLayout1.xml": SLIDE_LAYOUT_XML });
+    const report = await introspectTemplate(buffer);
+    expect(report.layouts).toHaveLength(1);
+    expect(report.layouts[0]!.name).toBe("Title and Content");
+    expect(report.layouts[0]!.placeholders).toEqual([{ type: "title", idx: undefined, x: 0.4, y: 0.3, w: expect.any(Number), h: expect.any(Number) }]);
+  });
+
+  it("defaults to no layouts when the template has none", async () => {
+    const buffer = await buildFixtureZip({});
+    const report = await introspectTemplate(buffer);
+    expect(report.layouts).toEqual([]);
   });
 });

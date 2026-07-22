@@ -179,3 +179,95 @@ describe("renderPptx — template-driven fonts", () => {
     );
   });
 });
+
+describe("renderPptx — template layout binding", () => {
+  function slideLayoutXml(name: string, placeholders: { type: string; idx: number; x: number; y: number; w: number; h: number }[]): string {
+    const shapes = placeholders
+      .map(
+        (p) => `<p:sp>
+        <p:nvSpPr><p:nvPr><p:ph type="${p.type}" idx="${p.idx}"/></p:nvPr></p:nvSpPr>
+        <p:spPr><a:xfrm><a:off x="${p.x * 914400}" y="${p.y * 914400}"/><a:ext cx="${p.w * 914400}" cy="${p.h * 914400}"/></a:xfrm></p:spPr>
+      </p:sp>`,
+      )
+      .join("\n");
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sldLayout xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <p:cSld name="${name}"><p:spTree>${shapes}</p:spTree></p:cSld>
+</p:sldLayout>`;
+  }
+
+  async function findMasterXml(buffer: Buffer, layoutName: string): Promise<string> {
+    const zip = await JSZip.loadAsync(buffer);
+    for (const path of Object.keys(zip.files)) {
+      if (!/ppt\/slideLayouts\/slideLayout\d+\.xml$/.test(path)) continue;
+      const xml = await zip.file(path)!.async("string");
+      if (xml.includes(`name="${layoutName}"`)) return xml;
+    }
+    throw new Error(`No generated slide layout named "${layoutName}" found in output.`);
+  }
+
+  it("uses the template's own placeholder geometry when its layout name matches a canonical name", async () => {
+    const zip = new JSZip();
+    zip.file(
+      "ppt/slideLayouts/slideLayout1.xml",
+      slideLayoutXml("Title and Content", [
+        { type: "title", idx: 1, x: 2, y: 1, w: 6, h: 3 },
+        { type: "body", idx: 2, x: 2, y: 4, w: 6, h: 1.5 },
+      ]),
+    );
+    const template = await zip.generateAsync({ type: "nodebuffer" });
+
+    const doc = parse(`## Title\n\nBody text.\n`);
+    const { buffer, diagnostics } = await renderPptx(doc, { template });
+
+    const masterXml = await findMasterXml(buffer, "Title and Content");
+    expect(masterXml).toContain(`x="${2 * 914400}"`);
+    expect(masterXml).toContain(`x="${2 * 914400}" y="${4 * 914400}"`);
+    expect(diagnostics).not.toContainEqual(expect.objectContaining({ code: "layout_not_in_template" }));
+  });
+
+  it("binds via an explicit alias when the template's layout name doesn't match a canonical name", async () => {
+    const zip = new JSZip();
+    zip.file(
+      "ppt/slideLayouts/slideLayout1.xml",
+      slideLayoutXml("Content Slide", [{ type: "title", idx: 1, x: 3, y: 2, w: 5, h: 1 }]),
+    );
+    const template = await zip.generateAsync({ type: "nodebuffer" });
+
+    const doc = parse(`## Title\n\nBody text.\n`);
+    const { buffer, diagnostics } = await renderPptx(doc, {
+      template,
+      layoutAliases: { "Title and Content": "Content Slide" },
+    });
+
+    const masterXml = await findMasterXml(buffer, "Title and Content");
+    expect(masterXml).toContain(`x="${3 * 914400}" y="${2 * 914400}"`);
+    expect(diagnostics).not.toContainEqual(expect.objectContaining({ code: "layout_not_in_template" }));
+  });
+
+  it("falls back to the house layout and warns when a used layout has no match in the template", async () => {
+    const zip = new JSZip();
+    zip.file("ppt/slideLayouts/slideLayout1.xml", slideLayoutXml("Unrelated Layout", []));
+    const template = await zip.generateAsync({ type: "nodebuffer" });
+
+    const doc = parse(`## Title\n\nBody text.\n`); // infers "Title and Content"
+    const { diagnostics } = await renderPptx(doc, { template });
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({ code: "layout_not_in_template", severity: "warning", strictPromotable: true }),
+    );
+    const message = diagnostics.find((d) => d.code === "layout_not_in_template")!.message;
+    expect(message).toContain("Title and Content");
+  });
+
+  it("does not warn about canonical layouts the document never uses", async () => {
+    const zip = new JSZip();
+    zip.file("ppt/slideLayouts/slideLayout1.xml", slideLayoutXml("Title and Content", []));
+    const template = await zip.generateAsync({ type: "nodebuffer" });
+
+    const doc = parse(`## Title\n\nBody text.\n`); // only ever resolves "Title and Content"
+    const { diagnostics } = await renderPptx(doc, { template });
+
+    expect(diagnostics.filter((d) => d.code === "layout_not_in_template")).toEqual([]);
+  });
+});

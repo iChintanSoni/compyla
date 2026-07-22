@@ -24,7 +24,8 @@ import { imageSize } from "image-size";
 // keep fighting the type resolution, minimal local interfaces stand in for the library's own
 // types, with a single boundary cast where the class is constructed.
 import PptxGenJSCtor from "pptxgenjs";
-import { inferLayout, SLIDE_LAYOUTS, splitColumns, type PlaceholderSpec } from "./layout.js";
+import { bindLayouts, type LayoutBinding } from "./alias.js";
+import { inferLayout, splitColumns, type PlaceholderSpec } from "./layout.js";
 import { flattenPlainText, flowingRichText, plainText, toRichText, type TextRunItem } from "./rich-text.js";
 import { defaultTemplateReport, introspectTemplate, type TemplateReport } from "./template.js";
 
@@ -52,6 +53,10 @@ export interface RenderOptions {
   readonly resolveAsset?: (src: string) => Promise<Buffer> | Buffer;
   readonly userFonts?: ReadonlyMap<string, Buffer>;
   readonly fetchImpl?: typeof fetch;
+  /** Explicit layout alias map (markdown-spec.md §7.3's "(a) explicit alias map"): binds a
+   *  canonical Compyla layout name to a differently-named layout in the uploaded template, for
+   *  when the template's own layout names don't already match by a case-insensitive name match. */
+  readonly layoutAliases?: Readonly<Partial<Record<PptxLayoutName, string>>>;
 }
 
 export interface RenderResult {
@@ -61,6 +66,8 @@ export interface RenderResult {
 
 interface RenderContext {
   readonly resolveAsset?: (src: string) => Promise<Buffer> | Buffer;
+  readonly bindings: Record<PptxLayoutName, LayoutBinding>;
+  readonly usedLayouts: Set<PptxLayoutName>;
 }
 
 export async function renderPptx(doc: CompylaDocument, options: RenderOptions = {}): Promise<RenderResult> {
@@ -77,22 +84,48 @@ export async function renderPptx(doc: CompylaDocument, options: RenderOptions = 
   const accentColor = templateReport.theme.colors[4] ?? templateReport.theme.colors[0];
   diagnostics.push(...(await validateThemeFonts([headingFont, bodyFont], options)));
 
+  const bindings = bindLayouts(templateReport.layouts, options.layoutAliases);
+  // No template supplied at all means "using Compyla's own default template", which does have a
+  // Quote layout by definition — only a *supplied* template lacking one should turn off Quote
+  // inference (markdown-spec.md §7.3: "Quote layout if template has one, else Title and Content").
+  const hasQuoteLayout = !options.template || bindings.Quote.source === "template";
+
   const pptx = new PptxGenJS();
   if (doc.meta.author) pptx.author = String(doc.meta.author);
   if (doc.meta.title) pptx.title = String(doc.meta.title);
 
-  defineHouseMasters(pptx, { headingFont, bodyFont, accentColor });
+  defineHouseMasters(pptx, bindings, { headingFont, bodyFont, accentColor });
 
-  const ctx: RenderContext = { resolveAsset: options.resolveAsset };
+  const ctx: RenderContext = { resolveAsset: options.resolveAsset, bindings, usedLayouts: new Set() };
   const slides = groupSlides(doc.body);
   for (const slide of slides) {
-    await renderSlide(pptx, slide, slides.length, ctx);
+    await renderSlide(pptx, slide, slides.length, hasQuoteLayout, ctx);
   }
+
+  if (options.template) diagnostics.push(...layoutFallbackDiagnostics(bindings, ctx.usedLayouts));
 
   const raw = (await pptx.write({ outputType: "nodebuffer" })) as unknown as Buffer;
   const buffer = await repackageDeterministically(raw);
 
   return { buffer, diagnostics };
+}
+
+/** Emitted only for layouts the document actually uses, so a template that simply doesn't cover
+ *  every canonical layout name isn't flagged for names the document never asked for. */
+function layoutFallbackDiagnostics(bindings: Record<PptxLayoutName, LayoutBinding>, usedLayouts: ReadonlySet<PptxLayoutName>): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+  for (const name of usedLayouts) {
+    if (bindings[name].source === "template") continue;
+    diagnostics.push({
+      severity: "warning",
+      code: "layout_not_in_template",
+      line: 1,
+      message: `Layout "${name}" has no matching layout in the uploaded template (by alias or by name); using Compyla's house layout instead.`,
+      hint: "Add a layout named the same in the template, or pass an explicit alias via layoutAliases.",
+      strictPromotable: true,
+    });
+  }
+  return diagnostics;
 }
 
 async function validateThemeFonts(families: (string | undefined)[], options: RenderOptions): Promise<Diagnostic[]> {
@@ -118,10 +151,11 @@ async function validateThemeFonts(families: (string | undefined)[], options: Ren
 
 function defineHouseMasters(
   pptx: PptxGenJSInstance,
+  bindings: Record<PptxLayoutName, LayoutBinding>,
   theme: { headingFont?: string; bodyFont?: string; accentColor?: string },
 ): void {
-  for (const layoutName of Object.keys(SLIDE_LAYOUTS) as PptxLayoutName[]) {
-    const placeholders = SLIDE_LAYOUTS[layoutName];
+  for (const layoutName of Object.keys(bindings) as PptxLayoutName[]) {
+    const placeholders = bindings[layoutName].placeholders;
     pptx.defineSlideMaster({
       title: layoutName,
       objects: placeholders.map((p) => ({
@@ -147,9 +181,16 @@ function defineHouseMasters(
   }
 }
 
-async function renderSlide(pptx: PptxGenJSInstance, slide: CoreSlide, totalSlides: number, ctx: RenderContext): Promise<void> {
+async function renderSlide(
+  pptx: PptxGenJSInstance,
+  slide: CoreSlide,
+  totalSlides: number,
+  hasQuoteLayout: boolean,
+  ctx: RenderContext,
+): Promise<void> {
   const { layoutDirective, notesDirective, content } = resolveSlideContent(slide);
-  const layoutName = resolveLayoutName(slide.index, totalSlides, layoutDirective, content);
+  const layoutName = resolveLayoutName(slide.index, totalSlides, layoutDirective, content, hasQuoteLayout);
+  ctx.usedLayouts.add(layoutName);
 
   const pptxSlide = pptx.addSlide({ masterName: layoutName });
 
@@ -168,6 +209,7 @@ function resolveLayoutName(
   totalSlides: number,
   layoutDirective: DirectiveNode | undefined,
   content: readonly BodyNode[],
+  hasQuoteLayout: boolean,
 ): PptxLayoutName {
   if (layoutDirective) {
     const resolved = resolvePptxLayoutName(layoutDirective.argsRaw);
@@ -179,7 +221,7 @@ function resolveLayoutName(
   // single-slide document (no --- at all) is just one ordinary slide, not a title slide, so its
   // content (which may not be plain text — an image, a table, ...) isn't lost to subtitle-only handling.
   if (slideIndex === 0 && totalSlides > 1) return "Title Slide";
-  return inferLayout(content);
+  return inferLayout(content, hasQuoteLayout);
 }
 
 async function fillLayoutContent(
@@ -303,7 +345,7 @@ async function addImageToPlaceholder(
     throw new Error(`Could not determine dimensions for image "${media.src}".`);
   }
 
-  const box = SLIDE_LAYOUTS[layoutName].find((p) => p.name === placeholderName);
+  const box = ctx.bindings[layoutName].placeholders.find((p) => p.name === placeholderName);
   if (!box) {
     throw new Error(`No placeholder "${placeholderName}" defined for layout "${layoutName}".`);
   }
