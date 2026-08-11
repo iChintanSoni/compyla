@@ -55,9 +55,16 @@ with identical bytes**, and a deliberately broken document produces useful line-
       `packages/cli` refactored onto it as the first consumer — it now holds only argv parsing, file
       I/O, and terminal formatting, no engine orchestration of its own. This is the prerequisite the
       two items below build on, so a web UI or server doesn't have to re-implement any of it.
-- [ ] `@compyla/server` — thin, **self-hostable** HTTP server (OSS): `POST /convert`, `POST /validate`,
-      `/templates`, same diagnostics shape as the CLI. Deployable to any Node host, no Compyla account
-      required — distinct from Compyla's own managed hosting of it (Phase 2, see below).
+- [x] `@compyla/server` — thin, **self-hostable** HTTP server (OSS) on raw `node:http` (no web
+      framework) + `busboy` for `multipart/form-data`: `POST /convert` (returns the converted file's raw
+      bytes directly — no signed URL, no storage backend, since that's a managed-hosting-only concern;
+      non-blocking warnings ride in an `X-Compyla-Diagnostics` header), `POST /validate` (same
+      diagnostics shape as `compyla lint`), `POST /templates` (stateless introspection, nothing
+      persisted — a real template registry is Phase 3's Template manager UI). `400` for a client-side
+      bad format/kind, `501` for a known format whose opt-in renderer package isn't installed on this
+      deployment. No asset-upload support yet — documents with images fail closed with a clean
+      `image_unresolved` `422` rather than crashing at render time. Deployable to any Node host, no
+      Compyla account required — distinct from Compyla's own managed hosting of it (Phase 2, see below).
 - [ ] `@compyla/web` — tiny local web UI for interactive lint feedback: paste/drop markdown, see
       line-level diagnostics live, offline. Diagnostics only, no rendered-document preview (that's the
       Phase 3 live preview editor).

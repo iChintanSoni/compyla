@@ -1,0 +1,44 @@
+{
+  "name": "@compyla/server",
+  "version": "0.1.0",
+  "description": "Compyla self-hostable HTTP server: POST /convert, POST /validate, POST /templates over the same engine as the CLI/SDK. OSS, no Compyla account required.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Chintan Soni <ichintansoni@gmail.com>",
+  "homepage": "https://github.com/iChintanSoni/compyla#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/iChintanSoni/compyla.git",
+    "directory": "packages/server"
+  },
+  "bugs": "https://github.com/iChintanSoni/compyla/issues",
+  "keywords": ["markdown", "docx", "pptx", "xlsx", "pdf", "server", "http", "compyla"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "bin": {
+    "compyla-server": "./dist/bin.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "vitest run",
+    "typecheck": "tsc -b --noEmit"
+  },
+  "dependencies": {
+    "@compyla/sdk": "workspace:*",
+    "busboy": "^1.6.0"
+  },
+  "devDependencies": {
+    "@types/busboy": "^1.5.4",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

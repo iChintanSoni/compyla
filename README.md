@@ -97,7 +97,7 @@ Mention the APAC numbers first.
 | [docs/quickstart.md](docs/quickstart.md) | Zero to a real `.docx` in under 5 minutes |
 | [docs/architecture.md](docs/architecture.md) | Hybrid engine, native renderers, the token model, key decisions and trade-offs |
 | [docs/markdown-spec.md](docs/markdown-spec.md) | The Compyla dialect: base syntax, frontmatter, per-format overrides, fonts, and the four format profiles |
-| [docs/cli.md](docs/cli.md) | CLI + SDK reference (local, offline), template introspection, and the planned server / hosted API |
+| [docs/cli.md](docs/cli.md) | CLI + SDK reference (local, offline), template introspection, the self-hostable server, and Compyla's managed hosting |
 | [docs/when-to-use-pandoc.md](docs/when-to-use-pandoc.md) | An honest comparison — including when Pandoc is the better choice |
 | [docs/roadmap.md](docs/roadmap.md) | Phased plan (developers → teams), starting with the docx renderer |
 
