@@ -3,6 +3,19 @@
   "version": "0.1.0",
   "description": "Native docx renderer: tokens -> Word document, template introspection, Google Fonts resolution.",
   "type": "module",
+  "license": "MIT",
+  "author": "Chintan Soni <ichintansoni@gmail.com>",
+  "homepage": "https://github.com/iChintanSoni/compyla#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/iChintanSoni/compyla.git",
+    "directory": "packages/docx"
+  },
+  "bugs": "https://github.com/iChintanSoni/compyla/issues",
+  "keywords": ["markdown", "docx", "word", "compyla"],
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

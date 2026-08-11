@@ -3,6 +3,19 @@
   "version": "0.1.0",
   "description": "Google Fonts resolution shared by Compyla's OOXML renderers (fonts are never named in markdown — templates supply the family, this resolves it).",
   "type": "module",
+  "license": "MIT",
+  "author": "Chintan Soni <ichintansoni@gmail.com>",
+  "homepage": "https://github.com/iChintanSoni/compyla#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/iChintanSoni/compyla.git",
+    "directory": "packages/fonts"
+  },
+  "bugs": "https://github.com/iChintanSoni/compyla/issues",
+  "keywords": ["fonts", "google-fonts", "compyla"],
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

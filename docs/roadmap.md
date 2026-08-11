@@ -52,8 +52,13 @@ with identical bytes**, and a deliberately broken document produces useful line-
 - [ ] `@compyla/web` — tiny local web UI for interactive lint feedback: paste/drop markdown, see
       line-level diagnostics live, offline. Diagnostics only, no rendered-document preview (that's the
       Phase 3 live preview editor).
-- [ ] Docs site: spec, quickstart (< 5 min to first file), and an honest "when to just use Pandoc" page
-- [ ] Published OSS packages (core + opt-in renderers) with semver
+- [x] Quickstart (`docs/quickstart.md`, < 5 min to first file, every command verified against the CLI)
+      and an honest "when to just use Pandoc" page (`docs/when-to-use-pandoc.md`)
+- [ ] Docs site: the above exist as markdown in `docs/` today; a generated/hosted site (search,
+      navigation, versioning) is still open
+- [ ] Published OSS packages (core + opt-in renderers) with semver — package metadata (license,
+      repository, `publishConfig`) is in place and `pnpm -r publish --dry-run` passes clean; the actual
+      `npm publish` is a deliberate, one-way action still pending explicit go-ahead
 
 Exit criterion: an external developer integrates the SDK/CLI without talking to us.
 

@@ -3,6 +3,19 @@
   "version": "0.1.0",
   "description": "Compyla command-line interface: convert, lint, and template inspect. Runs the engine locally.",
   "type": "module",
+  "license": "MIT",
+  "author": "Chintan Soni <ichintansoni@gmail.com>",
+  "homepage": "https://github.com/iChintanSoni/compyla#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/iChintanSoni/compyla.git",
+    "directory": "packages/cli"
+  },
+  "bugs": "https://github.com/iChintanSoni/compyla/issues",
+  "keywords": ["markdown", "docx", "pptx", "xlsx", "cli", "compyla"],
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "compyla": "./dist/index.js"
   },

@@ -3,6 +3,19 @@
   "version": "0.1.0",
   "description": "Shared OOXML package plumbing for docx/pptx/xlsx renderers: deterministic zip repackaging and DrawingML theme parsing.",
   "type": "module",
+  "license": "MIT",
+  "author": "Chintan Soni <ichintansoni@gmail.com>",
+  "homepage": "https://github.com/iChintanSoni/compyla#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/iChintanSoni/compyla.git",
+    "directory": "packages/ooxml"
+  },
+  "bugs": "https://github.com/iChintanSoni/compyla/issues",
+  "keywords": ["ooxml", "docx", "pptx", "compyla"],
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

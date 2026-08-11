@@ -3,6 +3,19 @@
   "version": "0.1.0",
   "description": "Compyla SDK: convert/lint/template orchestration over the engine, with opt-in renderer loading. The layer every app (CLI, web, server) builds on — apps hold no engine logic of their own.",
   "type": "module",
+  "license": "MIT",
+  "author": "Chintan Soni <ichintansoni@gmail.com>",
+  "homepage": "https://github.com/iChintanSoni/compyla#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/iChintanSoni/compyla.git",
+    "directory": "packages/sdk"
+  },
+  "bugs": "https://github.com/iChintanSoni/compyla/issues",
+  "keywords": ["markdown", "docx", "pptx", "xlsx", "sdk", "compyla"],
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

@@ -3,6 +3,19 @@
   "version": "0.1.0",
   "description": "Native xlsx renderer: H1 sections -> sheets, tables -> ranges, parsed + allowlisted formulas, columns/anchor/table directives, byte-reproducible output.",
   "type": "module",
+  "license": "MIT",
+  "author": "Chintan Soni <ichintansoni@gmail.com>",
+  "homepage": "https://github.com/iChintanSoni/compyla#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/iChintanSoni/compyla.git",
+    "directory": "packages/xlsx"
+  },
+  "bugs": "https://github.com/iChintanSoni/compyla/issues",
+  "keywords": ["markdown", "xlsx", "excel", "spreadsheet", "compyla"],
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
