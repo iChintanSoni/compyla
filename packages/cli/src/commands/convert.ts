@@ -1,9 +1,8 @@
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
-import { buildDocument, escalateStrict, parseMarkdown, validate, type Diagnostic } from "@compyla/core";
+import { convert } from "@compyla/sdk";
 import { formatDiagnostics } from "../format-diagnostics.js";
-import { loadRenderer } from "../renderer-registry.js";
 
 export interface ConvertOptions {
   readonly format: string;
@@ -15,46 +14,38 @@ export interface ConvertOptions {
 
 export async function runConvert(inputPath: string, options: ConvertOptions): Promise<number> {
   const source = await readFile(inputPath, "utf8");
-  const doc = buildDocument(parseMarkdown(source));
   const assetsDir = options.assets ?? dirname(inputPath);
-  const strict = options.strict ?? false;
+  const templateBuffer = options.template ? await readFile(options.template) : undefined;
 
-  // Validation happens (and can block) before any rendering — errors here mean the document is
-  // structurally invalid for the target profile, not just imperfectly styled.
-  const validationDiagnostics = validate(doc, {
-    format: options.format,
-    resolveAsset: (src) => existsSync(join(assetsDir, src)),
-  });
-  const preRenderErrors = escalateStrict(validationDiagnostics, strict).filter((d) => d.severity === "error");
-  if (preRenderErrors.length > 0) {
-    console.error(formatDiagnostics(inputPath, escalateStrict(validationDiagnostics, strict)));
-    return 1;
-  }
-
-  let renderer;
+  let result;
   try {
-    renderer = await loadRenderer(options.format);
+    result = await convert(source, {
+      format: options.format,
+      strict: options.strict ?? false,
+      template: templateBuffer,
+      resolveAsset: (src) => existsSync(join(assetsDir, src)),
+      readAsset: (src) => readFile(join(assetsDir, src)),
+    });
   } catch (err) {
+    // Renderer load failures (unsupported/uninstalled format) throw — everything else about a
+    // valid, blockable, or successful conversion is expressed in the returned result instead.
     console.error(err instanceof Error ? err.message : String(err));
     return 1;
   }
 
-  const templateBuffer = options.template ? await readFile(options.template) : undefined;
-  const { buffer, diagnostics: renderDiagnostics } = await renderer.render(doc, {
-    template: templateBuffer,
-    resolveAsset: (src: string) => readFile(join(assetsDir, src)),
-  });
+  if (result.diagnostics.length > 0) {
+    console.error(formatDiagnostics(inputPath, result.diagnostics));
+  }
 
-  const allDiagnostics: readonly Diagnostic[] = escalateStrict([...validationDiagnostics, ...renderDiagnostics], strict);
-  if (allDiagnostics.length > 0) {
-    console.error(formatDiagnostics(inputPath, allDiagnostics));
+  if (!result.buffer) {
+    return 1; // blocked at pre-render validation — nothing to write
   }
 
   const outPath = options.out ?? defaultOutPath(inputPath, options.format);
-  await writeFile(outPath, buffer);
+  await writeFile(outPath, result.buffer);
   console.log(`Wrote ${outPath}`);
 
-  return allDiagnostics.some((d) => d.severity === "error") ? 1 : 0;
+  return result.ok ? 0 : 1;
 }
 
 function defaultOutPath(inputPath: string, format: string): string {

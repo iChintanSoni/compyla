@@ -29,10 +29,10 @@ Markdown → AST → base + per-format tokens → Validator → native renderer 
 
 ## Quick Start
 
-Local-first — install core plus the formats you need, then convert:
+Local-first — install the CLI plus the formats you need, then convert:
 
 ```bash
-npm i @compyla/core @compyla/docx @compyla/cli
+npm i @compyla/cli @compyla/docx
 
 # Convert a markdown file to docx
 compyla convert report.md --format docx --template brand.docx --out report.docx
@@ -96,7 +96,7 @@ Mention the APAC numbers first.
 |-----|----------|
 | [docs/architecture.md](docs/architecture.md) | Hybrid engine, native renderers, the token model, key decisions and trade-offs |
 | [docs/markdown-spec.md](docs/markdown-spec.md) | The Compyla dialect: base syntax, frontmatter, per-format overrides, fonts, and the four format profiles |
-| [docs/cli.md](docs/cli.md) | CLI + library reference (local, offline), template introspection, and the planned hosted API |
+| [docs/cli.md](docs/cli.md) | CLI + SDK reference (local, offline), template introspection, and the planned server / hosted API |
 | [docs/roadmap.md](docs/roadmap.md) | Phased plan (developers → teams), starting with the docx renderer |
 
 ## Project Status
@@ -114,18 +114,20 @@ the [roadmap](docs/roadmap.md).
    Fonts — no bespoke theme language, no bundling licensed fonts.
 4. **Errors are a feature.** Validation messages must be specific, line-referenced, and suggest the fix.
 5. **Byte-reproducible output.** Same input, same bytes — always.
-6. **Open-core, local-first.** The engine, renderers, and CLI are OSS and run offline; the hosted API
-   and governance features are the paid surface.
+6. **Open-core, local-first.** The engine, renderers, CLI, and a self-hostable server are OSS and run
+   offline or on your own infrastructure; Compyla's managed hosting and governance features are the
+   paid surface.
 
 ## Packaging
 
-Core plus opt-in renderers — install only what you need:
+**Core packages → SDK → apps & services** — install only what you need:
 
 ```bash
 npm i @compyla/core        # parser + tokens + validator (no renderer dependency)
 npm i @compyla/docx        # + docx renderer
 npm i @compyla/pptx @compyla/xlsx @compyla/pdf   # add as needed
-npm i @compyla/cli         # the compyla command
+npm i @compyla/sdk         # convert/lint/inspectTemplate — the programmatic interface (pulls in core)
+npm i @compyla/cli         # the compyla command (pulls in the SDK)
 ```
 
 ## Contributing

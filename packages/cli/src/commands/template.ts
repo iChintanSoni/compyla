@@ -1,38 +1,28 @@
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
-import { isModuleNotFoundError } from "../module-errors.js";
+import { inspectTemplate } from "@compyla/sdk";
 
-interface TemplateIntrospector {
-  readonly pkg: string;
-  readonly load: () => Promise<{ introspectTemplate: (buffer: Buffer) => Promise<unknown> }>;
-}
-
-const INTROSPECTORS: Record<string, TemplateIntrospector> = {
-  ".docx": { pkg: "@compyla/docx", load: () => import("@compyla/docx") },
-  ".pptx": { pkg: "@compyla/pptx", load: () => import("@compyla/pptx") },
-};
+const KIND_BY_EXT: Record<string, string> = { ".docx": "docx", ".pptx": "pptx" };
 
 export async function runTemplateInspect(filePath: string): Promise<number> {
   const ext = extname(filePath).toLowerCase();
-  const introspector = INTROSPECTORS[ext];
-  if (!introspector) {
-    console.error(`Cannot inspect "${filePath}": unsupported template extension "${ext}". Supported: ${Object.keys(INTROSPECTORS).join(", ")}.`);
+  const kind = KIND_BY_EXT[ext];
+  if (!kind) {
+    console.error(
+      `Cannot inspect "${filePath}": unsupported template extension "${ext}". Supported: ${Object.keys(KIND_BY_EXT).join(", ")}.`,
+    );
     return 1;
   }
 
-  let mod;
+  const buffer = await readFile(filePath);
+  let report: unknown;
   try {
-    mod = await introspector.load();
+    report = await inspectTemplate(buffer, kind);
   } catch (err) {
-    if (isModuleNotFoundError(err)) {
-      console.error(`Template inspection requires ${introspector.pkg}. Install it with:\n       npm i ${introspector.pkg}`);
-      return 1;
-    }
-    throw err;
+    console.error(err instanceof Error ? err.message : String(err));
+    return 1;
   }
 
-  const buffer = await readFile(filePath);
-  const report = await mod.introspectTemplate(buffer);
   console.log(JSON.stringify(report, null, 2));
   return 0;
 }

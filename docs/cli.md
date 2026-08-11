@@ -1,16 +1,19 @@
-# CLI & Library Reference
+# CLI & SDK Reference
 
 Compyla is a **local-first, hybrid** engine (see [architecture.md](architecture.md), D5). The primary
-interface is the CLI and the TypeScript library — both run the full pipeline **locally and offline**.
-A hosted API mirrors the same engine and is described at the end as a later, optional surface.
+interface is the CLI and the `@compyla/sdk` TypeScript SDK — both run the full pipeline **locally and
+offline**, and the CLI is itself a thin consumer of the SDK (D8: core packages → SDK → apps &
+services). A self-hostable server and Compyla's managed hosting mirror the same engine and are
+described at the end as later, planned surfaces.
 
 ## Installation
 
-Install `@compyla/core` plus only the format renderers you need (core + opt-in, D7):
+Install the SDK (or the CLI, which depends on it) plus only the format renderers you need (opt-in, D7):
 
 ```bash
-npm i @compyla/core @compyla/docx @compyla/cli    # docx only
-npm i @compyla/pptx @compyla/xlsx @compyla/pdf     # add formats as needed
+npm i @compyla/sdk @compyla/docx     # embed the SDK directly in your own code; docx only
+npm i @compyla/cli @compyla/docx     # or use the CLI — it depends on @compyla/sdk internally
+npm i @compyla/pptx @compyla/xlsx @compyla/pdf   # add formats as needed
 ```
 
 Requesting a format whose package isn't installed produces an actionable error:
@@ -43,23 +46,30 @@ Common flags:
 exits non-zero when any `error` diagnostic is present. Diagnostics are line-referenced with a
 suggested fix.
 
-## Library
+## SDK
 
-The same engine as a TypeScript API:
+The same engine as a TypeScript API — this is what the CLI itself calls (D8):
 
 ```ts
-import { parse, validate } from "@compyla/core";
-import { renderDocx } from "@compyla/docx";
+import { convert, lint } from "@compyla/sdk";
 
-const doc = parse(markdown);                         // AST + base/override tokens (with source pos)
-const diagnostics = validate(doc, { format: "docx" });
-if (diagnostics.some(d => d.severity === "error")) throw new Error("validation failed");
+const { diagnostics, ok } = lint(markdown, { format: "docx" });
+if (!ok) throw new Error("validation failed");
 
-const bytes = await renderDocx(doc, { template: "brand.docx" });   // byte-reproducible Buffer
+const { buffer } = await convert(markdown, {
+  format: "docx",
+  template: brandDocxBuffer,   // optional Buffer; omit for the house template
+});
 ```
 
-`renderDocx` output is **byte-reproducible** (D6): identical `doc` + template → identical bytes, which
-makes it safe to cache and to assert with golden-file tests.
+`convert`'s output is **byte-reproducible** (D6): identical markdown + template → identical bytes,
+which makes it safe to cache and to assert with golden-file tests. `lint` runs parse + validate only
+(no renderer required, same as `compyla lint`); `inspectTemplate(buffer, kind)` (`kind`: `"docx"` |
+`"pptx"`) is the programmatic form of `compyla template inspect`.
+
+`@compyla/core` and the individual renderer packages (`parse`, `validate`, `renderDocx`, …) remain
+directly importable for advanced or custom orchestration — the SDK wraps them for the common case, it
+doesn't hide them.
 
 ## Template introspection
 
@@ -84,7 +94,7 @@ renderers use, plus any issues that will affect fidelity:
 
 ## Diagnostics shape
 
-Every diagnostic — CLI output, library return value, or hosted API response — is uniform:
+Every diagnostic — CLI output, SDK return value, or server response — is uniform:
 
 ```json
 {
@@ -98,11 +108,15 @@ Every diagnostic — CLI output, library return value, or hosted API response �
 
 ---
 
-## Hosted API (open-core, planned)
+## Server & managed hosting (planned)
 
-The hosted service is a thin server over the same engine (D5) and is **not part of the Phase-0 MVP**.
-When it ships it will expose the same pipeline over HTTP — `POST /convert`, `POST /validate`,
-`/templates` — returning the diagnostics shape above, with sync execution first and async
-jobs/webhooks added when workload demands. It is the paid surface of the open-core model, alongside
-governance/enterprise features; the engine, renderers, and CLI documented above remain OSS and fully
-usable without it. Detailed HTTP reference will be written against the hosted service when it is built.
+`@compyla/server` is a thin HTTP wrapper over the same engine (D5) — **OSS, self-hostable, planned for
+Phase 1** (not part of the Phase-0 MVP). It exposes the same pipeline over HTTP — `POST /convert`,
+`POST /validate`, `/templates` — returning the diagnostics shape above, with sync execution first and
+async jobs/webhooks added when workload demands. Anyone can run it on their own infrastructure; it
+requires no Compyla account.
+
+Compyla's own **managed hosting** of that same server — auth, usage metering/billing, and
+governance/enterprise features on top — is the paid surface of the open-core model (Phase 2+). The
+engine, renderers, CLI, and self-hosted server documented above remain OSS and fully usable without
+it. Detailed HTTP reference will be written when `@compyla/server` is built.

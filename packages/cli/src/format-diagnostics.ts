@@ -1,4 +1,4 @@
-import type { Diagnostic } from "@compyla/core";
+import type { Diagnostic } from "@compyla/sdk";
 
 export function formatDiagnostics(filePath: string, diagnostics: readonly Diagnostic[]): string {
   return diagnostics

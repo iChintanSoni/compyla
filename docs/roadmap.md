@@ -1,7 +1,7 @@
 # Roadmap
 
-Strategy: **developers first, teams second.** Ship an open-core, local-first engine (CLI + library)
-that developers adopt and validate; build the hosted/teams product on what their usage reveals.
+Strategy: **developers first, teams second.** Ship an open-core, local-first engine (CLI + SDK) that
+developers adopt and validate; build the hosted/teams product on what their usage reveals.
 
 ## Phase 0 — Engine core + docx (done)
 
@@ -40,10 +40,22 @@ with identical bytes**, and a deliberately broken document produces useful line-
 - [x] Template alias mapping: pptx layout names bind to an uploaded template's *own* real layouts
       by explicit alias, then case-insensitive name match, else the house layout set
       (`@compyla/ooxml` slide-layout parser + `@compyla/pptx`'s `bindLayouts`)
+- [x] `@compyla/sdk` — **core packages → SDK → apps & services** layering (D8 in
+      [architecture.md](architecture.md)): `convert()` / `lint()` / `inspectTemplate()`, opt-in
+      renderer loading with helpful not-installed errors, `--strict` escalation, uniform diagnostics.
+      `packages/cli` refactored onto it as the first consumer — it now holds only argv parsing, file
+      I/O, and terminal formatting, no engine orchestration of its own. This is the prerequisite the
+      two items below build on, so a web UI or server doesn't have to re-implement any of it.
+- [ ] `@compyla/server` — thin, **self-hostable** HTTP server (OSS): `POST /convert`, `POST /validate`,
+      `/templates`, same diagnostics shape as the CLI. Deployable to any Node host, no Compyla account
+      required — distinct from Compyla's own managed hosting of it (Phase 2, see below).
+- [ ] `@compyla/web` — tiny local web UI for interactive lint feedback: paste/drop markdown, see
+      line-level diagnostics live, offline. Diagnostics only, no rendered-document preview (that's the
+      Phase 3 live preview editor).
 - [ ] Docs site: spec, quickstart (< 5 min to first file), and an honest "when to just use Pandoc" page
 - [ ] Published OSS packages (core + opt-in renderers) with semver
 
-Exit criterion: an external developer integrates the library/CLI without talking to us.
+Exit criterion: an external developer integrates the SDK/CLI without talking to us.
 
 ## Phase 2 — Developer growth
 
@@ -51,7 +63,9 @@ Exit criterion: an external developer integrates the library/CLI without talking
       template-binding adapters), local plugins first
 - [ ] Chart directive for pptx/xlsx (`::: chart bar` over a table)
 - [ ] Layout inference v2 (content-density-aware overflow, auto-splitting long slides)
-- [ ] Hosted API (open-core): thin server over the engine; sync first, async/webhooks as needed
+- [ ] Compyla's **managed hosting** of `@compyla/server` (the paid open-core surface): auth, usage
+      metering/billing, sync first with async/webhooks as needed. The server package itself is OSS
+      and self-hostable from Phase 1 — this is Compyla *running* it for you.
 - [ ] GitHub Action for docs-as-deliverables pipelines
 - [ ] HTML renderer (cheap thanks to the token model) for previews
 

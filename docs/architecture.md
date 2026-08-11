@@ -3,10 +3,10 @@
 ## Context and Goals
 
 `Compyla` converts markdown into four output formats (docx, pdf, pptx, xlsx) through **native
-renderers** sharing one engine. The primary consumers are developers integrating a local library or
-CLI, with LLM-generated markdown as the dominant input source. The engine is **hybrid** — the same
-TypeScript code runs locally (CLI, CI, offline) and powers an optional hosted API — and shipped
-**open-core**.
+renderers** sharing one engine. The primary consumers are developers integrating a local library, CLI,
+web UI, or server, with LLM-generated markdown as the dominant input source. The engine is **hybrid**
+— the same TypeScript code runs locally (CLI, CI, offline, web) and powers a server, self-hosted or
+Compyla-managed — and shipped **open-core**.
 
 Design goals, in priority order:
 
@@ -45,9 +45,25 @@ markdown ─▶ @compyla/core ────────────────�
                   byte-reproducible artifact
 ```
 
-Everything is a **pnpm/turbo monorepo**. `@compyla/core` (parser + tokens + validator) has **zero
-dependency on any renderer**. Renderers are installed opt-in (see D7). The CLI runs the engine
-locally; the hosted API is a thin server over the same engine.
+Everything is a **pnpm/turbo monorepo**, and it layers strictly: **core packages → SDK → apps &
+services** (see D8). `@compyla/core` (parser + tokens + validator) has **zero dependency on any
+renderer**; renderers are installed opt-in (see D7). Neither layer knows anything above it — apps
+depend on the SDK, never the reverse, and nothing outside `@compyla/core` reaches back into the parser.
+
+### Interface Surfaces
+
+Every app or service is a thin consumer of `@compyla/sdk` — none hold engine orchestration of their
+own, and none import `@compyla/core` or a renderer package directly:
+
+| Surface | Package | Notes |
+|---------|---------|-------|
+| CLI | `@compyla/cli` | `compyla convert` / `compyla lint` / `compyla template inspect`. Local, offline. Owns argv parsing, file I/O, and terminal-formatted diagnostics only. |
+| Web | `@compyla/web` (planned, Phase 1) | Tiny local UI for interactive lint feedback — paste/drop markdown, see line-level diagnostics live. Diagnostics only, no rendered-document preview (that's the Phase 3 live preview editor — see Non-Goals). |
+| Server | `@compyla/server` (planned, Phase 1) | Thin, **self-hostable** HTTP wrapper (`POST /convert`, `POST /validate`, `/templates`) — OSS, deploy to any Node host, no Compyla account required. Distinct from Compyla's own managed hosting of it (D5). |
+
+The SDK is also the **programmatic interface** in its own right — embed `@compyla/sdk` directly in
+any Node app or CI script (`convert()` / `lint()` / `inspectTemplate()`) without going through a CLI
+subprocess or an HTTP hop. All surfaces share one diagnostics shape (see [cli.md](cli.md)).
 
 ### Stage 1 — Parser (`@compyla/core`)
 
@@ -155,11 +171,14 @@ rather than converted from docx. Pros: no heavyweight/stateful LibreOffice or Of
 JS workers scale cleanly), full pixel control, one distribution story. Cost: native PDF layout is the
 most work of the four (effectively a layout engine), and each renderer owns its fidelity. Accepted.
 
-### D5 — Hybrid engine, local-first, hosted optional (open-core)
-The engine runs locally (CLI/CI/offline) and also powers an optional hosted API — same code, both
-paths. Distribution is **open-core**: engine, renderers, and CLI are OSS; the hosted API and
-governance/enterprise features are the paid surface; self-host follows for free. Sync execution is
-sufficient for the initial use case; async jobs/webhooks are added when workload demands.
+### D5 — Hybrid engine, local-first; self-hosted server is OSS, managed hosting is paid (open-core)
+The engine runs locally (CLI/CI/offline/web) and also powers a server — same code, every path.
+Self-hosting is a first-class free path, not a fallback: `@compyla/server` (the thin HTTP wrapper
+over the engine, see "Interface Surfaces") is OSS like everything else — anyone can run it on their
+own infrastructure with no Compyla account. The **paid** surface is Compyla's own *managed* deployment
+of that same server, plus governance/enterprise features (auth, usage metering/billing, multi-tenancy,
+org template sharing — see Phase 3) that don't make sense to self-host. Sync execution is sufficient
+for the initial use case; async jobs/webhooks are added when workload demands.
 
 ### D6 — Byte-reproducible output
 Identical markdown + template → identical file bytes. Enables render caching, trivial CI diffing, and
@@ -167,11 +186,27 @@ golden-file tests. Requires deliberate discipline in every renderer (pin timesta
 deterministic IDs). Accepted — fits the validation-first, CI-friendly positioning.
 
 ### D7 — Core + opt-in renderer packages; plugin platform
-Users install `@compyla/core` plus only the format packages they need. The CLI errors helpfully when a
-requested format's package is absent. Renderer packages are the primary **plugin boundary**; the
-platform (phased) supports four extension points: new output formats, custom directives/styling
-tokens, custom validation rules, and template-binding adapters. Local plugins ship first; running
-untrusted plugins inside the hosted service (a sandboxing problem) is deferred.
+Users install `@compyla/core` plus only the format packages they need. Requesting a format whose
+renderer package is absent errors helpfully (see D8 — this check lives in the SDK, not each app).
+Renderer packages are the primary **plugin boundary**; the platform (phased) supports four extension
+points: new output formats, custom directives/styling tokens, custom validation rules, and
+template-binding adapters. Local plugins ship first; running untrusted plugins inside the hosted
+service (a sandboxing problem) is deferred.
+
+### D8 — Core packages → SDK → apps & services (strict layering)
+**Chosen.** `@compyla/sdk` sits between the engine and every consumer. It owns everything an app would
+otherwise have to duplicate: the `parse → validate → render` sequence, opt-in renderer loading with a
+helpful "package not installed" error, `--strict` fidelity escalation, template-kind introspection
+dispatch, and the uniform diagnostics shape. Apps (`@compyla/cli`, and the planned `@compyla/web` /
+`@compyla/server`) depend only on the SDK — never on `@compyla/core` or a renderer package directly —
+and hold nothing but their own I/O and presentation: argv parsing and terminal output for the CLI,
+HTTP request/response handling for the server, DOM rendering for the web UI. Rationale: without this
+layer, adding a second app (the original motivation — see "Interface Surfaces") means either
+duplicating orchestration logic per app or reaching past a thin app into the renderer packages
+directly, both of which defeat the point of one engine, many surfaces. Cost: one more package to
+version and keep in sync with core/renderer releases. Accepted — the CLI was refactored onto this
+layer as the first consumer, proving it by removing all engine logic that previously lived in
+`packages/cli` (renderer dynamic-loading, convert/lint orchestration, template-kind dispatch).
 
 ## The pixel-perfect tension
 
@@ -183,14 +218,19 @@ drift (missing fonts, unresolved layouts, overflow) as diagnostics rather than s
 
 ## Data Flow and Integration Points
 
-1. Caller invokes the engine (CLI, library import, or hosted API) with markdown (+ optional template).
-2. Engine runs Parse → Tokens → Validate → Render.
-3. Validation errors surface the diagnostic list (CLI: non-zero exit; API: `422`).
-4. Success writes the artifact (local path) or stores it and returns a signed URL (hosted).
+1. Caller invokes an app or the SDK directly (CLI, embedded library use, web UI, self-hosted server,
+   or Compyla's managed hosting) with markdown (+ optional template).
+2. `@compyla/sdk` runs the engine: Parse → Tokens → Validate → Render (D8).
+3. Validation errors surface the diagnostic list (CLI: non-zero exit; server: `422`).
+4. Success writes the artifact (local path) or stores it and returns a signed URL (server).
 
-Module boundaries mirror the pipeline: `packages/core` (`parser/`, `ir/`, `profiles/`, validator),
-`packages/{docx,pptx,xlsx,pdf}` (renderers), `packages/cli`, and an optional `packages/server`. The
-`core` package has no dependency on any renderer.
+Module boundaries mirror **core packages → SDK → apps & services** (D8): `packages/core` (`parser/`,
+`ir/`, `profiles/`, validator) and `packages/{docx,pptx,xlsx,pdf}` (renderers) are the core layer —
+`core` has no dependency on any renderer, and renderers depend only on `core` (+ `fonts`/`ooxml`
+below), never on each other. `packages/sdk` is the sole layer between them and every app; it depends
+on `core` and, opt-in, on the renderer packages (D7). `packages/cli` and the two planned
+consumption-surface packages — `packages/server` (self-hostable HTTP API, OSS) and `packages/web`
+(lint UI, OSS) — depend only on `packages/sdk`, never reaching past it.
 
 Two more packages exist purely to avoid duplicating logic that turned out to be needed by more
 than one renderer, discovered empirically once a second OOXML renderer (pptx) was built alongside
@@ -201,6 +241,7 @@ implementation-sharing packages, not renderers in their own right.
 
 ## Non-Goals (for now)
 
-- WYSIWYG editing or live preview (teams-phase feature).
+- WYSIWYG editing or live *document* preview (teams-phase feature) — distinct from the Phase 1 web
+  lint UI, which shows diagnostics only, never a rendered preview.
 - HTML/ePub output (cheap later thanks to the token model, but not MVP).
 - Two-way conversion (Office → markdown).

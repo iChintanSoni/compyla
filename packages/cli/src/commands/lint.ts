@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { buildDocument, escalateStrict, parseMarkdown, validate } from "@compyla/core";
+import { lint } from "@compyla/sdk";
 import { formatDiagnostics } from "../format-diagnostics.js";
 
 export interface LintOptions {
@@ -12,19 +12,19 @@ export interface LintOptions {
 
 export async function runLint(inputPath: string, options: LintOptions): Promise<number> {
   const source = await readFile(inputPath, "utf8");
-  const doc = buildDocument(parseMarkdown(source));
   const assetsDir = options.assets ?? dirname(inputPath);
 
-  const diagnostics = escalateStrict(
-    validate(doc, { format: options.format, resolveAsset: (src) => existsSync(join(assetsDir, src)) }),
-    options.strict ?? false,
-  );
+  const result = lint(source, {
+    format: options.format,
+    strict: options.strict ?? false,
+    resolveAsset: (src) => existsSync(join(assetsDir, src)),
+  });
 
-  if (diagnostics.length === 0) {
+  if (result.diagnostics.length === 0) {
     console.log(`${inputPath}: OK (${options.format})`);
     return 0;
   }
 
-  console.error(formatDiagnostics(inputPath, diagnostics));
-  return diagnostics.some((d) => d.severity === "error") ? 1 : 0;
+  console.error(formatDiagnostics(inputPath, result.diagnostics));
+  return result.ok ? 0 : 1;
 }

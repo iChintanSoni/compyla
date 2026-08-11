@@ -14,13 +14,10 @@
     "typecheck": "tsc -b --noEmit"
   },
   "dependencies": {
-    "@compyla/core": "workspace:*",
+    "@compyla/sdk": "workspace:*",
     "commander": "^13.0.0"
   },
   "devDependencies": {
-    "@compyla/docx": "workspace:*",
-    "@compyla/pptx": "workspace:*",
-    "@compyla/xlsx": "workspace:*",
     "@types/node": "^24.0.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"

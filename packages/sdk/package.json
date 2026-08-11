@@ -1,0 +1,29 @@
+{
+  "name": "@compyla/sdk",
+  "version": "0.1.0",
+  "description": "Compyla SDK: convert/lint/template orchestration over the engine, with opt-in renderer loading. The layer every app (CLI, web, server) builds on — apps hold no engine logic of their own.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "vitest run",
+    "typecheck": "tsc -b --noEmit"
+  },
+  "dependencies": {
+    "@compyla/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@compyla/docx": "workspace:*",
+    "@compyla/pptx": "workspace:*",
+    "@compyla/xlsx": "workspace:*",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

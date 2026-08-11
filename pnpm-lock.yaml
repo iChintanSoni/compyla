@@ -23,22 +23,13 @@ importers:
 
   packages/cli:
     dependencies:
-      '@compyla/core':
+      '@compyla/sdk':
         specifier: workspace:*
-        version: link:../core
+        version: link:../sdk
       commander:
         specifier: ^13.0.0
         version: 13.1.0
     devDependencies:
-      '@compyla/docx':
-        specifier: workspace:*
-        version: link:../docx
-      '@compyla/pptx':
-        specifier: workspace:*
-        version: link:../pptx
-      '@compyla/xlsx':
-        specifier: workspace:*
-        version: link:../xlsx
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
@@ -175,6 +166,31 @@ importers:
         specifier: ^4.0.1
         version: 4.0.1
     devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(yaml@2.9.0)
+
+  packages/sdk:
+    dependencies:
+      '@compyla/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@compyla/docx':
+        specifier: workspace:*
+        version: link:../docx
+      '@compyla/pptx':
+        specifier: workspace:*
+        version: link:../pptx
+      '@compyla/xlsx':
+        specifier: workspace:*
+        version: link:../xlsx
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
