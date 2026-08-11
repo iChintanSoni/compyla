@@ -74,8 +74,13 @@ with identical bytes**, and a deliberately broken document produces useful line-
       marked `external` in the bundle step so their Node-only dependencies never end up in browser JS.
 - [x] Quickstart (`docs/quickstart.md`, < 5 min to first file, every command verified against the CLI)
       and an honest "when to just use Pandoc" page (`docs/when-to-use-pandoc.md`)
-- [ ] Docs site: the above exist as markdown in `docs/` today; a generated/hosted site (search,
-      navigation, versioning) is still open
+- [x] Docs site (`packages/docs-site`): static generator dogfooding `@compyla/core`'s `parse()` and
+      token model to render `docs/*.md` — no docs framework, no Wiki (D9). Deployed to GitHub Pages via
+      GitHub Actions (`.github/workflows/docs.yml`). Search: a small build-time JSON index (one record
+      per heading) plus vanilla debounced client-side substring matching. Navigation: sidebar mirroring
+      this README's doc table order, current-page highlighting, a basic off-canvas mobile toggle.
+      Versioning: content lives under a `/latest/` path prefix — a structural hook, not a version
+      selector UI, appropriate pre-1.0 (the next item below is still open).
 - [ ] Published OSS packages (core + opt-in renderers) with semver — package metadata (license,
       repository, `publishConfig`) is in place and `pnpm -r publish --dry-run` passes clean; the actual
       `npm publish` is a deliberate, one-way action still pending explicit go-ahead

@@ -208,6 +208,25 @@ version and keep in sync with core/renderer releases. Accepted — the CLI was r
 layer as the first consumer, proving it by removing all engine logic that previously lived in
 `packages/cli` (renderer dynamic-loading, convert/lint orchestration, template-kind dispatch).
 
+### D9 — Docs site: hand-rolled static generator dogfooding `@compyla/core`, not a docs framework
+**Chosen.** `packages/docs-site` reads `docs/*.md` and renders each page by calling `@compyla/core`'s
+own `parse()` and walking the resulting `CompylaDocument` body — the same token model every renderer
+consumes — into HTML with a small, private, non-exported walker (`packages/docs-site/src/render-html.ts`),
+rather than adopting a docs framework (Docusaurus/VitePress) or a GitHub Wiki. Rationale: mirrors D2/D7's
+own house style (native, dependency-light, one shared token model driving every surface) and doubles as
+a continuous correctness check that `@compyla/core` handles real-world CommonMark+GFM cleanly, since the
+docs corpus becomes a de facto fixture set. Search is a small build-time JSON index (one record per
+heading) plus vanilla debounced client-side substring matching (no Algolia/Lunr); navigation, mobile
+toggling, and theming (light/dark via CSS custom properties) are hand-authored, following
+`packages/web`'s existing no-framework precedent (`browser/*.ts` + esbuild, no bundler-heavy SSG).
+Versioning is a `/latest/` path prefix — a structural hook, not a version-selector UI, appropriate for a
+project with zero released versions. Cost: no off-the-shelf i18n, plugin ecosystem, or incremental-build
+story — acceptable at 6 pages / ~1,000 lines / a single pre-1.0 version. This produces an HTML *site*,
+distinct from the still-open Phase 2 "HTML renderer... for previews" roadmap item: that item is a public
+`.md → .html` **output format** (a fifth renderer package, publicly exported, general-purpose, alongside
+docx/pdf/pptx/xlsx), whereas this walker is a private, docs-site-scoped tool with no ambition to become a
+general renderer. Accepted.
+
 ## The pixel-perfect tension
 
 Pixel-perfect output (D3/D4), messy LLM markdown (D2), and a shared base dialect (D1) pull against

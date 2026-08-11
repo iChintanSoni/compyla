@@ -1,0 +1,25 @@
+{
+  "name": "@compyla/docs-site",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Static site generator for docs/*.md — search, navigation, versioning. Not published.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Chintan Soni <ichintansoni@gmail.com>",
+  "scripts": {
+    "build": "tsc -b && node scripts/build-static.mjs",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "vitest run",
+    "typecheck": "tsc -b --noEmit && tsc --noEmit -p browser/tsconfig.json"
+  },
+  "dependencies": {
+    "@compyla/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.28.1",
+    "jsdom": "^30.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

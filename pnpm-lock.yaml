@@ -80,6 +80,28 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jsdom@30.0.1(@noble/hashes@1.8.0))(yaml@2.9.0)
 
+  packages/docs-site:
+    dependencies:
+      '@compyla/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      esbuild:
+        specifier: ^0.28.1
+        version: 0.28.1
+      jsdom:
+        specifier: ^30.0.0
+        version: 30.0.1(@noble/hashes@1.8.0)
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jsdom@30.0.1(@noble/hashes@1.8.0))(yaml@2.9.0)
+
   packages/docx:
     dependencies:
       '@compyla/core':

@@ -92,6 +92,9 @@ Mention the APAC numbers first.
 
 ## Documentation
 
+Browse as a searchable, navigable site: **https://ichintansoni.github.io/compyla/** — or read the
+source files directly:
+
 | Doc | Contents |
 |-----|----------|
 | [docs/quickstart.md](docs/quickstart.md) | Zero to a real `.docx` in under 5 minutes |
