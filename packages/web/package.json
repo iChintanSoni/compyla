@@ -1,0 +1,44 @@
+{
+  "name": "@compyla/web",
+  "version": "0.1.0",
+  "description": "Compyla's tiny local web UI: paste/drop markdown, see line-level lint diagnostics live, fully offline. Diagnostics only, no rendered-document preview.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Chintan Soni <ichintansoni@gmail.com>",
+  "homepage": "https://github.com/iChintanSoni/compyla#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/iChintanSoni/compyla.git",
+    "directory": "packages/web"
+  },
+  "bugs": "https://github.com/iChintanSoni/compyla/issues",
+  "keywords": ["markdown", "lint", "web", "compyla"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "bin": {
+    "compyla-web": "./dist/bin.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b && node scripts/build-static.mjs",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "vitest run",
+    "typecheck": "tsc -b --noEmit && tsc --noEmit -p browser/tsconfig.json"
+  },
+  "dependencies": {
+    "@compyla/sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.28.1",
+    "jsdom": "^30.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

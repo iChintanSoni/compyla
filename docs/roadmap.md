@@ -65,9 +65,13 @@ with identical bytes**, and a deliberately broken document produces useful line-
       deployment. No asset-upload support yet — documents with images fail closed with a clean
       `image_unresolved` `422` rather than crashing at render time. Deployable to any Node host, no
       Compyla account required — distinct from Compyla's own managed hosting of it (Phase 2, see below).
-- [ ] `@compyla/web` — tiny local web UI for interactive lint feedback: paste/drop markdown, see
+- [x] `@compyla/web` — tiny local web UI for interactive lint feedback: paste/drop markdown, see
       line-level diagnostics live, offline. Diagnostics only, no rendered-document preview (that's the
-      Phase 3 live preview editor).
+      Phase 3 live preview editor). Vanilla DOM, no framework — a single esbuild-bundled script calling
+      `@compyla/sdk`'s `lint()` directly in the browser, served by a fixed-route `node:http` static
+      server (`npx compyla-web`) that mirrors `@compyla/server`'s no-framework approach. The renderer
+      packages' opt-in dynamic `import()`s (unreachable here, since the UI never calls `convert()`) are
+      marked `external` in the bundle step so their Node-only dependencies never end up in browser JS.
 - [x] Quickstart (`docs/quickstart.md`, < 5 min to first file, every command verified against the CLI)
       and an honest "when to just use Pandoc" page (`docs/when-to-use-pandoc.md`)
 - [ ] Docs site: the above exist as markdown in `docs/` today; a generated/hosted site (search,

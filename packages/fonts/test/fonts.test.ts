@@ -78,7 +78,9 @@ describe("resolveFonts", () => {
 });
 
 describe("resolveFont — live Google Fonts integration", () => {
-  it("downloads a real ttf for a well-known family", async () => {
+  // Skipped in CI: a real network call to fonts.googleapis.com, which would make CI flake on
+  // Google's availability rather than this repo's own code. Still runs locally.
+  it.skipIf(process.env.CI)("downloads a real ttf for a well-known family", async () => {
     const result = await resolveFont("Inter");
     expect(result.source).toBe("google-fonts");
     expect(result.data && result.data.length).toBeGreaterThan(1000);

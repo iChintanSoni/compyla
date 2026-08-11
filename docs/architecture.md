@@ -58,8 +58,8 @@ own, and none import `@compyla/core` or a renderer package directly:
 | Surface | Package | Notes |
 |---------|---------|-------|
 | CLI | `@compyla/cli` | `compyla convert` / `compyla lint` / `compyla template inspect`. Local, offline. Owns argv parsing, file I/O, and terminal-formatted diagnostics only. |
-| Web | `@compyla/web` (planned, Phase 1) | Tiny local UI for interactive lint feedback — paste/drop markdown, see line-level diagnostics live. Diagnostics only, no rendered-document preview (that's the Phase 3 live preview editor — see Non-Goals). |
-| Server | `@compyla/server` (planned, Phase 1) | Thin, **self-hostable** HTTP wrapper (`POST /convert`, `POST /validate`, `/templates`) — OSS, deploy to any Node host, no Compyla account required. Distinct from Compyla's own managed hosting of it (D5). |
+| Web | `@compyla/web` | Tiny local UI for interactive lint feedback — paste/drop markdown, see line-level diagnostics live. Diagnostics only, no rendered-document preview (that's the Phase 3 live preview editor — see Non-Goals). |
+| Server | `@compyla/server` | Thin, **self-hostable** HTTP wrapper (`POST /convert`, `POST /validate`, `/templates`) — OSS, deploy to any Node host, no Compyla account required. Distinct from Compyla's own managed hosting of it (D5). |
 
 The SDK is also the **programmatic interface** in its own right — embed `@compyla/sdk` directly in
 any Node app or CI script (`convert()` / `lint()` / `inspectTemplate()`) without going through a CLI
@@ -197,7 +197,7 @@ service (a sandboxing problem) is deferred.
 **Chosen.** `@compyla/sdk` sits between the engine and every consumer. It owns everything an app would
 otherwise have to duplicate: the `parse → validate → render` sequence, opt-in renderer loading with a
 helpful "package not installed" error, `--strict` fidelity escalation, template-kind introspection
-dispatch, and the uniform diagnostics shape. Apps (`@compyla/cli`, and the planned `@compyla/web` /
+dispatch, and the uniform diagnostics shape. Apps (`@compyla/cli`, `@compyla/web`, and
 `@compyla/server`) depend only on the SDK — never on `@compyla/core` or a renderer package directly —
 and hold nothing but their own I/O and presentation: argv parsing and terminal output for the CLI,
 HTTP request/response handling for the server, DOM rendering for the web UI. Rationale: without this
@@ -228,7 +228,7 @@ Module boundaries mirror **core packages → SDK → apps & services** (D8): `pa
 `ir/`, `profiles/`, validator) and `packages/{docx,pptx,xlsx,pdf}` (renderers) are the core layer —
 `core` has no dependency on any renderer, and renderers depend only on `core` (+ `fonts`/`ooxml`
 below), never on each other. `packages/sdk` is the sole layer between them and every app; it depends
-on `core` and, opt-in, on the renderer packages (D7). `packages/cli` and the two planned
+on `core` and, opt-in, on the renderer packages (D7). `packages/cli` and the other two
 consumption-surface packages — `packages/server` (self-hostable HTTP API, OSS) and `packages/web`
 (lint UI, OSS) — depend only on `packages/sdk`, never reaching past it.
 

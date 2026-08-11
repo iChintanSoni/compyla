@@ -3,8 +3,9 @@
 Compyla is a **local-first, hybrid** engine (see [architecture.md](architecture.md), D5). The primary
 interface is the CLI and the `@compyla/sdk` TypeScript SDK — both run the full pipeline **locally and
 offline**, and the CLI is itself a thin consumer of the SDK (D8: core packages → SDK → apps &
-services). A self-hostable server (`@compyla/server`, same engine, documented at the end) and Compyla's
-managed hosting on top of it are the other surfaces.
+services). A self-hostable server (`@compyla/server`) and a tiny local lint UI (`@compyla/web`) — same
+engine, both documented below — plus Compyla's managed hosting on top of the server are the other
+surfaces.
 
 ## Installation
 
@@ -166,6 +167,24 @@ Phase 3's "Template manager UI," not this endpoint.
 `400` vs `501` is deliberate: an unknown format is a bad input value from the client, while a
 known-but-not-installed renderer is *this deployment's* capability gap (HTTP's own definition of 501 —
 different self-hosted servers legitimately install different opt-in format subsets, D7).
+
+## Web
+
+`@compyla/web` is a tiny local UI for interactive lint feedback — paste or drop a markdown file, see
+line-level diagnostics live as you type. Diagnostics only: it shows the same output as `compyla lint`,
+never a rendered document preview (that's the Phase 3 live preview editor). Runs entirely client-side —
+once the page loads, nothing leaves the browser. Install and run:
+
+```bash
+npm i @compyla/web
+PORT=4300 npx compyla-web
+# or embed it: import { createServer } from "@compyla/web"; createServer().listen(4300);
+```
+
+It's a single vanilla-JS bundle (no framework) calling `@compyla/sdk`'s `lint()` directly in the
+browser, served by a fixed-route `node:http` static server — the same no-framework approach as
+`@compyla/server`. Only `lint()` is reachable from the UI, so the renderer packages' opt-in dynamic
+imports never execute and are excluded from the browser bundle.
 
 ## Managed hosting
 

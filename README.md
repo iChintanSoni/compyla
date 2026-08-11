@@ -97,14 +97,14 @@ Mention the APAC numbers first.
 | [docs/quickstart.md](docs/quickstart.md) | Zero to a real `.docx` in under 5 minutes |
 | [docs/architecture.md](docs/architecture.md) | Hybrid engine, native renderers, the token model, key decisions and trade-offs |
 | [docs/markdown-spec.md](docs/markdown-spec.md) | The Compyla dialect: base syntax, frontmatter, per-format overrides, fonts, and the four format profiles |
-| [docs/cli.md](docs/cli.md) | CLI + SDK reference (local, offline), template introspection, the self-hostable server, and Compyla's managed hosting |
+| [docs/cli.md](docs/cli.md) | CLI + SDK reference (local, offline), template introspection, the self-hostable server, the local web lint UI, and Compyla's managed hosting |
 | [docs/when-to-use-pandoc.md](docs/when-to-use-pandoc.md) | An honest comparison — including when Pandoc is the better choice |
 | [docs/roadmap.md](docs/roadmap.md) | Phased plan (developers → teams), starting with the docx renderer |
 
 ## Project Status
 
-Pre-MVP / design phase. **Phase 0** focuses on the engine core and the **docx** native renderer. See
-the [roadmap](docs/roadmap.md).
+**Phase 0** (engine core + docx) and the docx/pdf/pptx/xlsx renderers, SDK, CLI, self-hostable server,
+and web lint UI of **Phase 1** are done. See the [roadmap](docs/roadmap.md) for what's left.
 
 ## Design Principles
 
@@ -116,9 +116,9 @@ the [roadmap](docs/roadmap.md).
    Fonts — no bespoke theme language, no bundling licensed fonts.
 4. **Errors are a feature.** Validation messages must be specific, line-referenced, and suggest the fix.
 5. **Byte-reproducible output.** Same input, same bytes — always.
-6. **Open-core, local-first.** The engine, renderers, CLI, and a self-hostable server are OSS and run
-   offline or on your own infrastructure; Compyla's managed hosting and governance features are the
-   paid surface.
+6. **Open-core, local-first.** The engine, renderers, CLI, a self-hostable server, and the web lint UI
+   are OSS and run offline or on your own infrastructure; Compyla's managed hosting and governance
+   features are the paid surface.
 
 ## Packaging
 
