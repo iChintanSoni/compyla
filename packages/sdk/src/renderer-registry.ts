@@ -29,6 +29,13 @@ const REGISTRY: Record<string, RendererEntry> = {
       return { render: mod.renderDocx };
     },
   },
+  pdf: {
+    pkg: "@compyla/pdf",
+    load: async () => {
+      const mod = await import("@compyla/pdf");
+      return { render: mod.renderPdf };
+    },
+  },
   pptx: {
     pkg: "@compyla/pptx",
     load: async () => {

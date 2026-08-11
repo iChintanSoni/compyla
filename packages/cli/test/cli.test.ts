@@ -47,9 +47,9 @@ describe("compyla lint", () => {
   });
 
   it("prints a clean error (not a stack trace) for an unsupported format", async () => {
-    const result = await runCli(["lint", GOOD_MD, "--format", "pdf"]);
+    const result = await runCli(["lint", GOOD_MD, "--format", "epub"]);
     expect(result.code).toBe(1);
-    expect(result.stderr).toContain('Unknown format "pdf"');
+    expect(result.stderr).toContain('Unknown format "epub"');
     expect(result.stderr).not.toContain(" at "); // no stack trace frames
   });
 });
@@ -129,6 +129,29 @@ describe("compyla convert — pptx", () => {
 
     await runCli(["convert", DECK_MD, "--format", "pptx", "--out", outA]);
     await runCli(["convert", DECK_MD, "--format", "pptx", "--out", outB]);
+
+    const { readFileSync } = await import("node:fs");
+    expect(Buffer.compare(readFileSync(outA), readFileSync(outB))).toBe(0);
+  });
+});
+
+describe("compyla convert — pdf", () => {
+  it("writes a pdf file and exits 0 for a clean document", async () => {
+    const outPath = fileURLToPath(new URL("./fixtures/good.pdf", import.meta.url));
+    outputsToClean.push(outPath);
+
+    const result = await runCli(["convert", GOOD_MD, "--format", "pdf", "--out", outPath]);
+    expect(result.code).toBe(0);
+    expect(existsSync(outPath)).toBe(true);
+  });
+
+  it("produces byte-identical pdf output across separate process invocations", async () => {
+    const outA = fileURLToPath(new URL("./fixtures/good-a.pdf", import.meta.url));
+    const outB = fileURLToPath(new URL("./fixtures/good-b.pdf", import.meta.url));
+    outputsToClean.push(outA, outB);
+
+    await runCli(["convert", GOOD_MD, "--format", "pdf", "--out", outA]);
+    await runCli(["convert", GOOD_MD, "--format", "pdf", "--out", outB]);
 
     const { readFileSync } = await import("node:fs");
     expect(Buffer.compare(readFileSync(outA), readFileSync(outB))).toBe(0);

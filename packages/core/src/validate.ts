@@ -1,12 +1,14 @@
 import type { Diagnostic } from "./diagnostics.js";
 import type { Profile, ValidateOptions } from "./profile.js";
 import { docxProfile } from "./profiles/docx.js";
+import { pdfProfile } from "./profiles/pdf.js";
 import { pptxProfile } from "./profiles/pptx.js";
 import { xlsxProfile } from "./profiles/xlsx.js";
 import type { CompylaDocument } from "./types.js";
 
 const PROFILES: Record<string, Profile> = {
   docx: docxProfile,
+  pdf: pdfProfile,
   pptx: pptxProfile,
   xlsx: xlsxProfile,
 };

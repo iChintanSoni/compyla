@@ -20,8 +20,8 @@ are a feature, including this one.)
   doesn't support math today.
 - **You need LaTeX-quality PDF typesetting** — dense academic papers, footnotes, complex figure
   placement, professional-grade typography. Pandoc → LaTeX → PDF is a real typesetting engine with
-  decades of refinement. Compyla's native PDF renderer (not yet built — see the roadmap) is a
-  from-scratch layout engine and won't match LaTeX's sophistication for a long time, if ever.
+  decades of refinement. Compyla's native PDF renderer is a from-scratch layout engine and won't match
+  LaTeX's sophistication for a long time, if ever.
 - **You don't care about binding to a specific brand template**, and "reasonable default styling" is
   good enough. Pandoc's `--reference-doc` gets you a fair distance for less setup.
 - **You want one mature, battle-tested binary** with a huge community, extensive docs, and years of

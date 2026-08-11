@@ -58,7 +58,34 @@ describe("validate — docx profile", () => {
 
   it("throws a clear error for an unsupported format", () => {
     const doc = parse(`# One\n`);
-    expect(() => validate(doc, { format: "pdf" })).toThrow(/Unknown format "pdf"/);
+    expect(() => validate(doc, { format: "epub" })).toThrow(/Unknown format "epub"/);
+  });
+});
+
+describe("validate — pdf profile", () => {
+  it("warns on an unknown page_size and falls back to A4", () => {
+    const doc = parse(`---\npage_size: Legal\n---\n\n# One\n`);
+    const diagnostics = validate(doc, { format: "pdf" });
+    expect(diagnostics).toContainEqual(expect.objectContaining({ code: "invalid_page_size", severity: "warning" }));
+  });
+
+  it("warns on unknown margins and falls back to normal", () => {
+    const doc = parse(`---\nmargins: wide\n---\n\n# One\n`);
+    const diagnostics = validate(doc, { format: "pdf" });
+    expect(diagnostics).toContainEqual(expect.objectContaining({ code: "invalid_margins", severity: "warning" }));
+  });
+
+  it("does not warn for known page_size/margins values", () => {
+    const doc = parse(`---\npage_size: A4\nmargins: narrow\n---\n\n# One\n`);
+    const diagnostics = validate(doc, { format: "pdf" });
+    expect(diagnostics.some((d) => d.code === "invalid_page_size" || d.code === "invalid_margins")).toBe(false);
+  });
+
+  it("shares docx's heading-skip and unknown-directive checks (identical authoring surface)", () => {
+    const doc = parse(`# One\n\n### Three\n\n::: chart bar\n:::\n`);
+    const diagnostics = validate(doc, { format: "pdf" });
+    expect(diagnostics.some((d) => d.code === "heading_skip")).toBe(true);
+    expect(diagnostics.some((d) => d.code === "unknown_directive")).toBe(true);
   });
 });
 

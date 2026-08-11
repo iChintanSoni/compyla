@@ -23,7 +23,16 @@ with identical bytes**, and a deliberately broken document produces useful line-
 
 ## Phase 1 — Developer MVP (remaining formats, current)
 
-- [ ] pdf native renderer (`@compyla/pdf`) — native page layout, no conversion (D4)
+- [x] pdf native renderer (`@compyla/pdf`): native page layout via `pdfkit`, no docx conversion (D4).
+      `::: toc` bakes real, computed page numbers (a single render pass reserves blank placeholder
+      page(s) sized from the heading count, then backfills them once every heading's actual page is
+      known — pdf has no lazy open-time TOC field the way docx does). `page_size`/`margins` frontmatter
+      (A4/Letter, normal/narrow — the latter matching Word's own preset names/values). Byte-reproducible
+      output comes for free from pinning `info.CreationDate` (no zip/relationship-ID repackaging step
+      needed, unlike the OOXML renderers). No font embedding/template-binding yet — matches docx's own
+      "no template supplied → use the format's built-in default" behavior, using pdfkit's 14 standard
+      fonts; task-list checkboxes are therefore ASCII `[x]`/`[ ]` rather than docx's ☐/☒ glyphs, since
+      those aren't in the standard fonts' encoding. No content-overflow diagnostic yet.
 - [x] pptx renderer (`@compyla/pptx`): slide segmentation (`groupSlides`, shared with the core
       validator), layout directives + layout inference v1, `<!-- col -->` columns, speaker notes,
       byte-reproducible output. Fonts are name-only (no embedding — pptxgenjs has no font-embedding

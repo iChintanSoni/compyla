@@ -6,5 +6,11 @@
     "composite": true
   },
   "include": ["src"],
-  "references": [{ "path": "../core" }, { "path": "../docx" }, { "path": "../pptx" }, { "path": "../xlsx" }]
+  "references": [
+    { "path": "../core" },
+    { "path": "../docx" },
+    { "path": "../pdf" },
+    { "path": "../pptx" },
+    { "path": "../xlsx" }
+  ]
 }

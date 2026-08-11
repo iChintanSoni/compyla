@@ -33,6 +33,7 @@
   },
   "devDependencies": {
     "@compyla/docx": "workspace:*",
+    "@compyla/pdf": "workspace:*",
     "@compyla/pptx": "workspace:*",
     "@compyla/xlsx": "workspace:*",
     "@types/node": "^24.0.0",
