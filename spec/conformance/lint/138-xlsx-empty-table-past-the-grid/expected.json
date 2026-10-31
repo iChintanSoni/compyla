@@ -1,0 +1,16 @@
+{
+  "diagnostics": [
+    {
+      "code": "xlsx_limit_exceeded",
+      "severity": "error",
+      "line": 20,
+      "path": "/body/0/children/5"
+    },
+    {
+      "code": "xlsx_range_overlap",
+      "severity": "warning",
+      "line": 20,
+      "path": "/body/0/children/5"
+    }
+  ]
+}

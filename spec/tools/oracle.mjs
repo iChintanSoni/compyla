@@ -185,7 +185,8 @@ function canonical(value) {
 const same = (a, b) => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
 
 /** markdown-spec.md §11.3: compared in order, keeping duplicates; `line` always compared; `column`
- *  and `path` only when the expected diagnostic has them; message and hint never. */
+ *  only when the expected diagnostic has one; message and hint never. The prototype emits no
+ *  `path`, so paths are left to the Rust runner. */
 function diagnosticsMatch(actual, expected) {
   return (
     actual.length === expected.length &&
@@ -194,8 +195,7 @@ function diagnosticsMatch(actual, expected) {
         a.code === expected[i].code &&
         a.severity === expected[i].severity &&
         a.line === expected[i].line &&
-        (expected[i].column === undefined || a.column === expected[i].column) &&
-        (expected[i].path === undefined || a.path === expected[i].path),
+        (expected[i].column === undefined || a.column === expected[i].column),
     )
   );
 }

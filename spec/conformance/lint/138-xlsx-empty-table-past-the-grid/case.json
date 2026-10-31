@@ -1,0 +1,11 @@
+{
+  "description": "An Excel table with no data rows, moved below an anchored table onto the last row, would put its one empty data row past row 1,048,576. That row isn't in the document, so xlsx_limit_exceeded is reported at the table (§9.2, §9.6, §9.7), at the right node even with a sheet after it.",
+  "spec": [
+    "§9.2",
+    "§9.6",
+    "§9.7",
+    "C54"
+  ],
+  "oracle": "corrected",
+  "format": "xlsx"
+}

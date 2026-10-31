@@ -93,7 +93,6 @@ fn percent_format(decimals: u8) -> String {
     format!("0{}%", fraction(decimals))
 }
 
-/// The format a literal takes in a `general` column (§9.5): its own type's default.
 /// The id of a built-in number format, which a workbook writes without a `numFmt` record
 /// (ECMA-376 Part 1, §18.8.30); every other format is custom.
 pub fn builtin_format(code: &str) -> Option<u32> {
@@ -110,6 +109,7 @@ pub fn builtin_format(code: &str) -> Option<u32> {
     })
 }
 
+/// The format a literal takes in a `general` column (§9.5): its own type's default.
 pub fn literal_format(text: &str, literal: Literal) -> String {
     match literal {
         Literal::Percent => percent_format(percent_decimals(text, literal)),

@@ -407,12 +407,13 @@ impl Composer<'_, '_> {
             placer.cursor = last_row + 2;
         }
         if last_row > u64::from(MAX_ROW) {
-            let past = if header_row > u64::from(MAX_ROW) {
+            // The first data row past the grid, unless it is the empty one an Excel table without
+            // data rows is given (§9.6), which has no line of its own: then the table's.
+            let first_past = u64::from(MAX_ROW).saturating_sub(header_row) as usize;
+            let past = if header_row > u64::from(MAX_ROW) || first_past >= table.rows.len() {
                 line
             } else {
-                table
-                    .position
-                    .map(|p| row_line(p, (u64::from(MAX_ROW) - header_row) as usize))
+                table.position.map(|p| row_line(p, first_past))
             };
             self.out.push(at(
                 Diagnostic::new(
