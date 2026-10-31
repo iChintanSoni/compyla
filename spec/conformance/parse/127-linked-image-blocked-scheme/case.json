@@ -1,0 +1,9 @@
+{
+  "description": "A linked image keeps its link only when the destination is allowed; otherwise link_scheme_blocked.",
+  "spec": [
+    "\u00a74.5",
+    "\u00a74.7",
+    "C24"
+  ],
+  "oracle": "corrected"
+}

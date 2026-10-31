@@ -11,6 +11,12 @@
 //!
 //! Inline run text and frontmatter values are not positional and are out of scope here; the parse
 //! suite pins them for Phase B.
+//!
+//! Design (the approach Phase B adopts): the pre-pass splits every container (the document, or a
+//! directive body) into **segments** at directive boundaries. Each segment is parsed on its own and
+//! its positions are offset back to absolute lines, so no markdown block can cross a directive (§1.3
+//! rule 7) and total parsing work stays linear. Link destinations come from one parse of the whole
+//! document, so the first definition in document order wins everywhere (§4.5).
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -87,6 +93,7 @@ impl Skeleton {
 struct Region {
     parent: Option<usize>,
     open_line: usize,
+    close_line: Option<usize>,
     unclosed: bool,
 }
 
@@ -161,6 +168,15 @@ fn parse_opener(line: &str) -> Option<(String, bool)> {
     Some((name, one_line))
 }
 
+/// A blockquote line's content: leading `>` markers (each with one optional following space) removed.
+fn quote_content(line: &str) -> &str {
+    let mut rest = line.trim_start_matches(' ');
+    while let Some(after) = rest.strip_prefix('>') {
+        rest = after.strip_prefix(' ').unwrap_or(after).trim_start_matches(' ');
+    }
+    rest
+}
+
 fn is_closer(line: &str) -> bool {
     let colons = line.chars().take_while(|&c| c == ':').count();
     colons >= 3 && line[colons..].trim_matches([' ', '\t']).is_empty()
@@ -202,6 +218,7 @@ fn pre_pass(source: &str, skeleton: &mut Skeleton) -> PrePass {
 
     let mut stack: Vec<usize> = Vec::new();
     let mut fence: Option<(char, usize)> = None;
+    let mut quoted_fence: Option<(char, usize)> = None; // a fenced code block inside a blockquote
     let mut marker_open: Option<usize> = None; // a marker's opener line, whose next-line closer it may take
 
     for i in start..n {
@@ -223,18 +240,19 @@ fn pre_pass(source: &str, skeleton: &mut Skeleton) -> PrePass {
 
         if line.starts_with(":::") {
             if is_closer(&line) {
-                if marker_line == Some(i - 1) {
+                if marker_line.is_some_and(|m| m + 1 == i) {
                     kinds[i] = Kind::Closer; // belongs to the marker on the previous line
                 } else if let Some(r) = stack.pop() {
                     kinds[i] = Kind::Closer;
                     owner[i] = Some(r);
+                    regions[r].close_line = Some(i);
                 } else {
                     skeleton.diag("directive_malformed", Some(i + 1), Some(1));
                     kinds[i] = Kind::Blank; // dropped; still ends the previous block
                 }
             } else if let Some((name, one_line)) = parse_opener(&line) {
                 let r = regions.len();
-                regions.push(Region { parent: top, open_line: i, unclosed: false });
+                regions.push(Region { parent: top, open_line: i, close_line: None, unclosed: false });
                 kinds[i] = Kind::Opener(r);
                 if MARKERS.contains(&name.as_str()) && !one_line {
                     marker_open = Some(i);
@@ -248,11 +266,26 @@ fn pre_pass(source: &str, skeleton: &mut Skeleton) -> PrePass {
         }
 
         // Fence-like lines that aren't at column 1: indented 1–3 spaces, or after quote markers.
+        // Lines inside fenced code, including fences inside a blockquote, never count (rule 9).
         let stripped = line.trim_start_matches(' ');
         let indent = line.len() - stripped.len();
-        let unquoted = line.trim_start_matches(|c: char| c == '>' || c == ' ');
-        let quoted = line.trim_start().starts_with('>');
-        let candidate = if (1..=3).contains(&indent) && !quoted { Some(stripped) } else if quoted { Some(unquoted) } else { None };
+        let quoted = indent <= 3 && stripped.starts_with('>');
+        let unquoted = quote_content(&line);
+        if quoted {
+            if let Some((ch, len)) = quoted_fence {
+                if is_closing_fence(unquoted, ch, len) {
+                    quoted_fence = None;
+                }
+                continue;
+            }
+            if let Some((ch, len, _)) = is_opening_fence(unquoted) {
+                quoted_fence = Some((ch, len));
+                continue;
+            }
+        } else {
+            quoted_fence = None;
+        }
+        let candidate = if (1..=3).contains(&indent) && !quoted { Some(stripped) } else if quoted { Some(unquoted.trim_start_matches(' ')) } else { None };
         if let Some(rest) = candidate {
             if rest.starts_with(":::") && (is_closer(rest) || parse_opener(rest).is_some()) {
                 let column = line[..line.find(":::").unwrap()].chars().count() + 1;
@@ -285,23 +318,40 @@ fn pre_pass(source: &str, skeleton: &mut Skeleton) -> PrePass {
     PrePass { lines, kinds, owner, regions }
 }
 
-const PLACEHOLDER: &str = "compyla-directive:";
+/// One item of a container, in order: a run of the container's own markdown lines, or a child
+/// directive. Every directive boundary ends a run (§1.3 rule 7).
+enum Item {
+    Run { start: usize, end: usize },
+    Directive(usize),
+}
 
-/// The text of one container (the document, or a directive body): its own lines kept, each child
-/// directive's opener replaced by a one-line HTML comment placeholder (an HTML block that interrupts
-/// a paragraph and ends on its line, §1.3 rule 7), every other line blank. Line and column
-/// positions are therefore identical to the source.
-fn container_text(pre: &PrePass, container: Option<usize>) -> String {
-    let mut out = Vec::with_capacity(pre.lines.len());
-    for i in 0..pre.lines.len() {
-        let line = match pre.kinds[i] {
-            Kind::Opener(r) if pre.regions[r].parent == container => format!("<!--{PLACEHOLDER}{r}-->"),
-            Kind::Normal if pre.owner[i] == container => pre.lines[i].clone(),
-            _ => String::new(),
-        };
-        out.push(line);
+fn segments(pre: &PrePass, container: Option<usize>) -> Vec<Item> {
+    let (from, to) = match container {
+        None => (0, pre.lines.len()),
+        Some(r) => (pre.regions[r].open_line + 1, pre.regions[r].close_line.unwrap_or(pre.lines.len())),
+    };
+    let mut items = Vec::new();
+    let mut run: Option<usize> = None;
+    for i in from..to {
+        let own = pre.kinds[i] == Kind::Normal && pre.owner[i] == container;
+        let child = matches!(pre.kinds[i], Kind::Opener(r) if pre.regions[r].parent == container);
+        if own {
+            run.get_or_insert(i);
+            continue;
+        }
+        if let Some(start) = run.take() {
+            items.push(Item::Run { start, end: i });
+        }
+        if let Kind::Opener(r) = pre.kinds[i] {
+            if child {
+                items.push(Item::Directive(r));
+            }
+        }
     }
-    out.join("\n")
+    if let Some(start) = run {
+        items.push(Item::Run { start, end: to });
+    }
+    items
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -319,42 +369,128 @@ fn options<'c>(callback: Option<Arc<dyn comrak::options::BrokenLinkCallback + 'c
     options
 }
 
+/// Link destinations resolved document-wide (§4.5). One comrak parse of the whole document, with
+/// directive fence lines blanked, resolves every reference with CommonMark's own rules, so the first
+/// definition in document order wins. Destinations are keyed by the link's absolute position, plus
+/// the label map that segment parses need to recognize references defined in other segments.
+struct Links {
+    by_position: HashMap<(usize, usize), String>,
+    by_label: HashMap<String, String>,
+}
+
+fn global_links(pre: &PrePass) -> Links {
+    let global: Vec<String> =
+        (0..pre.lines.len()).map(|i| if pre.kinds[i] == Kind::Normal { pre.lines[i].clone() } else { String::new() }).collect();
+    let labels: Arc<Mutex<HashSet<String>>> = Arc::default();
+    let sink = Arc::clone(&labels);
+    let record = Arc::new(move |r: BrokenLinkReference| {
+        sink.lock().unwrap().insert(r.normalized.to_string());
+        None
+    });
+
+    // Labels a segment parse can't resolve on its own; the probe below resolves them globally.
+    for container in std::iter::once(None).chain((0..pre.regions.len()).map(Some)) {
+        for item in segments(pre, container) {
+            if let Item::Run { start, end } = item {
+                let arena = Arena::new();
+                let _ = parse_document(&arena, &pre.lines[start..end].join("\n"), &options(Some(record.clone())));
+            }
+        }
+    }
+    let labels: Vec<String> = labels.lock().unwrap().iter().cloned().collect();
+
+    let mut text = global.clone();
+    let probe_start = text.len() + 2;
+    text.push(String::new());
+    for label in &labels {
+        text.push(format!("[probe][{label}]"));
+        text.push(String::new());
+    }
+    let arena = Arena::new();
+    let root = parse_document(&arena, &text.join("\n"), &options(None));
+    let mut links = Links { by_position: HashMap::new(), by_label: HashMap::new() };
+    for node in root.descendants() {
+        let data = node.data.borrow();
+        if let NodeValue::Link(link) | NodeValue::Image(link) = &data.value {
+            let pos = data.sourcepos.start;
+            if pos.line >= probe_start {
+                links.by_label.insert(labels[(pos.line - probe_start) / 2].clone(), link.url.clone());
+            } else {
+                links.by_position.insert((pos.line, pos.column), link.url.clone());
+            }
+        }
+    }
+    links
+}
+
 struct Walker<'p> {
     pre: &'p PrePass,
-    references: HashMap<String, String>,
+    links: Links,
+    /// Line offset of the segment being walked: comrak line + offset = absolute line.
+    offset: usize,
     skeleton: Skeleton,
 }
 
 impl Walker<'_> {
     fn container(&mut self, container: Option<usize>) {
-        let text = container_text(self.pre, container);
-        let references = self.references.clone();
-        let callback = Arc::new(move |r: BrokenLinkReference| {
-            references.get(r.normalized).map(|url| ResolvedReference { url: url.clone(), title: String::new() })
-        });
-        let arena = Arena::new();
-        let root = parse_document(&arena, &text, &options(Some(callback)));
-
+        let items = segments(self.pre, container);
         if container.is_none() {
-            let blocks: Vec<_> = root.children().filter(|n| !matches!(n.data.borrow().value, NodeValue::FrontMatter(_))).collect();
-            if let [only] = blocks.as_slice() {
-                if let NodeValue::CodeBlock(code) = &only.data.borrow().value {
-                    let lang = code.info.split_ascii_whitespace().next().unwrap_or("");
-                    if code.fenced && (lang == "markdown" || lang == "md") {
-                        let pos = only.data.borrow().sourcepos.start;
-                        self.skeleton.diag("document_in_code_fence", Some(pos.line), None);
+            self.code_fence_document(&items);
+        }
+        for item in items {
+            match item {
+                Item::Run { start, end } => {
+                    let by_label = self.links.by_label.clone();
+                    let callback = Arc::new(move |r: BrokenLinkReference| {
+                        by_label.get(r.normalized).map(|url| ResolvedReference { url: url.clone(), title: String::new() })
+                    });
+                    let arena = Arena::new();
+                    let root = parse_document(&arena, &self.pre.lines[start..end].join("\n"), &options(Some(callback)));
+                    self.offset = start;
+                    for child in root.children() {
+                        self.block(child);
+                    }
+                }
+                Item::Directive(r) => {
+                    self.skeleton.positions.push(Pos { kind: "directive", line: self.pre.regions[r].open_line + 1, column: 1 });
+                    if !self.pre.regions[r].unclosed {
+                        self.container(Some(r));
                     }
                 }
             }
         }
-        for child in root.children() {
-            self.block(child);
+    }
+
+    /// §4.9 `document_in_code_fence`: the whole body is one fenced markdown code block.
+    fn code_fence_document(&mut self, items: &[Item]) {
+        let [Item::Run { start, end }] = items else { return };
+        let arena = Arena::new();
+        let root = parse_document(&arena, &self.pre.lines[*start..*end].join("\n"), &options(None));
+        let blocks: Vec<_> = root.children().collect();
+        if let [only] = blocks.as_slice() {
+            if let NodeValue::CodeBlock(code) = &only.data.borrow().value {
+                let lang = code.info.split_ascii_whitespace().next().unwrap_or("");
+                if code.fenced && (lang == "markdown" || lang == "md") {
+                    let line = only.data.borrow().sourcepos.start.line + start;
+                    self.skeleton.diag("document_in_code_fence", Some(line), None);
+                }
+            }
         }
     }
 
-    fn push(&mut self, kind: &'static str, node: &AstNode<'_>) {
+    fn at(&self, node: &AstNode<'_>) -> (usize, usize) {
         let pos = node.data.borrow().sourcepos.start;
-        self.skeleton.positions.push(Pos { kind, line: pos.line, column: pos.column });
+        (pos.line + self.offset, pos.column)
+    }
+
+    fn push(&mut self, kind: &'static str, node: &AstNode<'_>) {
+        let (line, column) = self.at(node);
+        self.skeleton.positions.push(Pos { kind, line, column });
+    }
+
+    /// The destination of a link node: the document-wide one at its position, else comrak's.
+    fn destination(&self, node: &AstNode<'_>, local: &str) -> String {
+        self.links.by_position.get(&self.at(node)).cloned().unwrap_or_else(|| local.to_string())
     }
 
     fn block<'a>(&mut self, node: &'a AstNode<'a>) {
@@ -362,7 +498,7 @@ impl Walker<'_> {
         match value {
             NodeValue::Heading(heading) => {
                 self.push("section", node);
-                let end = node.data.borrow().sourcepos.end.line;
+                let end = node.data.borrow().sourcepos.end.line + self.offset;
                 if heading.setext && self.pre.lines[end - 1].trim_start().starts_with('-') {
                     self.skeleton.diag("ambiguous_break", Some(end), None);
                 }
@@ -397,23 +533,16 @@ impl Walker<'_> {
             NodeValue::ThematicBreak => self.push("break", node),
             NodeValue::HtmlBlock(html) => {
                 let literal = html.literal.trim();
-                if let Some(r) = literal.strip_prefix("<!--").and_then(|s| s.strip_prefix(PLACEHOLDER)).and_then(|s| s.strip_suffix("-->")) {
-                    let r: usize = r.parse().unwrap();
-                    let line = self.pre.regions[r].open_line + 1;
-                    self.skeleton.positions.push(Pos { kind: "directive", line, column: 1 });
-                    if !self.pre.regions[r].unclosed {
-                        self.container(Some(r));
-                    }
-                } else if is_marker(literal) {
+                if is_marker(literal) {
                     self.push("directive", node);
                 } else if !(literal.starts_with("<!--") && literal.ends_with("-->") && literal.matches("-->").count() == 1) {
-                    let pos = node.data.borrow().sourcepos.start;
-                    self.skeleton.diag("unsupported_content", Some(pos.line), Some(pos.column));
+                    let (line, column) = self.at(node);
+                    self.skeleton.diag("unsupported_content", Some(line), Some(column));
                 }
             }
             NodeValue::FootnoteDefinition(_) => {
-                let pos = node.data.borrow().sourcepos.start;
-                self.skeleton.diag("unsupported_content", Some(pos.line), Some(pos.column));
+                let (line, column) = self.at(node);
+                self.skeleton.diag("unsupported_content", Some(line), Some(column));
             }
             _ => {}
         }
@@ -442,8 +571,15 @@ impl Walker<'_> {
         if only_images && !images.is_empty() {
             for (image, link) in images {
                 self.push("media", image);
-                if let Some(link) = link {
-                    self.skeleton.links.push(link);
+                if let Some(local) = link {
+                    // A linked image keeps its link only when the destination is allowed (§4.7).
+                    let url = self.destination(image, &local);
+                    if destination_allowed(&url) {
+                        self.skeleton.links.push(url);
+                    } else {
+                        let (line, column) = self.at(image);
+                        self.skeleton.diag("link_scheme_blocked", Some(line), Some(column));
+                    }
                 }
             }
             return;
@@ -451,12 +587,13 @@ impl Walker<'_> {
 
         self.push("paragraph", node);
         let pos = node.data.borrow().sourcepos;
-        if pos.end.line > pos.start.line {
-            let first = &self.pre.lines[pos.start.line - 1];
-            let second = &self.pre.lines[pos.start.line];
+        let (first_line, last_line) = (pos.start.line + self.offset, pos.end.line + self.offset);
+        if last_line > first_line {
+            let first = &self.pre.lines[first_line - 1];
+            let second = &self.pre.lines[first_line];
             let is_delimiter = second.contains('-') && second.trim().chars().all(|c| matches!(c, '|' | ':' | '-' | ' '));
             if first.contains('|') && is_delimiter && split_cells(first).len() != split_cells(second).len() {
-                self.skeleton.diag("table_malformed", Some(pos.start.line), None);
+                self.skeleton.diag("table_malformed", Some(first_line), None);
             }
         }
         self.inlines(node);
@@ -465,25 +602,26 @@ impl Walker<'_> {
     fn inlines<'a>(&mut self, node: &'a AstNode<'a>) {
         for child in node.children() {
             let value = child.data.borrow().value.clone();
-            let pos = child.data.borrow().sourcepos.start;
+            let (line, column) = self.at(child);
             match value {
                 NodeValue::Image(_) | NodeValue::FootnoteReference(_) => {
-                    self.skeleton.diag("unsupported_content", Some(pos.line), Some(pos.column));
+                    self.skeleton.diag("unsupported_content", Some(line), Some(column));
                     continue;
                 }
                 NodeValue::HtmlInline(html) => {
                     if let Some(name) = tag_name(&html) {
                         let known = HTML_ELEMENTS.contains(&name.to_ascii_lowercase().as_str());
                         if known && !name.eq_ignore_ascii_case("br") {
-                            self.skeleton.diag("unsupported_content", Some(pos.line), Some(pos.column));
+                            self.skeleton.diag("unsupported_content", Some(line), Some(column));
                         }
                     }
                 }
                 NodeValue::Link(link) => {
-                    if destination_allowed(&link.url) {
-                        self.skeleton.links.push(link.url.clone());
+                    let url = self.destination(child, &link.url);
+                    if destination_allowed(&url) {
+                        self.skeleton.links.push(url);
                     } else {
-                        self.skeleton.diag("link_scheme_blocked", Some(pos.line), Some(pos.column));
+                        self.skeleton.diag("link_scheme_blocked", Some(line), Some(column));
                     }
                 }
                 _ => {}
@@ -494,13 +632,14 @@ impl Walker<'_> {
 
     fn table_raws<'a>(&mut self, table: &'a AstNode<'a>) {
         let start = table.data.borrow().sourcepos.start;
+        let first = start.line + self.offset;
         let rows = table.children().count(); // header + data rows
         let mut raws = Vec::new();
-        for (k, line_index) in (0..=rows).enumerate() {
-            if k == 1 {
+        for line_index in 0..=rows {
+            if line_index == 1 {
                 continue; // the delimiter row
             }
-            let line = &self.pre.lines[start.line - 1 + line_index];
+            let line = &self.pre.lines[first - 1 + line_index];
             let row: String = line.chars().skip(start.column - 1).collect();
             raws.push(split_cells(&row));
         }
@@ -563,56 +702,11 @@ fn split_cells(row: &str) -> Vec<String> {
     cells.into_iter().map(|c| c.trim_matches([' ', '\t']).to_string()).collect()
 }
 
-/// Document-wide link reference resolution (markdown-spec.md §4.5): references that a container
-/// can't resolve on its own are resolved against the whole document with directive fences
-/// removed, using comrak's own definition parsing (first definition in document order wins).
-fn collect_references(pre: &PrePass) -> HashMap<String, String> {
-    let broken: Arc<Mutex<HashSet<String>>> = Arc::default();
-    let mut containers = vec![None];
-    containers.extend((0..pre.regions.len()).filter(|&r| !pre.regions[r].unclosed).map(Some));
-    for container in containers {
-        let sink = Arc::clone(&broken);
-        let callback = Arc::new(move |r: BrokenLinkReference| {
-            sink.lock().unwrap().insert(r.normalized.to_string());
-            None
-        });
-        let arena = Arena::new();
-        let _ = parse_document(&arena, &container_text(pre, container), &options(Some(callback)));
-    }
-
-    let labels: Vec<String> = broken.lock().unwrap().iter().cloned().collect();
-    if labels.is_empty() {
-        return HashMap::new();
-    }
-    let mut global: Vec<String> = (0..pre.lines.len())
-        .map(|i| if pre.kinds[i] == Kind::Normal { pre.lines[i].clone() } else { String::new() })
-        .collect();
-    let probe_start = global.len() + 2;
-    global.push(String::new());
-    for label in &labels {
-        global.push(format!("[probe][{label}]"));
-        global.push(String::new());
-    }
-    let arena = Arena::new();
-    let root = parse_document(&arena, &global.join("\n"), &options(None));
-    let mut map = HashMap::new();
-    for node in root.descendants() {
-        let data = node.data.borrow();
-        if let NodeValue::Link(link) = &data.value {
-            if data.sourcepos.start.line >= probe_start {
-                let index = (data.sourcepos.start.line - probe_start) / 2;
-                map.insert(labels[index].clone(), link.url.clone());
-            }
-        }
-    }
-    map
-}
-
 fn analyze(source: &str) -> Skeleton {
     let mut skeleton = Skeleton::default();
     let pre = pre_pass(source, &mut skeleton);
-    let references = collect_references(&pre);
-    let mut walker = Walker { pre: &pre, references, skeleton };
+    let links = global_links(&pre);
+    let mut walker = Walker { pre: &pre, links, offset: 0, skeleton };
     walker.container(None);
     walker.skeleton
 }
@@ -697,7 +791,8 @@ fn expected_skeleton(expected: &Value) -> Skeleton {
 
 fn main() -> ExitCode {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../spec/conformance/parse");
-    let mut fixtures: Vec<PathBuf> = fs::read_dir(&root).expect("parse suite").map(|e| e.unwrap().path()).collect();
+    let mut fixtures: Vec<PathBuf> =
+        fs::read_dir(&root).expect("parse suite").map(|e| e.unwrap().path()).filter(|p| p.join("case.json").is_file()).collect();
     fixtures.sort();
 
     let (mut failures, mut nodes, mut cells, mut links, mut diagnostics) = (0, 0, 0, 0, 0);

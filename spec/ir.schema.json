@@ -90,7 +90,7 @@
         },
         "raw": {
           "type": "string",
-          "description": "The cell's source text between its delimiting pipes, trimmed, with \\| unescaped to |. Formula detection uses it (markdown-spec.md §4.5, §9.3)."
+          "description": "The cell's source text between its delimiting pipes, trimmed, with \\| unescaped to |. Formula detection uses it (markdown-spec.md §4.6, §9.3)."
         }
       }
     },
@@ -181,7 +181,7 @@
       }
     },
     "table": {
-      "description": "Rows keep their source cell counts; no GFM padding or truncation (markdown-spec.md §4.5).",
+      "description": "Rows keep their source cell counts; no GFM padding or truncation (markdown-spec.md §4.6).",
       "type": "object",
       "required": [
         "type",
@@ -367,7 +367,7 @@
       }
     },
     "directive": {
-      "description": "A directive fence or marker (markdown-spec.md §1.2–§1.4). Position is the opener line, column 1, or a marker's '<'.",
+      "description": "A directive fence or marker (markdown-spec.md §1.3–§1.5). Position is the opener line, column 1, or a marker's '<'.",
       "type": "object",
       "required": [
         "type",

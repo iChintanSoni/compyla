@@ -1,0 +1,7 @@
+{
+  "description": "An HTML comment is ignored, whatever it contains; implementation internals can't be forged from input.",
+  "spec": [
+    "\u00a71.4"
+  ],
+  "oracle": "prototype"
+}

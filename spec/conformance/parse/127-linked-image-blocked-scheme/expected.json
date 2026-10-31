@@ -1,0 +1,25 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "media",
+        "src": "a.png",
+        "alt": "Badge",
+        "position": {
+          "line": 1,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": [
+    {
+      "code": "link_scheme_blocked",
+      "severity": "warning",
+      "line": 1,
+      "column": 1
+    }
+  ]
+}

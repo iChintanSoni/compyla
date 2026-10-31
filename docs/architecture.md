@@ -83,7 +83,7 @@ Document { irVersion, meta, body }
    ├─ media      (image src, alt)
    ├─ code       (language, content)
    ├─ quote      (children)
-   ├─ break      (from ---; meaning assigned per profile: page vs. slide)
+   ├─ break      (from ---; meaning assigned per profile: horizontal rule vs. slide)
    └─ directive  (name, args, children; resolved per profile)
 ```
 

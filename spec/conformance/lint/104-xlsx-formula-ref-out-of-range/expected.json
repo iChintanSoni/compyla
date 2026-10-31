@@ -6,7 +6,7 @@
       "line": 5
     },
     {
-      "code": "formula_ref_out_of_range",
+      "code": "formula_error",
       "severity": "warning",
       "line": 6
     }

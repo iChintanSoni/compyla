@@ -7,7 +7,7 @@
 //   node spec/tools/check.mjs             these checks (no dependencies)
 //   node spec/tools/check.mjs --schemas   also validate schemas and instances (runs `uvx check-jsonschema`)
 
-import { readdirSync, readFileSync, existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, existsSync, mkdtempSync, writeFileSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -72,6 +72,7 @@ for (const suite of ["parse", "lint", "compose", "render"]) {
   if (!existsSync(dir)) continue;
   for (const name of readdirSync(dir).sort()) {
     const fixture = join(dir, name);
+    if (!statSync(fixture).isDirectory()) continue; // e.g. .DS_Store
     const where = `${suite}/${name}`;
     if (!/^\d{3}-[a-z0-9-]+$/.test(name)) problem(where, "directory must be NNN-kebab-name");
     for (const file of ["input.md", "case.json", "expected.json"]) {
@@ -121,13 +122,29 @@ for (const suite of ["parse", "lint", "compose", "render"]) {
   }
 }
 
+// ---------- section references ----------
+
+const sections = new Set();
+for (const match of specText.matchAll(/^##+ (\d+(?:\.\d+)?)\.? /gm)) sections.add(match[1]);
+const referencing = [
+  ...readdirSync(specDir).filter((f) => f.endsWith(".json")).map((f) => join(specDir, f)),
+  ...readdirSync(join(specDir, "conformance")).filter((f) => f.endsWith(".json")).map((f) => join(specDir, "conformance", f)),
+  join(specDir, "conformance", "README.md"),
+  ...fixtures.map(({ fixture }) => join(fixture, "case.json")),
+];
+for (const file of referencing) {
+  for (const match of readFileSync(file, "utf8").matchAll(/§(\d+(?:\.\d+)?)/g)) {
+    if (!sections.has(match[1])) problem(file.slice(root.length + 1), `cites §${match[1]}, which isn't a section of markdown-spec.md`);
+  }
+}
+
 // ---------- JSON Schema validation (optional) ----------
 
 if (process.argv.includes("--schemas")) {
   const work = mkdtempSync(join(tmpdir(), "compyla-spec-"));
   const run = (args) => {
     try {
-      execFileSync("uvx", ["check-jsonschema", ...args], { stdio: "pipe" });
+      execFileSync("uvx", ["--from", "check-jsonschema==0.39.0", "check-jsonschema", ...args], { stdio: "pipe" });
     } catch (error) {
       problem("schemas", `check-jsonschema ${args.join(" ")}\n${error.stdout ?? ""}${error.stderr ?? ""}`);
     }

@@ -81,17 +81,19 @@ Mention the APAC numbers first.
 ```markdown
 # Sales
 
-::: columns Revenue:currency, Growth:percent
+::: columns B:currency, C:percent
+:::
+
 | Region | Revenue | Growth      |
 |--------|---------|-------------|
-| APAC   | 120000  | 14%         |
-| EMEA   | 98000   | 9%          |
+| APAC   | 120000  | 0.14        |
+| EMEA   | 98000   | 0.09        |
 | Total  | =SUM(B2:B3) | =AVERAGE(C2:C3) |
-:::
 ```
 
 Formulas are written as if the table started at A1; Compyla translates them to wherever the table
-lands on the sheet.
+lands on the sheet. (Spec 0.2 also accepts wrapping the table in the directive, keying columns by
+header name, and percents such as `14%`; the prototype in `packages/` doesn't support those yet.)
 
 ## Documentation
 

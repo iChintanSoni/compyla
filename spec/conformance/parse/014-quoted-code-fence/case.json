@@ -1,0 +1,7 @@
+{
+  "description": "A directive line inside a fenced code block in a blockquote is code, not a malformed directive.",
+  "spec": [
+    "\u00a71.3"
+  ],
+  "oracle": "prototype"
+}
