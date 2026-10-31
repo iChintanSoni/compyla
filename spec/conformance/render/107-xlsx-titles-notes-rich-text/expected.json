@@ -1,0 +1,48 @@
+{
+  "diagnostics": [],
+  "output": {
+    "sheets": [
+      {
+        "name": "Report",
+        "cells": {
+          "A1": {
+            "value": "Q3",
+            "type": "s"
+          },
+          "A2": {
+            "value": "Figures in thousands.",
+            "type": "s"
+          },
+          "A3": {
+            "value": "Region",
+            "type": "s"
+          },
+          "B4": {
+            "value": 120,
+            "type": "n",
+            "numFmt": "General"
+          }
+        }
+      }
+    ],
+    "package": {
+      "xpath": [
+        {
+          "part": "xl/worksheets/sheet1.xml",
+          "expr": "count(//x:mergeCell)",
+          "equals": 2
+        },
+        {
+          "part": "xl/worksheets/sheet1.xml",
+          "expr": "string(//x:mergeCell[1]/@ref)",
+          "equals": "A1:B1"
+        },
+        {
+          "part": "xl/sharedStrings.xml",
+          "expr": "count(//x:si[x:r/x:rPr/x:b])",
+          "equals": 1
+        }
+      ]
+    }
+  }
+}

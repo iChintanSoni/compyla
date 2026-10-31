@@ -56,21 +56,32 @@ pub struct Input<'a> {
     pub assets: &'a dyn Fn(&str) -> Asset,
 }
 
-/// The profile's diagnostics, at the positions of the nodes involved. Callers that report them
-/// renumber the document first and collect into a located sink (`crate::locate`, §10.7, §11.3).
-pub fn validate(input: &Input<'_>, format: Format, out: &mut Sink) {
+/// What a profile composed (architecture.md D15): the model its renderer writes.
+#[derive(Debug)]
+pub enum Composed {
+    Flow,
+    Pptx,
+    Xlsx(xlsx::Workbook),
+}
+
+/// The profile's diagnostics, at the positions of the nodes involved, and its composed model.
+/// Callers that report the diagnostics renumber the document first and collect into a located sink
+/// (`crate::locate`, §10.7, §11.3).
+pub fn validate(input: &Input<'_>, format: Format, out: &mut Sink) -> Composed {
     directives(&input.document.body, format, out);
     ragged_tables(&input.document.body, out);
     match format {
         Format::Docx | Format::Pdf => {
             images(input, out);
             flow::validate(input, format, out);
+            Composed::Flow
         }
         Format::Pptx => {
             images(input, out);
             pptx::validate(input, out);
+            Composed::Pptx
         }
-        Format::Xlsx => xlsx::validate(input, out),
+        Format::Xlsx => Composed::Xlsx(xlsx::validate(input, out)),
     }
 }
 
@@ -348,7 +359,7 @@ pub fn fragment_links(input: &Input<'_>, targets: &[String], what: &str, out: &m
 }
 
 /// Decodes `%XX` escapes of two hex digits; anything else is kept as written.
-fn percent_decode(text: &str) -> String {
+pub(crate) fn percent_decode(text: &str) -> String {
     let bytes = text.as_bytes();
     let hex = |b: u8| (b as char).to_digit(16);
     let mut out = Vec::with_capacity(bytes.len());

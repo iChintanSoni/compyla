@@ -1,0 +1,10 @@
+{
+  "description": "Inference per §9.5: a column mixing numbers and percents is general, so each cell keeps its own type; dates are serials, booleans are booleans, percents show their decimals, and zero-padded codes stay text.",
+  "spec": [
+    "§9.4",
+    "§9.5",
+    "C46"
+  ],
+  "oracle": "corrected",
+  "format": "xlsx"
+}

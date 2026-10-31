@@ -100,6 +100,7 @@ prototype.
 | C45 | pptx: a misplaced `layout` is ignored and entered like any annotation; an unresolved or missing layout name is selected as if absent, title-slide rule included; Quote holds only a quote or text (§8.1, §8.3, §8.6) | A misplaced `layout` was an opaque block; Quote accepted any one block | compose/111, compose/002, lint/128 |
 | C46 | xlsx: a column whose cells match different tests, or that has no literal values, is `general`: each cell keeps its own type. Percent formats default to just enough decimals. Currency codes are any three letters. A sheet qualifies both cells of a range. Booleans in formulas are written in uppercase. An overridden empty annotation is misplaced. Column parameters follow §1.6's unknown/invalid split. A misplaced directive's arguments aren't checked (§1.5, §9.3–§9.6) | Numbers mixed with percents became percents (`42` → 4200%); mixed and formula-only columns were text; `9.5%` showed as 10%; an overridden annotation vanished silently | compose/103, compose/105, compose/112, lint/129, lint/130 |
 | C47 | Limits (§12.1) hold for every input: IR input is counted as markdown is, and cells per row and slides are enforced. A limit stops processing, so no validate-stage diagnostic follows one. IR positions are at most 2³²−1, and IR text rules cover every string. Nested annotations of the same name: the innermost applies (§9.4, §10.7, §12.1) | Unenforced for IR input, rows and slides: hostile input crashed, hung or placed cells past XFD | lint/132, lint/133, lint/134, lint/135 |
+| C48 | xlsx rendering: the header row is bold on a light fill unless an Excel table styles it; an Excel table with no data rows gets an empty one; hyperlinked text is underlined in the link color and line breaks wrap (§9.2, §9.6) | Header style unspecified; an Excel table with no data rows was invalid | render/104, render/105, render/106, render/107 |
 
 0.2 also corrects 0.1's *text* in one place where the prototype was right: `---` in xlsx is ignored
 without a diagnostic (§5).
@@ -775,7 +776,8 @@ Each sheet keeps a stacking cursor, starting at row 1, column A. Tables are plac
 2. The range title (if any) takes the next row, merged across the table's columns (not merged when
    the table has one column), in bold.
 3. The note (if any) takes the next row, merged the same way, in italics.
-4. The header row comes next, followed by one row per data row.
+4. The header row comes next, in bold on a light fill (the house style), followed by one row per
+   data row. In an Excel table (§9.6), the table's style formats the header instead. *(C48)*
 5. An unanchored table moves the cursor to *header row + data rows + 2* (one blank row between
    tables). An anchored table does not move the cursor.
 
@@ -975,6 +977,8 @@ whatever `lang` is.
   cell produce `xlsx_ignored_content`, and only the first is kept.
 - Range titles and notes are written to cells, so this rule and the cell text limit (§9.7) apply to
   them too.
+- A cell with a hyperlink shows its text underlined, in the link color. A cell whose text has a line
+  break wraps its text. *(C48)*
 - Fragment links resolve against the slugs of the **repaired** sheet names (§9.6), and link to cell
   A1 of that sheet.
 
@@ -1009,6 +1013,8 @@ key for a default sheet). Formulas and fragment links refer to sheets by their r
 - **Automatic names** are `Table1`, `Table2`, … in workbook order, skipping names already used.
 - **Style.** `striped` maps to `TableStyleMedium2` (the default), `plain` to `TableStyleLight1`.
 - **`autofilter`** shows filter buttons on the table's header row.
+- **Data rows.** An Excel table needs at least one: a table with none is placed with one empty data
+  row (§9.2), which its range includes. *(C48)*
 
 ### 9.7 Validation
 

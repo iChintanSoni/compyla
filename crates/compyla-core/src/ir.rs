@@ -180,6 +180,14 @@ fn is_false(value: &bool) -> bool {
 }
 
 impl Run {
+    /// A run of text with no marks and no link.
+    pub fn plain(text: String) -> Run {
+        Run {
+            text,
+            ..Run::default()
+        }
+    }
+
     fn same_marks(&self, other: &Run) -> bool {
         self.bold == other.bold
             && self.italic == other.italic

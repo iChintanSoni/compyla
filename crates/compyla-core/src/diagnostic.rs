@@ -125,6 +125,35 @@ const KEEP: usize = CAP + 1;
 pub struct Sink {
     items: Vec<Diagnostic>,
     locator: Option<crate::locate::Locator>,
+    blocking: Blocking,
+}
+
+/// Whether diagnostics block `convert` (§11.1), over every diagnostic a sink saw, kept or not: an
+/// error, or under `strict`, a strict-promotable warning.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Blocking {
+    pub error: bool,
+    pub promotable: bool,
+}
+
+impl Blocking {
+    pub fn blocks(self, strict: bool) -> bool {
+        self.error || (strict && self.promotable)
+    }
+
+    pub fn see(&mut self, diagnostic: &Diagnostic) {
+        match diagnostic.severity {
+            Severity::Error => self.error = true,
+            Severity::Warning => self.promotable |= code_info(&diagnostic.code).strict_promotable,
+        }
+    }
+
+    pub fn merge(self, other: Blocking) -> Blocking {
+        Blocking {
+            error: self.error || other.error,
+            promotable: self.promotable || other.promotable,
+        }
+    }
 }
 
 impl Sink {
@@ -135,8 +164,8 @@ impl Sink {
     /// A sink for diagnostics on a renumbered document.
     pub fn located(locator: crate::locate::Locator) -> Self {
         Self {
-            items: Vec::new(),
             locator: Some(locator),
+            ..Self::default()
         }
     }
 
@@ -144,6 +173,7 @@ impl Sink {
         if let Some(locator) = &self.locator {
             locator.locate(std::slice::from_mut(&mut diagnostic));
         }
+        self.blocking.see(&diagnostic);
         self.items.push(diagnostic);
         if self.items.len() >= 2 * KEEP {
             // Stable, like the final sort, so ties keep the order they arrived in.
@@ -154,6 +184,11 @@ impl Sink {
 
     pub fn into_vec(self) -> Vec<Diagnostic> {
         self.items
+    }
+
+    /// The diagnostics kept, and whether any seen blocks `convert`.
+    pub fn into_parts(self) -> (Vec<Diagnostic>, Blocking) {
+        (self.items, self.blocking)
     }
 }
 

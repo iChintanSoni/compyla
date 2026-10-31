@@ -14,6 +14,7 @@
       "properties": {
         "paragraphs": { "type": "array", "items": { "type": "object", "required": ["style", "text"], "additionalProperties": false, "properties": { "style": { "type": "string" }, "text": { "type": "string" } } } },
         "tables": { "type": "array", "items": { "type": "array", "items": { "type": "array", "items": { "type": "string" } } } },
+        "excelTables": { "type": "array", "items": { "type": "object", "required": ["name", "ref", "style"], "additionalProperties": false, "properties": { "name": { "type": "string" }, "ref": { "type": "string" }, "style": { "type": ["string", "null"] } } } },
         "hyperlinks": { "type": "array", "items": { "type": "object", "required": ["text", "target"], "additionalProperties": false, "properties": { "text": { "type": "string" }, "target": { "type": "string" } } } },
         "pageBreaks": { "type": "integer", "minimum": 0 },
         "horizontalRules": { "type": "integer", "minimum": 0 },

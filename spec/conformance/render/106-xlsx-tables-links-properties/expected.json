@@ -1,0 +1,73 @@
+{
+  "diagnostics": [],
+  "output": {
+    "sheets": [
+      {
+        "name": "Index",
+        "cells": {
+          "A1": {
+            "value": "Name",
+            "type": "s"
+          },
+          "B2": {
+            "value": "home",
+            "type": "s"
+          },
+          "B3": {
+            "value": "data",
+            "type": "s"
+          }
+        }
+      },
+      {
+        "name": "Data",
+        "cells": {
+          "A2": {
+            "formula": "SUM(1,2)"
+          }
+        }
+      }
+    ],
+    "excelTables": [
+      {
+        "name": "people",
+        "ref": "A1:B3",
+        "style": "TableStyleMedium2"
+      }
+    ],
+    "properties": {
+      "title": "Links",
+      "creator": "Ana, Bo"
+    },
+    "package": {
+      "partsPresent": [
+        "xl/tables/table1.xml"
+      ],
+      "partsAbsent": [
+        "xl/vbaProject\\.bin"
+      ],
+      "xpath": [
+        {
+          "part": "xl/tables/table1.xml",
+          "expr": "count(/x:table/x:autoFilter)",
+          "equals": 1
+        },
+        {
+          "part": "xl/worksheets/sheet1.xml",
+          "expr": "string(//x:hyperlink[@ref='B3']/@location)",
+          "equals": "'Data'!A1"
+        },
+        {
+          "part": "xl/worksheets/_rels/sheet1.xml.rels",
+          "expr": "string(//rel:Relationship[@TargetMode='External']/@Target)",
+          "equals": "https://example.com"
+        },
+        {
+          "part": "xl/workbook.xml",
+          "expr": "string(//x:calcPr/@fullCalcOnLoad)",
+          "equals": "1"
+        }
+      ]
+    }
+  }
+}

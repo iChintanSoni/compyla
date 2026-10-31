@@ -1,0 +1,10 @@
+{
+  "description": "Typed columns per §9.4: a currency's symbol, number decimals, a number in a percent column is the fraction itself with just enough decimals, and a text column keeps digits as text.",
+  "spec": [
+    "§9.4",
+    "§9.5",
+    "C46"
+  ],
+  "oracle": "corrected",
+  "format": "xlsx"
+}

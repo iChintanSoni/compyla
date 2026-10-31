@@ -1,0 +1,16 @@
+[package]
+name = "compyla-xlsx"
+description = "Compyla's xlsx renderer: a composed workbook as SpreadsheetML (markdown-spec.md §9)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+compyla-core.workspace = true
+compyla-ooxml.workspace = true
+
+[lints]
+workspace = true

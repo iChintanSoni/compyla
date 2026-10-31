@@ -272,7 +272,7 @@ mod tests {
     }
 
     fn lint_ir(json: &str, format: Format) -> Vec<(String, Option<usize>, Option<String>)> {
-        let (document, _) = crate::ir_input::load(json).expect("valid IR");
+        let document = crate::ir_input::load(json).expect("valid IR").document;
         lint(document, &Sidecar::default(), format)
             .into_iter()
             .map(|d| (d.code, d.line, d.path))
