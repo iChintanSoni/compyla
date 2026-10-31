@@ -128,24 +128,52 @@ impl Template {
             }
         }
 
-        // Macros, anywhere: a VBA project part, by name or by content type.
-        let macro_part = template.parts.iter().any(|(name, _)| {
-            name.to_ascii_lowercase().ends_with("vbaproject.bin")
-                || template
-                    .content_type(name)
-                    .is_some_and(|t| t.contains("vbaProject"))
-        });
-        if macro_part {
-            return invalid("is macro-enabled (it contains a VBA project)");
-        }
-        // §10.4: no XML part may declare a DTD, whether or not anything reads it.
+        // Macros, anywhere (§10.4): a VBA project or its data, or an Excel 4.0 macro sheet, by part
+        // name, content type or relationship type. Content types compare without case (RFC 2045).
+        const MACRO_MARKS: [&str; 4] = ["vbaproject", "vbadata", "macrosheet", "macroenabled"];
+        let macro_like = |text: &str| {
+            let text = text.to_ascii_lowercase();
+            MACRO_MARKS.iter().any(|mark| text.contains(mark))
+        };
         for (name, data) in &template.parts {
-            let xml = name.ends_with(".xml")
-                || name.ends_with(".rels")
-                || template
-                    .content_type(name)
-                    .is_some_and(|t| t.ends_with("xml"));
-            if xml && data.windows(9).any(|w| w == b"<!DOCTYPE") {
+            let mut macro_part =
+                macro_like(name) || template.content_type(name).is_some_and(macro_like);
+            if !macro_part && name.to_ascii_lowercase().ends_with(".rels") {
+                // A relationship's type names what it points at; its target may be any URL.
+                let rels = dom::parse(data).map_err(|_| {
+                    Invalid(format!("has a malformed relationships part (`{name}`)"))
+                })?;
+                macro_part = rels
+                    .children_named(PACKAGE_RELS, "Relationship")
+                    .any(|rel| rel.attr("Type").is_some_and(macro_like));
+            }
+            if macro_part {
+                return invalid(format!("is macro-enabled (`{name}`)"));
+            }
+        }
+        // §10.4: no XML part may declare a DTD, whether or not anything reads it. UTF-16 parts are
+        // transcoded first, so the check sees characters.
+        for (name, data) in &template.parts {
+            let lower = name.to_ascii_lowercase();
+            let xml = lower.ends_with(".xml")
+                || lower.ends_with(".rels")
+                || template.content_type(name).is_some_and(|t| {
+                    t.to_ascii_lowercase()
+                        .split(';')
+                        .next()
+                        .unwrap_or("")
+                        .trim()
+                        .ends_with("xml")
+                });
+            if !xml {
+                continue;
+            }
+            let text = dom::utf8(data).map_err(|_| {
+                Invalid(format!(
+                    "has an XML part in an unsupported encoding (`{name}`)"
+                ))
+            })?;
+            if contains_ignoring_case(&text, b"<!DOCTYPE") {
                 return invalid(format!("has a DTD in `{name}`"));
             }
         }
@@ -156,10 +184,14 @@ impl Template {
             .find(|r| r.kind.ends_with("/officeDocument") && !r.external)
             .map(|r| r.target)
             .ok_or_else(|| Invalid("has no main document part".into()))?;
-        let content_type = template.content_type(&main).unwrap_or_default().to_string();
-        if content_type.contains("macroEnabled") {
-            return invalid("is macro-enabled");
-        }
+        // Compared without case or parameters (RFC 2045).
+        let content_type = template.content_type(&main).unwrap_or_default();
+        let content_type = content_type
+            .split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase();
         template.kind = MAIN_TYPES
             .iter()
             .find(|(t, _)| *t == content_type)
@@ -203,6 +235,25 @@ impl Template {
         };
         dom::parse(data).map(Some).map_err(|error| match error {
             dom::Error::Dtd => Invalid(format!("has a DTD in `{name}`")),
+            dom::Error::TooLarge => Invalid(format!(
+                "has more than {} elements in `{name}`",
+                dom::MAX_ELEMENTS
+            )),
+            dom::Error::Malformed(why) => Invalid(format!("has malformed XML in `{name}`: {why}")),
+        })
+    }
+
+    /// The last element at `path` in a part, without building the rest of it (`dom::find_last`).
+    pub fn find_last(&self, name: &str, path: &[(&str, &str)]) -> Result<Option<Element>, Invalid> {
+        let Some(data) = self.part(name) else {
+            return Ok(None);
+        };
+        dom::find_last(data, path).map_err(|error| match error {
+            dom::Error::Dtd => Invalid(format!("has a DTD in `{name}`")),
+            dom::Error::TooLarge => Invalid(format!(
+                "has more than {} elements in `{name}`",
+                dom::MAX_ELEMENTS
+            )),
             dom::Error::Malformed(why) => Invalid(format!("has malformed XML in `{name}`: {why}")),
         })
     }
@@ -258,6 +309,13 @@ impl Template {
             .find(|r| r.kind.ends_with(&suffix) && !r.external)
             .map(|r| r.target))
     }
+}
+
+/// Whether `haystack` contains `needle`, ASCII letters compared without case.
+fn contains_ignoring_case(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack
+        .windows(needle.len())
+        .any(|window| window.eq_ignore_ascii_case(needle))
 }
 
 /// A relationship target relative to `folder`, as a part name; `None` if it leaves the package.

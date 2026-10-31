@@ -51,12 +51,14 @@ def package_rels(main):
     return rels(("rId1", "officeDocument", main, False))
 
 
-def theme(major, minor):
+def theme(major, minor, odd=False):
     colors = {"dk1": '<a:sysClr val="windowText" lastClr="000000"/>', "lt1": '<a:sysClr val="window" lastClr="FFFFFF"/>',
               "dk2": '<a:srgbClr val="1f2a44"/>', "lt2": '<a:srgbClr val="E8ECF3"/>',
               **{f"accent{i}": f'<a:srgbClr val="{c}"/>' for i, c in enumerate(["2F5BEA", "00A88F", "F2A900", "D64545", "7A4FD1", "4A5568"], 1)},
               "hlink": '<a:srgbClr val="0563C1"/>', "folHlink": '<a:srgbClr val="954F72"/>'}
     scheme = "".join(f"<a:{k}>{v}</a:{k}>" for k, v in colors.items())
+    if odd:  # a slot outside the theme's twelve, which a report must not echo
+        scheme += '<a:extraSlot><a:srgbClr val="123456"/></a:extraSlot>'
     fonts = f'<a:majorFont><a:latin typeface="{major}"/><a:ea typeface=""/><a:cs typeface=""/></a:majorFont>' \
             f'<a:minorFont><a:latin typeface="{minor}"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont>'
     return (f'{DECL}<a:theme xmlns:a="{A}" name="Fixture"><a:themeElements>'
@@ -87,9 +89,10 @@ def layout(name, kind, *shapes):
             f'<p:cSld name="{name}">{tree(*shapes)}</p:cSld></p:sldLayout>')
 
 
-def pptx(path, main_type="presentation", extra=()):
+def pptx(path, main_type="presentation", extra=(), repeat_ids=1, odd=False):
     layouts = [
-        ("Title Slide", "title", placeholder(2, "Title 1", "ctrTitle"), placeholder(3, "Subtitle 2", "subTitle", 1)),
+        ("Title Slide", "title", placeholder(2, "Title 1", "ctrTitle"),
+         placeholder(3, "Subtitle 2", "notAType" if odd else "subTitle", 1)),
         ("Titel und Inhalt", "obj", placeholder(2, "Titel 1", "title"), placeholder(3, "Inhaltsplatzhalter 2", None, 1),
          placeholder(4, "Datumsplatzhalter 3", "dt", 10)),
         ("Blank", "blank"),
@@ -97,13 +100,13 @@ def pptx(path, main_type="presentation", extra=()):
     master = (f'{DECL}<p:sldMaster xmlns:a="{A}" xmlns:r="{OFFICE}" xmlns:p="{P}">'
               f'<p:cSld>{tree(placeholder(2, "Title Placeholder 1", "title"))}</p:cSld>'
               '<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>'
-              '<p:sldLayoutIdLst>' + "".join(f'<p:sldLayoutId id="{2147483649 + i}" r:id="rId{i + 1}"/>' for i in range(len(layouts)))
+              '<p:sldLayoutIdLst>' + "".join(f'<p:sldLayoutId id="{2147483649 + i}" r:id="rId{i + 1}"/>' for i in range(len(layouts))) * repeat_ids
               + '</p:sldLayoutIdLst><p:txStyles><p:titleStyle><a:lvl1pPr><a:defRPr><a:latin typeface="+mj-lt"/></a:defRPr></a:lvl1pPr></p:titleStyle>'
               '<p:bodyStyle><a:lvl1pPr><a:defRPr><a:latin typeface="Source Serif 4"/></a:defRPr></a:lvl1pPr></p:bodyStyle><p:otherStyle/></p:txStyles></p:sldMaster>')
     master_rels = rels(*[(f"rId{i + 1}", "slideLayout", f"../slideLayouts/slideLayout{i + 1}.xml", False) for i in range(len(layouts))],
                        (f"rId{len(layouts) + 1}", "theme", "../theme/theme1.xml", False))
     presentation = (f'{DECL}<p:presentation xmlns:a="{A}" xmlns:r="{OFFICE}" xmlns:p="{P}">'
-                    '<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>'
+                    '<p:sldMasterIdLst>' + '<p:sldMasterId id="2147483648" r:id="rId1"/>' * repeat_ids + '</p:sldMasterIdLst>'
                     '<p:sldSz cx="12192000" cy="6858000"/><p:notesSz cx="6858000" cy="9144000"/>'
                     '<p:embeddedFontLst><p:embeddedFont><p:font typeface="Brand Sans"/><p:regular r:id="rId3"/></p:embeddedFont></p:embeddedFontLst>'
                     '</p:presentation>')
@@ -124,7 +127,7 @@ def pptx(path, main_type="presentation", extra=()):
         *[(f"ppt/slideLayouts/slideLayout{i + 1}.xml", layout(*spec)) for i, spec in enumerate(layouts)],
         *[(f"ppt/slideLayouts/_rels/slideLayout{i + 1}.xml.rels", rels(("rId1", "slideMaster", "../slideMasters/slideMaster1.xml", False)))
           for i in range(len(layouts))],
-        ("ppt/theme/theme1.xml", theme("Brand Display", "Brand Sans")),
+        ("ppt/theme/theme1.xml", theme("Brand Display", "Brand Sans", odd)),
         ("ppt/fonts/font1.fntdata", b"\x00" * 64),
         *extra,
     ]
@@ -136,7 +139,7 @@ def pptx(path, main_type="presentation", extra=()):
 WML = "application/vnd.openxmlformats-officedocument.wordprocessingml"
 
 
-def docx(path, styles=True, theme_part=True, document_body=None, main_type="template"):
+def docx(path, styles=True, theme_part=True, document_body=None, main_type="template", extra=()):
     style_xml = (f'{DECL}<w:styles xmlns:w="{W}">'
                  '<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi"/></w:rPr></w:rPrDefault></w:docDefaults>'
                  '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>'
@@ -162,8 +165,9 @@ def docx(path, styles=True, theme_part=True, document_body=None, main_type="temp
         overrides.append(("word/theme/theme1.xml", "application/vnd.openxmlformats-officedocument.theme+xml"))
         doc_rels.append(("rId3", "theme", "theme/theme1.xml", False))
         entries.append(("word/theme/theme1.xml", theme("Brand Serif", "Brand Sans")))
-    write(path, [("[Content_Types].xml", content_types(overrides)), ("_rels/.rels", package_rels("word/document.xml")),
-                 ("word/_rels/document.xml.rels", rels(*doc_rels)), *entries])
+    write(path, [("[Content_Types].xml", content_types(overrides + [(n, t) for n, t, _ in extra])),
+                 ("_rels/.rels", package_rels("word/document.xml")),
+                 ("word/_rels/document.xml.rels", rels(*doc_rels)), *entries, *[(n, d) for n, _, d in extra]])
 
 
 # ---------------------------------------------------------------- xlsx
@@ -217,6 +221,25 @@ def main():
     (inspect / "109-invalid-not-a-package/template.docx").write_bytes(b"This is plain text, not a package.\n")
     (inspect / "110-invalid-encrypted").mkdir(parents=True, exist_ok=True)
     (inspect / "110-invalid-encrypted/template.docx").write_bytes(bytes.fromhex("D0CF11E0A1B11AE1") + b"\x00" * 504)
+    # A DTD in a UTF-16 part, where a byte search for "<!DOCTYPE" finds nothing.
+    hidden = '<?xml version="1.0" encoding="UTF-16"?><!DOCTYPE x [<!ENTITY e "e">]><x>&e;</x>'
+    docx(inspect / "111-invalid-utf16-dtd/template.docx", main_type="document",
+         extra=[("customXml/item1.xml", "application/xml", b"\xff\xfe" + hidden.encode("utf-16-le"))])
+    # A VBA project behind a lowercase content type and an unusual name.
+    docx(inspect / "112-invalid-vba-content-type/template.docx", main_type="document",
+         extra=[("word/project.bin", "application/vnd.ms-office.vbaproject", b"\x00" * 32)])
+    # Masters and layouts listed many times over: each is read and reported once. Also a color slot
+    # outside the twelve, and a placeholder type outside ST_PlaceholderType.
+    pptx(inspect / "113-pptx-repeated-ids/template.pptx", repeat_ids=500, odd=True)
+    # A body with more elements than a part's tree may have: the final section is still found. The
+    # padding, which doesn't compress, keeps the package under 100:1. A zero page width is ignored.
+    body = "<w:p/>" * 600_000 + '<w:sectPr><w:pgSz w:w="0" w:h="16838"/></w:sectPr>'
+    seed, padding = 12345, bytearray()
+    for _ in range(120_000):
+        seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF
+        padding.append(seed >> 16 & 0xFF)
+    docx(inspect / "114-docx-large-body/template.docx", main_type="document", document_body=body,
+         extra=[("word/media/padding.bin", "application/octet-stream", bytes(padding))])
 
 
 if __name__ == "__main__":
