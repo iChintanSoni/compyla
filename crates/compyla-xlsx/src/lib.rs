@@ -9,7 +9,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 
 use compyla_core::ir::Run;
-use compyla_core::validate::xlsx::{Cell, CellValue, Link, Role, Workbook};
+use compyla_core::validate::xlsx::{Cell, CellValue, Link, Role, Workbook, builtin_format};
 use compyla_ooxml::package::{self, HYPERLINK, Package, Properties, Relationships};
 use compyla_ooxml::xml::Writer;
 
@@ -371,21 +371,6 @@ impl StyleKey {
             wrap,
         }
     }
-}
-
-/// Built-in number formats, which have no `numFmt` record (ECMA-376 Part 1, §18.8.30).
-fn builtin_format(code: &str) -> Option<u32> {
-    Some(match code {
-        "General" => 0,
-        "0" => 1,
-        "0.00" => 2,
-        "#,##0" => 3,
-        "#,##0.00" => 4,
-        "0%" => 9,
-        "0.00%" => 10,
-        "@" => 49,
-        _ => return None,
-    })
 }
 
 struct Styles {

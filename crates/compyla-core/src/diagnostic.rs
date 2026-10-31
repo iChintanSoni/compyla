@@ -16,6 +16,12 @@ pub enum Severity {
     Warning,
 }
 
+/// A relative JSON Pointer (`0/…`), as [`Diagnostic::within`] writes; an absolute one is empty or
+/// starts with `/`.
+pub(crate) fn is_relative(path: &str) -> bool {
+    !path.is_empty() && !path.starts_with('/')
+}
+
 /// The diagnostic object (`spec/diagnostic.schema.json`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Diagnostic {
@@ -104,6 +110,14 @@ impl Diagnostic {
         self.at(line, None)
     }
 
+    /// The diagnostic concerns a part of the node at its line: `pointer` (JSON Pointer reference
+    /// tokens, e.g. `3` or `header/3`) below that node. Kept as a relative JSON Pointer until a
+    /// [`crate::locate::Locator`] resolves it against the node's path (§11.3).
+    pub fn within(mut self, pointer: &str) -> Self {
+        self.path = Some(format!("0/{pointer}"));
+        self
+    }
+
     pub fn hint(mut self, hint: impl Into<String>) -> Self {
         self.hint = Some(hint.into());
         self
@@ -173,6 +187,10 @@ impl Sink {
     pub fn push(&mut self, mut diagnostic: Diagnostic) {
         if let Some(locator) = &self.locator {
             locator.locate(std::slice::from_mut(&mut diagnostic));
+        }
+        // A path still relative to its node (`within`) has nothing to resolve against.
+        if diagnostic.path.as_deref().is_some_and(is_relative) {
+            diagnostic.path = None;
         }
         self.blocking.see(&diagnostic);
         self.items.push(diagnostic);
@@ -299,6 +317,13 @@ pub fn escalate(diagnostics: &mut [Diagnostic], strict: bool) {
 mod tests {
     use super::*;
     use std::cmp::Ordering::{Greater, Less};
+
+    #[test]
+    fn a_path_left_relative_is_dropped() {
+        let mut sink = Sink::new();
+        sink.push(Diagnostic::new("formula_error", "x").at_line(3).within("2"));
+        assert_eq!(sink.into_vec()[0].path, None);
+    }
 
     #[test]
     fn a_sink_keeps_what_sorting_everything_would() {

@@ -145,7 +145,9 @@ Goal: output that is faithful to a real corporate template, and identical bytes 
 - [ ] docx template-first, with a bundled house `.dotx`; headers, footers and page numbers come from the template
 - [x] xlsx per markdown-spec.md §9 (`compyla-xlsx`): placement, typed values, parsed and allowlisted
       formulas (with `_xlfn.` prefixes), Excel tables, sheet-name repairs, links and the house style
-      (C48). The renderer only serializes the workbook the compose stage resolved, cell by cell
+      (C48), with Excel's per-sheet hyperlink and per-workbook number-format limits, and cell paths on
+      cell diagnostics (C54). The renderer only serializes the workbook the compose stage resolved,
+      cell by cell
 - [ ] xlsx theme tokens (fonts, header color) from a supplied docx or pptx template
 - [x] `convert` in the facade and the CLI (`compyla convert`), with blocking (§11.1) decided over
       every diagnostic, including any the cap drops; formats without a renderer yet are

@@ -106,6 +106,7 @@ prototype.
 | C51 | pptx rendering is specified: placeholders by slot, text (bullets, numbering, code, quotes), tables, images (`contain` by default, `cover` cropped), shared slots, links to slides, notes, and the package (§8.8) | Undefined beyond the projection | render/109–render/114 |
 | C52 | From review of the pptx renderer: images over §12.1's limits are `limit_exceeded`, and unreadable ones `image_unsupported`; nested images and tables are `pptx_ignored_content`; numbering outside DrawingML's range is text; notes are plain; `lang` reaches the output (§5, §8.8, §12.1) | Unchecked, silent, or schema-invalid output | render/115, lint/136 |
 | C53 | Nothing a slide holds is dropped: content on a layout without slots goes into its first content placeholder or over the master's body area, and a title on Blank over the master's title area; EXIF orientation is honored, with the tag set to 1 in the image written; show and view settings naming removed slides are dropped (§8.6, §8.8) | Dropped content, sideways photos, a show of missing slides | render/116 |
+| C54 | xlsx leftovers: a cell's diagnostics carry its path; table names `TRUE`, `FALSE` and anything shaped like a cell reference are invalid; more than 65,530 hyperlinks on a sheet or 200 custom number formats in a workbook are `xlsx_limit_exceeded`; conformance compares `path` where the expectation has one (§9.6, §9.7, §11.3) | Row-level paths only; names and files Excel may reject or repair | lint/137 |
 
 0.2 also corrects 0.1's *text* in one place where the prototype was right: `---` in xlsx is ignored
 without a diagnostic (§5).
@@ -1067,8 +1068,9 @@ key for a default sheet). Formulas and fragment links refer to sheets by their r
   header becomes `Column{n}`, and a repeated one gets `2`, `3`, … appended, with `table_header_invalid`
   (warning) at the directive.
 - **Name.** It must be a valid Excel table name: `[A-Za-z_\\][A-Za-z0-9_.]*`, at most 255 characters,
-  not a cell reference, and not `R`, `C` or an R1C1 reference (`R[0-9]*C[0-9]*`, `R[0-9]+`,
-  `C[0-9]+`). It must also be unique in the workbook (case-insensitive). An invalid or repeated name
+  not `TRUE` or `FALSE` (in any case), not shaped like a cell reference (one to three letters, then
+  digits, inside the grid or not: `A1`, `XFE1`), and not `R`, `C` or an R1C1 reference
+  (`R[0-9]*C[0-9]*`, `R[0-9]+`, `C[0-9]+`). *(C54)* It must also be unique in the workbook (case-insensitive). An invalid or repeated name
   produces `invalid_directive_args`, and the table gets an automatic name.
 - **Automatic names** are `Table1`, `Table2`, … in workbook order, skipping names already used.
 - **Style.** `striped` maps to `TableStyleMedium2` (the default), `plain` to `TableStyleLight1`.
@@ -1081,7 +1083,8 @@ key for a default sheet). Formulas and fragment links refer to sheets by their r
 ### 9.7 Validation
 
 Diagnostics about a table row or cell report **that row's source line**, and cell addresses in
-messages are placed addresses (§9.2). *(C15)*
+messages are placed addresses (§9.2). *(C15)* A cell's diagnostic carries the cell's path (§11.3):
+`…/rows/r/c` for a data cell, and `…/header/c` for a header cell, whose line is the table's. *(C54)*
 
 | Code | Severity | When |
 |------|----------|------|
@@ -1093,7 +1096,7 @@ messages are placed addresses (§9.2). *(C15)*
 | `mixed_column_type` | warning, advisory | §9.5. Reported at the table's line |
 | `table_header_invalid` | warning | §9.6 |
 | `xlsx_range_overlap` | warning | §9.2 |
-| `xlsx_limit_exceeded` | error | Stacking past row 1,048,576 or translation past the grid (§9.2, §9.3); text longer than 32,767 UTF-16 code units in a cell (data cells, range titles and notes); a formula longer than 8,192 UTF-16 code units as written in the cell or after translation |
+| `xlsx_limit_exceeded` | error | Stacking past row 1,048,576 or translation past the grid (§9.2, §9.3); text longer than 32,767 UTF-16 code units in a cell (data cells, range titles and notes); a formula longer than 8,192 UTF-16 code units as written in the cell or after translation; Excel's workbook limits, each reported once at the cell that passes it: more than 65,530 hyperlinks on a sheet, and more than 200 custom number formats in the workbook (formats other than the built-in `General`, `0`, `0.00`, `#,##0`, `#,##0.00`, `0%`, `0.00%` and `@`; 200 is the fewest any language version of Excel holds) *(C54)* |
 | `xlsx_empty_workbook` | warning, advisory | §9.1 |
 | `xlsx_ignored_content` | warning | §9.1, §9.4, §9.5 |
 | `link_anchor_unresolved` | warning | A fragment link matches no sheet name's slug |

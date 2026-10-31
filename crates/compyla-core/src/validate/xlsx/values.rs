@@ -94,6 +94,22 @@ fn percent_format(decimals: u8) -> String {
 }
 
 /// The format a literal takes in a `general` column (§9.5): its own type's default.
+/// The id of a built-in number format, which a workbook writes without a `numFmt` record
+/// (ECMA-376 Part 1, §18.8.30); every other format is custom.
+pub fn builtin_format(code: &str) -> Option<u32> {
+    Some(match code {
+        "General" => 0,
+        "0" => 1,
+        "0.00" => 2,
+        "#,##0" => 3,
+        "#,##0.00" => 4,
+        "0%" => 9,
+        "0.00%" => 10,
+        "@" => 49,
+        _ => return None,
+    })
+}
+
 pub fn literal_format(text: &str, literal: Literal) -> String {
     match literal {
         Literal::Percent => percent_format(percent_decimals(text, literal)),

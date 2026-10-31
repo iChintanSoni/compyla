@@ -10,7 +10,7 @@ use super::directives::{self, Args, Columns};
 use super::formula::{self, Context};
 use super::grid::{self, MAX_COLUMNS, MAX_ROW};
 use super::names::{self, fold, utf16_len};
-use super::values::{self, ColumnType, Converted, Literal};
+use super::values::{self, ColumnType, Converted, Literal, builtin_format};
 use super::walk::{self, Attached, Walk};
 use super::{
     Cell, CellValue, ExcelTable, Link, Marks, Range, Role, Sheet, Workbook, excerpt, line_of,
@@ -23,14 +23,54 @@ use crate::validate::{Slugger, at, percent_decode, row_line};
 const MAX_CELL_TEXT: usize = 32_767;
 const MAX_FORMULA: usize = 8_192;
 
-fn formula_too_long(address: &str, line: Option<usize>) -> Diagnostic {
-    at(
+/// Excel's limits on a worksheet's hyperlinks and a workbook's custom number formats: the lowest
+/// any language version of Excel holds (§9.7).
+const MAX_LINKS: usize = 65_530;
+const MAX_FORMATS: usize = 200;
+
+/// Where a cell's diagnostics point (§9.7, §11.3): the line of its row (a header cell's is the
+/// table's, a title's or note's its own), and the cell's path below the node at that line.
+struct Spot {
+    line: Option<usize>,
+    cell: Option<String>,
+}
+
+impl Spot {
+    fn data(line: Option<usize>, column: usize) -> Spot {
+        Spot {
+            line,
+            cell: Some(column.to_string()),
+        }
+    }
+
+    fn header(line: Option<usize>, column: usize) -> Spot {
+        Spot {
+            line,
+            cell: Some(format!("header/{column}")),
+        }
+    }
+
+    /// A title or note: the node itself.
+    fn node(line: Option<usize>) -> Spot {
+        Spot { line, cell: None }
+    }
+
+    fn put(&self, diagnostic: Diagnostic) -> Diagnostic {
+        let diagnostic = at(diagnostic, self.line);
+        match &self.cell {
+            Some(cell) => diagnostic.within(cell),
+            None => diagnostic,
+        }
+    }
+}
+
+fn formula_too_long(address: &str, spot: &Spot) -> Diagnostic {
+    spot.put(
         Diagnostic::new(
             "xlsx_limit_exceeded",
             format!("The formula in {address} is longer than Excel's 8,192 characters."),
         )
         .hint("Split the calculation across cells."),
-        line,
     )
 }
 
@@ -98,11 +138,14 @@ pub fn compose(document: &Document, title_line: Option<usize>, out: &mut Sink) -
         slugs: &slugs,
         matched: HashMap::new(),
         repeated: HashSet::new(),
+        links: 0,
+        formats: HashSet::new(),
         out,
     };
     let mut sheets = Vec::with_capacity(walked.sheets.len());
     for (sheet, name) in walked.sheets.iter().zip(sheet_names) {
         let mut placer = Placer::new();
+        composer.links = 0;
         let ranges = sheet
             .tables
             .iter()
@@ -234,6 +277,9 @@ struct Composer<'w, 'o> {
     matched: HashMap<usize, Vec<bool>>,
     /// `(directive, entry)` pairs already reported for naming a column an earlier entry named.
     repeated: HashSet<(usize, usize)>,
+    /// The current sheet's hyperlinks so far, and the workbook's custom number formats (§9.7).
+    links: usize,
+    formats: HashSet<String>,
     out: &'o mut Sink,
 }
 
@@ -391,13 +437,17 @@ impl Composer<'_, '_> {
         if let (Some(title), Some(row)) = (attached.title, title_row) {
             self.text_cell(
                 &title.title,
-                line_of(title.position),
+                &Spot::node(line_of(title.position)),
                 grid::address(left, row),
             );
             cells.push(self.text(row, left, Role::Title, &title.title));
         }
         if let (Some(note), Some(row)) = (attached.note, note_row) {
-            self.text_cell(&note.runs, line_of(note.position), grid::address(left, row));
+            self.text_cell(
+                &note.runs,
+                &Spot::node(line_of(note.position)),
+                grid::address(left, row),
+            );
             cells.push(self.text(row, left, Role::Note, &note.runs));
         }
         let headers: Vec<String> = (0..columns)
@@ -410,7 +460,11 @@ impl Composer<'_, '_> {
             })
             .collect();
         for (c, cell) in table.header.iter().enumerate() {
-            self.text_cell(&cell.runs, line, grid::address(left + c as u32, header_row));
+            self.text_cell(
+                &cell.runs,
+                &Spot::header(line, c),
+                grid::address(left + c as u32, header_row),
+            );
         }
 
         let args = self.args;
@@ -472,6 +526,17 @@ impl Composer<'_, '_> {
             cells.push(cell);
         }
         cells.extend(data);
+        self.limits(&cells, |cell| match cell.role {
+            Role::Title => Spot::node(attached.title.and_then(|t| line_of(t.position))),
+            Role::Note => Spot::node(attached.note.and_then(|n| line_of(n.position))),
+            Role::Header | Role::TableHeader => Spot::header(line, (cell.column - left) as usize),
+            Role::Data => Spot::data(
+                table
+                    .position
+                    .map(|p| row_line(p, (cell.row - header_row - 1) as usize)),
+                (cell.column - left) as usize,
+            ),
+        });
 
         Some(Range {
             title_row,
@@ -485,6 +550,38 @@ impl Composer<'_, '_> {
             excel_table,
             cells,
         })
+    }
+
+    /// Excel's limits over a range's cells, in order (§9.7): hyperlinks per worksheet and custom
+    /// number formats per workbook. Each is reported once, at the cell that passes it.
+    fn limits(&mut self, cells: &[Cell], spot: impl Fn(&Cell) -> Spot) {
+        for cell in cells {
+            let address = || grid::address(cell.column, cell.row);
+            if cell.link.is_some() {
+                self.links += 1;
+                if self.links == MAX_LINKS + 1 {
+                    self.out.push(spot(cell).put(
+                        Diagnostic::new(
+                            "xlsx_limit_exceeded",
+                            format!("The link in {} is this sheet's 65,531st; Excel holds at most 65,530 hyperlinks on a worksheet.", address()),
+                        )
+                        .hint("Split the linked rows across sheets."),
+                    ));
+                }
+            }
+            if builtin_format(&cell.format).is_none() && !self.formats.contains(&cell.format) {
+                self.formats.insert(cell.format.clone());
+                if self.formats.len() == MAX_FORMATS + 1 {
+                    self.out.push(spot(cell).put(
+                        Diagnostic::new(
+                            "xlsx_limit_exceeded",
+                            format!("{}'s number format `{}` is the workbook's 201st custom one; some language versions of Excel hold only 200.", address(), cell.format),
+                        )
+                        .hint("Use fewer distinct currencies or decimal places across the workbook."),
+                    ));
+                }
+            }
+        }
     }
 
     /// A text cell of `role`, in the `General` format.
@@ -541,17 +638,18 @@ impl Composer<'_, '_> {
             let line = table.position.map(|p| row_line(p, r));
             for (c, cell) in row.iter().enumerate() {
                 let address = grid::address(left + c as u32, header_row + 1 + r as u32);
+                let spot = Spot::data(line, c);
                 let text = plain_text(&cell.runs);
-                self.links(&cell.runs, line, &address);
+                self.links(&cell.runs, &spot, &address);
                 if let Some(source) = cell.raw.strip_prefix('=') {
                     // Checked before lexing too, so a formula of any size costs little (§12.1).
                     if utf16_len(source) > MAX_FORMULA {
-                        self.out.push(formula_too_long(&address, line));
+                        self.out.push(formula_too_long(&address, &spot));
                         continue;
                     }
                     match formula::translate(source, &context) {
                         Ok(formula) => {
-                            self.formula_problems(&formula, line, &address);
+                            self.formula_problems(&formula, &spot, &address);
                             if formula.past_grid.is_empty()
                                 && utf16_len(&formula.written) <= MAX_FORMULA
                             {
@@ -560,29 +658,30 @@ impl Composer<'_, '_> {
                             }
                         }
                         Err(error) => {
-                            self.out.push(at(
-                                Diagnostic::new(
-                                    "formula_error",
-                                    format!(
-                                        "The formula in {address} {}; the cell is written as text.",
-                                        error.reason
-                                    ),
-                                )
-                                .hint(error.hint),
-                                line,
-                            ));
-                            self.length(&text, line, &address);
+                            self.out.push(
+                                spot.put(
+                                    Diagnostic::new(
+                                        "formula_error",
+                                        format!(
+                                            "The formula in {address} {}; the cell is written as text.",
+                                            error.reason
+                                        ),
+                                    )
+                                    .hint(error.hint),
+                                ),
+                            );
+                            self.length(&text, &spot, &address);
                         }
                     }
                     continue;
                 }
-                self.length(&text, line, &address);
+                self.length(&text, &spot, &address);
                 if text.is_empty() {
                     continue;
                 }
                 let literal = values::classify(&text);
                 match &typed[c] {
-                    Some(kind) if !kind.accepts(literal) => self.out.push(at(
+                    Some(kind) if !kind.accepts(literal) => self.out.push(spot.put(
                         Diagnostic::new(
                             "typed_value_invalid",
                             format!("`{}` in {address} isn't a valid {} value; it is written as text.", excerpt(&text), kind.name()),
@@ -593,7 +692,6 @@ impl Composer<'_, '_> {
                             ColumnType::Percent { .. } => "Write a plain number (0.14) or a percent (14%), without grouping.",
                             _ => "Write a plain number such as 120000 or -12.5, without symbols or grouping.",
                         }),
-                        line,
                     )),
                     Some(_) => {}
                     None => literals[c].push(literal),
@@ -686,68 +784,68 @@ impl Composer<'_, '_> {
         (column_types, formulas, cells)
     }
 
-    fn formula_problems(&mut self, formula: &formula::Formula, line: Option<usize>, address: &str) {
+    fn formula_problems(&mut self, formula: &formula::Formula, spot: &Spot, address: &str) {
         for reference in &formula.out_of_range {
-            self.out.push(at(
+            self.out.push(spot.put(
                 Diagnostic::new(
                     "formula_ref_out_of_range",
                     format!("The formula in {address} refers to `{reference}`, outside its table; it is still translated."),
                 )
                 .hint("References are table-relative: the header row is row 1 and the table's first column is A. Use a sheet-qualified reference (Sheet!B5) for other cells."),
-                line,
             ));
         }
         for reference in &formula.past_grid {
-            self.out.push(at(
+            self.out.push(spot.put(
                 Diagnostic::new(
                     "xlsx_limit_exceeded",
                     format!("The formula in {address} refers to `{reference}`, which translates past the sheet's last row or column."),
                 )
                 .hint("Move the table, or fix the reference."),
-                line,
             ));
         }
         if formula.past_grid.is_empty() && utf16_len(&formula.written) > MAX_FORMULA {
-            self.out.push(formula_too_long(address, line));
+            self.out.push(formula_too_long(address, spot));
         }
     }
 
     /// A text cell: a range title, note or header cell, checked for length and links.
-    fn text_cell(&mut self, runs: &[Run], line: Option<usize>, address: String) {
-        self.length(&plain_text(runs), line, &address);
-        self.links(runs, line, &address);
+    fn text_cell(&mut self, runs: &[Run], spot: &Spot, address: String) {
+        self.length(&plain_text(runs), spot, &address);
+        self.links(runs, spot, &address);
     }
 
-    fn length(&mut self, text: &str, line: Option<usize>, address: &str) {
+    fn length(&mut self, text: &str, spot: &Spot, address: &str) {
         if utf16_len(text) > MAX_CELL_TEXT {
-            self.out.push(at(
-                Diagnostic::new(
-                    "xlsx_limit_exceeded",
-                    format!("The text of {address} is longer than Excel's 32,767 characters."),
-                )
-                .hint("Shorten the text, or split it across cells."),
-                line,
-            ));
+            self.out.push(
+                spot.put(
+                    Diagnostic::new(
+                        "xlsx_limit_exceeded",
+                        format!("The text of {address} is longer than Excel's 32,767 characters."),
+                    )
+                    .hint("Shorten the text, or split it across cells."),
+                ),
+            );
         }
     }
 
     /// §9.5: a cell gets one hyperlink; further distinct links are ignored.
-    fn links(&mut self, runs: &[Run], line: Option<usize>, address: &str) {
+    fn links(&mut self, runs: &[Run], spot: &Spot, address: &str) {
         let mut links = runs.iter().filter_map(|r| r.link.as_deref());
         let Some(first) = links.next() else { return };
         let distinct: HashSet<&str> = std::iter::once(first).chain(links).collect();
         if distinct.len() > 1 {
-            self.out.push(at(
-                Diagnostic::new(
-                    "xlsx_ignored_content",
-                    format!(
-                        "{address} has {} links; a cell keeps only its first (`{first}`).",
-                        distinct.len(),
-                    ),
-                )
-                .hint("Put each link in its own cell."),
-                line,
-            ));
+            self.out.push(
+                spot.put(
+                    Diagnostic::new(
+                        "xlsx_ignored_content",
+                        format!(
+                            "{address} has {} links; a cell keeps only its first (`{first}`).",
+                            distinct.len(),
+                        ),
+                    )
+                    .hint("Put each link in its own cell."),
+                ),
+            );
         }
     }
 }

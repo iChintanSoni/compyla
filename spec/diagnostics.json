@@ -640,7 +640,7 @@
       "since": "0.2",
       "status": "active",
       "spec": "§9.2, §9.3, §9.7",
-      "summary": "Content would lie beyond Excel's grid, or a cell's text or a formula exceeds Excel's length limit."
+      "summary": "Content would lie beyond Excel's grid, a cell's text or a formula exceeds Excel's length limit, or a sheet's hyperlinks or the workbook's custom number formats exceed Excel's limits."
     },
     {
       "code": "xlsx_range_overlap",

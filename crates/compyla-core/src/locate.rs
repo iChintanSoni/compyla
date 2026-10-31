@@ -32,8 +32,8 @@ pub struct Locator {
 }
 
 impl Locator {
-    /// Gives each diagnostic with a synthetic line its node's path (unless it has one), and its
-    /// original line and column.
+    /// Gives each diagnostic with a synthetic line its node's path (unless it has one; a relative
+    /// one is resolved against it), and its original line and column.
     pub fn locate(&self, diagnostics: &mut [Diagnostic]) {
         for diagnostic in diagnostics {
             // Every line a profile reports comes from a renumbered position (see the module docs).
@@ -48,9 +48,17 @@ impl Locator {
             let Some(slot) = diagnostic.line.and_then(|line| self.slots.get(line)) else {
                 continue;
             };
-            if diagnostic.path.is_none() {
-                diagnostic.path = slot.path.clone();
-            }
+            diagnostic.path = match diagnostic.path.take() {
+                None => slot.path.clone(),
+                // Relative to the node at this line (`Diagnostic::within`).
+                Some(relative) if crate::diagnostic::is_relative(&relative) => {
+                    match (&slot.path, relative.strip_prefix("0/")) {
+                        (Some(base), Some(rest)) => Some(format!("{base}/{rest}")),
+                        _ => slot.path.clone(),
+                    }
+                }
+                path => path,
+            };
             diagnostic.column = diagnostic.column.and(slot.column);
             diagnostic.line = slot.line;
         }
@@ -324,7 +332,11 @@ mod tests {
         ]}"##;
         assert_eq!(
             lint_ir(json, Format::Xlsx),
-            owned(&[("formula_error", Some(6), Some("/body/0/children/0/rows/1"))])
+            owned(&[(
+                "formula_error",
+                Some(6),
+                Some("/body/0/children/0/rows/1/0")
+            )])
         );
     }
 

@@ -22,8 +22,8 @@ fn read_json(path: &Path) -> Value {
     serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
 }
 
-/// markdown-spec.md §11.3: in order, duplicates kept; `line` always compared; `column` only when
-/// the expected diagnostic has one.
+/// markdown-spec.md §11.3: in order, duplicates kept; `line` always compared; `column` and `path`
+/// only when the expected diagnostic has them.
 fn diagnostics_match(actual: &[compyla::Diagnostic], expected: &Value) -> bool {
     let expected = expected.as_array().unwrap();
     actual.len() == expected.len()
@@ -33,13 +33,17 @@ fn diagnostics_match(actual: &[compyla::Diagnostic], expected: &Value) -> bool {
                 && severity == e["severity"]
                 && a.line.map(|l| l as u64) == e["line"].as_u64()
                 && (e["column"].is_null() || a.column.map(|c| c as u64) == e["column"].as_u64())
+                && (e["path"].is_null() || a.path.as_deref() == e["path"].as_str())
         })
 }
 
 fn summary(actual: &[compyla::Diagnostic]) -> String {
     actual
         .iter()
-        .map(|d| format!("{}@{:?}:{:?}", d.code, d.line, d.column))
+        .map(|d| match &d.path {
+            Some(path) => format!("{}@{:?}:{:?} {path}", d.code, d.line, d.column),
+            None => format!("{}@{:?}:{:?}", d.code, d.line, d.column),
+        })
         .collect::<Vec<_>>()
         .join(", ")
 }
