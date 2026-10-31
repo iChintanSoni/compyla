@@ -148,10 +148,8 @@ npm i @compyla/cli         # the compyla command (pulls in the SDK)
 
 ## Contributing
 
-Not yet open for external contributions. Internal setup:
-
-```bash
-git clone <repo>
-cd compyla
-# pnpm/turbo monorepo — see docs/architecture.md for the package layout
-```
+Issues and discussions are welcome: [open an issue](https://github.com/iChintanSoni/compyla/issues/new/choose)
+or [start a discussion](https://github.com/iChintanSoni/compyla/discussions). Code contributions
+aren't open yet. [CONTRIBUTING.md](CONTRIBUTING.md) describes how the work is done,
+[SECURITY.md](SECURITY.md) how to report a vulnerability privately, and the
+[project board](https://github.com/users/iChintanSoni/projects/9) what's planned.

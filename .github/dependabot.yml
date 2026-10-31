@@ -1,0 +1,32 @@
+# Dependency updates, grouped so a week's minor and patch bumps arrive as one PR per ecosystem.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels: ["dependencies", "type: chore"]
+    groups:
+      rust:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels: ["dependencies", "type: chore"]
+    groups:
+      javascript:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels: ["dependencies", "type: chore", "area: ci"]
+    groups:
+      actions:
+        patterns: ["*"]

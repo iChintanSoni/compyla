@@ -1,0 +1,74 @@
+name: Bug report
+description: Compyla produces wrong output, a wrong diagnostic, crashes, or hangs.
+title: "[Bug] "
+labels: ["type: bug", "status: needs-triage"]
+projects: ["iChintanSoni/9"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. A minimal input that reproduces the problem is the most useful thing you can give.
+        **Security problems (a crash or hang from hostile input, path traversal, zip bombs…) go to [private reporting](https://github.com/iChintanSoni/compyla/security/advisories/new), not here.**
+  - type: dropdown
+    id: format
+    attributes:
+      label: Output format
+      options: [pptx, xlsx, docx, pdf, Not format-specific]
+    validations:
+      required: true
+  - type: dropdown
+    id: host
+    attributes:
+      label: Where you ran it
+      options: [CLI, WASM, Rust library, Other]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: A release, or the commit SHA you built from.
+      placeholder: e.g. 0.1.0, or d4383c8
+    validations:
+      required: true
+  - type: textarea
+    id: input
+    attributes:
+      label: Input
+      description: The smallest markdown (or IR JSON) that shows the problem.
+      render: markdown
+    validations:
+      required: true
+  - type: textarea
+    id: template
+    attributes:
+      label: Template
+      description: If a template was used, its kind (.potx, .dotx…) and where it came from. Attach it if you can share it.
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: Wrong output (attach the file or a screenshot), the crash message, or the diagnostic you got.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: Cite the spec section if you can (docs/markdown-spec.md).
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Output of `compyla lint <file> --json` (or `convert --json`).
+      render: json
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and didn't find this one.
+          required: true
+        - label: The input above is as small as I could make it.

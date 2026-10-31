@@ -1,0 +1,25 @@
+name: Task
+description: Planned work, such as a roadmap item, a refactor or tooling.
+title: "[Task] "
+labels: ["type: task", "status: needs-triage"]
+projects: ["iChintanSoni/9"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What and why, with links to the roadmap, spec sections or earlier issues.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What's in, what's explicitly out.
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: Observable outcomes, ideally tests and fixtures.
+    validations:
+      required: true

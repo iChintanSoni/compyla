@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Ask a question
+    url: https://github.com/iChintanSoni/compyla/discussions/categories/q-a
+    about: How do I…? Is this expected? Ask in Discussions, where answers stay searchable.
+  - name: Suggest an idea
+    url: https://github.com/iChintanSoni/compyla/discussions/categories/ideas
+    about: Not sure it's a feature yet? Start in Discussions; it becomes an issue once it's concrete.
+  - name: Report a security vulnerability
+    url: https://github.com/iChintanSoni/compyla/security/advisories/new
+    about: Privately, never in a public issue (see SECURITY.md).

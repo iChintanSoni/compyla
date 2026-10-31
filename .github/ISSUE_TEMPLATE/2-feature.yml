@@ -1,0 +1,45 @@
+name: Feature request
+description: A new capability, option, directive or output behavior.
+title: "[Feature] "
+labels: ["type: feature", "status: needs-triage"]
+projects: ["iChintanSoni/9"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What should Compyla do? Show the markdown you'd write and the output you'd expect.
+    validations:
+      required: true
+  - type: dropdown
+    id: formats
+    attributes:
+      label: Formats affected
+      multiple: true
+      options: [pptx, xlsx, docx, pdf, All, None (tooling, hosts)]
+    validations:
+      required: true
+  - type: dropdown
+    id: spec
+    attributes:
+      label: Spec impact
+      description: Compyla is spec-first; behavior changes start in docs/markdown-spec.md.
+      options: [None, Needs a spec change, Not sure]
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: How we'll know it works, ideally as conformance fixtures.
