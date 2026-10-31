@@ -180,6 +180,7 @@ fn a_link_is_checked_as_a_browser_reads_it() {
             { "text": "a", "link": " file:///etc/passwd" },
             { "text": "b", "link": "\tms-msdt:/id PCWDiagnostic" },
             { "text": "c", "link": "fi\tle://host/share" },
+            { "text": "e", "link": "%C2%A0file:///etc/passwd" },
             { "text": "d", "link": " https://a.example " }
         ] }]
     });
@@ -195,6 +196,7 @@ fn a_link_is_checked_as_a_browser_reads_it() {
             Some("/body/0/runs/0/link".into()),
             Some("/body/0/runs/1/link".into()),
             Some("/body/0/runs/2/link".into()),
+            Some("/body/0/runs/3/link".into()),
         ]
     );
     let compyla::ir::Block::Paragraph(p) = &document.body[0] else {
