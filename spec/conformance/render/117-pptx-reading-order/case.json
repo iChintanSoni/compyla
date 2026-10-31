@@ -1,5 +1,5 @@
 {
-  "description": "Shapes are written in reading order: by their areas' left edges, then top edges, so a caption beside a picture or a table is read after the title above it. A title on Blank is a title placeholder of its own. Both found by PowerPoint's accessibility check.",
+  "description": "Shapes are written in reading order: slots whose areas overlap horizontally form a column, columns go left to right and each top to bottom, so a caption beside a picture or a table is read after the title above it. A title on Blank is a title placeholder of its own. Both found by PowerPoint's accessibility check.",
   "spec": [
     "§8.8",
     "C55"

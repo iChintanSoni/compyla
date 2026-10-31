@@ -185,3 +185,18 @@ fn a_column_of_formulas_is_as_wide_as_what_they_may_show() {
          <col min=\"4\" max=\"4\" width=\"12\" customWidth=\"1\"/>"
     );
 }
+
+#[test]
+fn a_formula_takes_widths_from_its_own_table() {
+    // A number in a table stacked above doesn't stand for this table's formulas.
+    let alone =
+        "# S\n\n::: columns B:currency\n:::\n\n| Total | Price |\n|---|---|\n| =B2*10 | 120000 |\n";
+    let stacked = "# S\n\n| Code |\n|---|\n| 7 |\n\n::: columns B:currency\n:::\n\n| Total | Price |\n|---|---|\n| =B2*10 | 120000 |\n";
+    let width = |source: &str| {
+        let sheet = part(&render(source), "xl/worksheets/sheet1.xml");
+        let at = sheet.find("<col min=\"1\"").unwrap();
+        attribute(&sheet, at, "width").unwrap()
+    };
+    assert_eq!(width(alone), "15");
+    assert_eq!(width(stacked), "15");
+}

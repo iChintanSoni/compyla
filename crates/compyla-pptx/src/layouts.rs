@@ -202,14 +202,43 @@ fn placeholders(part: &Element) -> Vec<Placeholder> {
     out
 }
 
+/// ST_Coordinate's and ST_PositiveCoordinate's bounds (ECMA-376 Part 1, §20.1.10.16, §20.1.10.42):
+/// a template's geometry is held to them, so arithmetic on it can't overflow.
+const MIN_COORDINATE: i64 = -27_273_042_329_600;
+const MAX_COORDINATE: i64 = 27_273_042_316_900;
+
 fn rect(xfrm: &Element) -> Option<Rect> {
     let off = xfrm.child(MAIN_A, "off")?;
     let ext = xfrm.child(MAIN_A, "ext")?;
-    let number = |e: &Element, a: &str| e.attr(a)?.parse::<i64>().ok();
+    let number = |e: &Element, a: &str, min: i64| {
+        Some(e.attr(a)?.parse::<i64>().ok()?.clamp(min, MAX_COORDINATE))
+    };
     Some(Rect {
-        x: number(off, "x")?,
-        y: number(off, "y")?,
-        cx: number(ext, "cx")?.max(0),
-        cy: number(ext, "cy")?.max(0),
+        x: number(off, "x", MIN_COORDINATE)?,
+        y: number(off, "y", MIN_COORDINATE)?,
+        cx: number(ext, "cx", 0)?,
+        cy: number(ext, "cy", 0)?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn geometry_is_held_to_the_schemas_bounds() {
+        let xfrm = compyla_ooxml::dom::parse(
+            br#"<a:xfrm xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:off x="9223372036854775807" y="-9223372036854775808"/><a:ext cx="-5" cy="9223372036854775807"/></a:xfrm>"#,
+        )
+        .unwrap();
+        assert_eq!(
+            rect(&xfrm),
+            Some(Rect {
+                x: MAX_COORDINATE,
+                y: MIN_COORDINATE,
+                cx: 0,
+                cy: MAX_COORDINATE,
+            })
+        );
+    }
 }

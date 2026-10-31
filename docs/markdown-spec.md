@@ -848,12 +848,12 @@ characters, plus 2 for padding, at most 60, and never narrower than Excel's defa
 - Text displays its longest line. Characters in U+1100–115F, U+2E80–303E, U+3041–33FF,
   U+3400–4DBF, U+4E00–9FFF, U+A000–A4CF, U+AC00–D7A3, U+F900–FAFF, U+FE30–FE4F, U+FF00–FF60,
   U+FFE0–FFE6 and U+20000–3FFFD (East Asian wide and fullwidth) count 2.
-- A number displays as its format writes it, rounded to its decimals: sign, currency prefix, digits
-  with thousands separators, decimals, `%`. A `General` number displays as written, at most 11 characters, and a date 10.
+- A number displays as its format writes it, its decimal value rounded half up to the format's
+  decimals: sign, currency prefix, digits with thousands separators, decimals, `%`. A `General` number displays as written, at most 11 characters, and a date 10.
   A boolean counts 5.
 - A formula's result isn't known, and can outgrow the numbers it is computed from. A formula
-  displays 2 more than the widest of: the numbers in its column (or, when its column has none, in
-  its table) and its format's `0`. A date formula displays 10.
+  displays 2 more than the widest of: the numbers in its column of its own table (or, when that
+  column has none, in its whole table) and its format's `0`. A date formula displays 10.
 - An Excel table's header cell with a filter button counts 2 more. Range titles and notes, merged
   across their range, widen nothing.
 
@@ -1053,8 +1053,9 @@ whatever `lang` is.
   cell produce `xlsx_ignored_content`, and only the first is kept.
 - Range titles and notes are written to cells, so this rule and the cell text limit (§9.7) apply to
   them too.
-- A cell with a hyperlink shows its text underlined, in the link color, except in an Excel table,
-  where it keeps the table style's text color, which the style's fills contrast with. *(C55)* A cell
+- A cell with a hyperlink shows its text underlined, in the link color, except in an Excel table
+  (its header and data rows; a title or note above it isn't in it), where it keeps the table style's
+  text color, which the style's fills contrast with. *(C55)* A cell
   whose text has a line break wraps its text. *(C48)*
 - A number or boolean whose text is bold, italic or struck through keeps that emphasis as the cell's
   font. Rich text keeps the cell's own styling (a bold title, a link's underline) in every run.
