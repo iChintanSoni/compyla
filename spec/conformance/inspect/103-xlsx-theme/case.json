@@ -1,0 +1,10 @@
+{
+  "description": "An xltx: its theme and font names. xlsx templates have no styles or layouts in the report.",
+  "spec": [
+    "\u00a710.4",
+    "\u00a710.5",
+    "C50"
+  ],
+  "oracle": "none",
+  "template": "template.xltx"
+}

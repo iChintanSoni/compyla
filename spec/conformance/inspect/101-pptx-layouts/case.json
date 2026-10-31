@@ -1,0 +1,10 @@
+{
+  "description": "A potx: theme fonts and colors, embedded fonts, slide size, and every layout in master order with its OOXML type and placeholders, including a localized name.",
+  "spec": [
+    "\u00a710.5",
+    "\u00a78.5",
+    "C50"
+  ],
+  "oracle": "none",
+  "template": "template.potx"
+}

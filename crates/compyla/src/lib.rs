@@ -125,6 +125,13 @@ pub fn load_ir(json: &str) -> Result<(ir::Document, Vec<Diagnostic>), OperationE
     Ok((loaded.document, loaded.diagnostics))
 }
 
+/// `inspect_template` (markdown-spec.md §10.5): the template report
+/// (`spec/template-report.schema.json`) for a template package's bytes. An invalid template is
+/// reported, not refused: its report has `kind: null` and its `template_invalid` issue.
+pub fn inspect_template(bytes: &[u8]) -> serde_json::Value {
+    compyla_ooxml::inspect(bytes)
+}
+
 /// The resolver of a host with none: in `lint`, every image exists without bytes (§10.3).
 pub fn no_assets(_src: &str) -> Asset {
     Asset::Exists

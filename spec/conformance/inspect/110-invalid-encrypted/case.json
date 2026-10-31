@@ -1,0 +1,9 @@
+{
+  "description": "An encrypted (OLE-wrapped) package is template_invalid.",
+  "spec": [
+    "\u00a710.4",
+    "C50"
+  ],
+  "oracle": "none",
+  "template": "template.docx"
+}

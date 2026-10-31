@@ -1,0 +1,10 @@
+{
+  "description": "A package that inflates more than 100:1 is template_invalid (\u00a712.1).",
+  "spec": [
+    "\u00a710.4",
+    "\u00a712.1",
+    "C50"
+  ],
+  "oracle": "none",
+  "template": "template.docx"
+}

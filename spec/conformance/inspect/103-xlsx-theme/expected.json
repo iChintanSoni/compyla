@@ -1,0 +1,38 @@
+{
+  "kind": "xlsx",
+  "theme": {
+    "fonts": {
+      "major": "Brand Display",
+      "minor": "Brand Sans"
+    },
+    "colors": {
+      "dk1": "000000",
+      "lt1": "FFFFFF",
+      "dk2": "1F2A44",
+      "lt2": "E8ECF3",
+      "accent1": "2F5BEA",
+      "accent2": "00A88F",
+      "accent3": "F2A900",
+      "accent4": "D64545",
+      "accent5": "7A4FD1",
+      "accent6": "4A5568",
+      "hlink": "0563C1",
+      "folHlink": "954F72"
+    }
+  },
+  "fonts": [
+    {
+      "family": "Brand Display",
+      "embedded": false
+    },
+    {
+      "family": "Brand Sans",
+      "embedded": false
+    },
+    {
+      "family": "Brand Grid",
+      "embedded": false
+    }
+  ],
+  "issues": []
+}

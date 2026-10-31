@@ -10,7 +10,7 @@ publish.workspace = true
 
 [dependencies]
 compyla-core.workspace = true
-compyla-ooxml = { workspace = true, optional = true }
+compyla-ooxml.workspace = true
 compyla-xlsx = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
@@ -19,7 +19,7 @@ serde_json.workspace = true
 default = ["xlsx"]
 # Renderers. A build without one reports `renderer_unavailable` (markdown-spec.md §10.6), as the
 # core-only WASM build does for every format.
-xlsx = ["dep:compyla-xlsx", "dep:compyla-ooxml"]
+xlsx = ["dep:compyla-xlsx"]
 
 [dev-dependencies]
 jsonschema = { version = "0.60", default-features = false }

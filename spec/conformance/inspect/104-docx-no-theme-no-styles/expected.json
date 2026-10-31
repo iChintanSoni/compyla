@@ -1,0 +1,40 @@
+{
+  "kind": "docx",
+  "theme": {
+    "fonts": {},
+    "colors": {}
+  },
+  "fonts": [
+    {
+      "family": "Brand Serif",
+      "embedded": true
+    },
+    {
+      "family": "Brand Mono",
+      "embedded": false
+    }
+  ],
+  "styles": [],
+  "page": {
+    "width": 612,
+    "height": 792,
+    "margins": {
+      "top": 72,
+      "right": 72,
+      "bottom": 72,
+      "left": 72
+    }
+  },
+  "issues": [
+    {
+      "code": "no_theme",
+      "severity": "warning",
+      "message": "The template has no theme part; default fonts and colors are used."
+    },
+    {
+      "code": "no_styles_xml",
+      "severity": "warning",
+      "message": "The template has no styles part; the house styles are used."
+    }
+  ]
+}

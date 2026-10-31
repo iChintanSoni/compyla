@@ -1,0 +1,15 @@
+{
+  "kind": null,
+  "theme": {
+    "fonts": {},
+    "colors": {}
+  },
+  "fonts": [],
+  "issues": [
+    {
+      "code": "template_invalid",
+      "severity": "error",
+      "message": "The template is macro-enabled (it contains a VBA project)."
+    }
+  ]
+}
