@@ -664,17 +664,22 @@ fn tag_name(html: &str) -> Option<&str> {
     (len > 0 && rest.chars().next()?.is_ascii_alphabetic()).then(|| &rest[..len])
 }
 
-/// markdown-spec.md §4.5 link allowlist, on the destination as a browser reads it and percent-decoded
-/// too (C59).
+/// markdown-spec.md §4.5 link allowlist, on the destination as a browser reads it, refusing other
+/// controls and a leading non-ASCII space or formatting character; percent-decoded, the part
+/// before any query or fragment must pass too (C59).
 fn destination_allowed(url: &str) -> bool {
     let read = |url: &str| -> String {
         url.trim_matches(|c: char| c <= ' ').chars().filter(|c| !matches!(c, '\t' | '\n' | '\r')).collect()
     };
+    let formatting = |c: char| {
+        matches!(c, '\u{061C}' | '\u{200B}'..='\u{200F}' | '\u{2028}'..='\u{202E}' | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}')
+    };
     let url = read(url);
-    if url.chars().any(char::is_control) {
+    if url.chars().any(char::is_control) || url.starts_with(|c: char| c.is_whitespace() || formatting(c)) {
         return false;
     }
-    let decoded: String = read(&percent_decoded(&url)).chars().filter(|c| !c.is_control()).collect();
+    let path = url.split(['?', '#']).next().unwrap_or_default();
+    let decoded: String = read(&percent_decoded(path)).chars().filter(|c| !c.is_control()).collect();
     allowed(&url) && allowed(&decoded)
 }
 

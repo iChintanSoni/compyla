@@ -33,7 +33,7 @@ fn main() -> ExitCode {
     match run(&args) {
         Ok(code) => code,
         Err(message) => {
-            eprintln!("compyla: {message}");
+            eprintln!("compyla: {}", printable(&message));
             ExitCode::from(2)
         }
     }
@@ -69,7 +69,7 @@ fn parse(args: &[String]) -> Result<ExitCode, String> {
     let result = compyla::parse(&source);
     println!(
         "{}",
-        serde_json::to_string_pretty(&result).expect("IR serializes")
+        json_printable(serde_json::to_string_pretty(&result).expect("IR serializes"))
     );
     Ok(exit_for(&result.diagnostics))
 }
@@ -200,8 +200,10 @@ fn report(args: &Args, diagnostics: &[Diagnostic]) {
     if args.json {
         println!(
             "{}",
-            serde_json::to_string_pretty(&serde_json::json!({ "diagnostics": diagnostics }))
-                .expect("diagnostics serialize")
+            json_printable(
+                serde_json::to_string_pretty(&serde_json::json!({ "diagnostics": diagnostics }))
+                    .expect("diagnostics serialize")
+            )
         );
     } else {
         for d in diagnostics {
@@ -223,7 +225,7 @@ fn inspect(file: &Path) -> Result<ExitCode, String> {
     let report = compyla::inspect_template(&read_template(file)?);
     println!(
         "{}",
-        serde_json::to_string_pretty(&report).expect("the report serializes")
+        json_printable(serde_json::to_string_pretty(&report).expect("the report serializes"))
     );
     let invalid = report["kind"].is_null();
     Ok(if invalid {
@@ -285,13 +287,12 @@ fn print_diagnostic(file: &Path, d: &Diagnostic) {
 }
 
 /// `text` safe for a terminal: control and bidi formatting characters escaped. Messages can quote
-/// a template's text (layout names, for one), and nothing they quote may move the cursor, color
-/// the line or reorder it.
+/// a template's or a document's text (layout names, for one), and nothing they quote may move the
+/// cursor, color the line or reorder it.
 fn printable(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
-        let formatting = matches!(c, '\u{200E}' | '\u{200F}' | '\u{061C}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}');
-        if c.is_control() || formatting {
+        if c.is_control() || formatting(c) {
             out.extend(c.escape_unicode());
         } else {
             out.push(c);
@@ -300,10 +301,59 @@ fn printable(text: &str) -> String {
     out
 }
 
+/// JSON safe for a terminal: serde escapes C0 controls in strings (and its own line breaks must
+/// stay); this writes DEL, C1 controls and bidi formatting characters as `\uXXXX` too, which can
+/// only occur in strings, so it is still the same JSON.
+fn json_printable(json: String) -> String {
+    let mut out = String::with_capacity(json.len());
+    for c in json.chars() {
+        if ('\u{7F}'..='\u{9F}').contains(&c) || formatting(c) {
+            out.push_str(&format!("\\u{:04x}", c as u32));
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Characters that change how a line reads without showing (as compyla_core::diagnostic does).
+fn formatting(c: char) -> bool {
+    matches!(c, '\u{061C}' | '\u{200B}'..='\u{200F}' | '\u{2028}'..='\u{202E}' | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}')
+}
+
 fn exit_for(diagnostics: &[Diagnostic]) -> ExitCode {
     if diagnostics.iter().any(|d| d.severity == Severity::Error) {
         ExitCode::from(1)
     } else {
         ExitCode::SUCCESS
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn text_for_a_terminal_has_no_controls_or_bidi_characters() {
+        let text = printable("a\u{1b}]0;title\u{7}\u{1b}[31m\u{202e}b\u{9b}c\n");
+        assert!(
+            !text.contains(['\u{1b}', '\u{7}', '\u{202e}', '\u{9b}', '\n']),
+            "{text}"
+        );
+        assert!(text.starts_with(r"a\u{1b}]0;title\u{7}"));
+    }
+
+    #[test]
+    fn json_for_a_terminal_is_the_same_json() {
+        let value = serde_json::json!({ "message": "x\u{202e}y\u{9b}z\u{7f}\u{1b}" });
+        let json = json_printable(serde_json::to_string_pretty(&value).unwrap());
+        assert!(
+            !json.contains(['\u{202e}', '\u{9b}', '\u{7f}', '\u{1b}']),
+            "{json}"
+        );
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&json).unwrap(),
+            value
+        );
     }
 }

@@ -1,5 +1,5 @@
 {
-  "description": "A destination is checked percent-decoded too: %5C%5Chost%5Cshare is a UNC path and is removed with link_scheme_blocked, keeping its text; an encoded relative path stays (§4.5, C59).",
+  "description": "A destination is checked as a browser reads it, and percent-decoded before any query or fragment too (§4.5, C59): %5C%5Chost%5Cshare is a UNC path and Special%3ASearch has a scheme, so both are removed with link_scheme_blocked, keeping their text, as is a destination behind a no-break space; an encoded relative path and an encoded backslash in a query stay.",
   "spec": [
     "§4.5",
     "C59"

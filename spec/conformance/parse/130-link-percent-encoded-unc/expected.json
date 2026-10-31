@@ -12,6 +12,16 @@
           {
             "text": "ok",
             "link": "docs/a%20b.md"
+          },
+          {
+            "text": " "
+          },
+          {
+            "text": "query",
+            "link": "search?q=C%3A%5CUsers"
+          },
+          {
+            "text": " wiki nbsp"
           }
         ],
         "position": {
@@ -27,6 +37,18 @@
       "severity": "warning",
       "line": 1,
       "column": 1
+    },
+    {
+      "code": "link_scheme_blocked",
+      "severity": "warning",
+      "line": 1,
+      "column": 80
+    },
+    {
+      "code": "link_scheme_blocked",
+      "severity": "warning",
+      "line": 1,
+      "column": 105
     }
   ]
 }
