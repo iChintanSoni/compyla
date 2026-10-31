@@ -35,16 +35,16 @@ The spec is the source of truth, not the code (D16). It consists of:
 
 A behavior change goes in this order:
 
-1. The spec text.
-2. A C-numbered row in the change table. Its Fixtures column must cite existing `suite/NNN`
-   fixtures.
-3. The registry and schemas, where affected. A new code must also appear as `` `code` `` in
-   markdown-spec.md.
-4. Fixtures. Each `case.json`'s `spec` list must name existing sections or C-numbers.
-5. Code.
+1. The spec text, and the registry and schemas where affected. A new code must also appear as
+   `` `code` `` in markdown-spec.md.
+2. Fixtures. Each `case.json`'s `spec` list names existing sections or C-numbers.
+3. A C-numbered row in the change table, whose Fixtures column cites those fixtures as `suite/NNN`.
+4. Code.
 
-`node spec/tools/check.mjs` enforces the cross-references in steps 2–4. A behavior change without a
-fixture isn't done. The code cites `§`, `C` and `D` numbers in doc comments throughout; keep doing so.
+Once these are in place, `node spec/tools/check.mjs` checks the cross-references: codes mentioned in
+markdown-spec.md, `case.json` references, and cited parse, lint, compose and render fixtures. It
+doesn't check inspect citations, or the numbers inside a range. A behavior change without a fixture
+isn't done. The code cites `§`, `C` and `D` numbers in doc comments throughout; keep doing so.
 
 `crates/compyla-core/src/diagnostic.rs` compiles in `spec/diagnostics.json` with `include_str!`.
 Emitting a code that isn't in the registry panics, so register a new code before using it.
@@ -77,7 +77,8 @@ cargo build --release -p compyla-wasm --target wasm32-unknown-unknown   # core-o
 Each conformance suite is a single `#[test]` that loops over every fixture directory and reports all
 failures by fixture name, so `cargo test` can't select one fixture. `render_suite` prints its pending
 fixtures only with `-- --nocapture`. To reproduce one fixture by hand, run its `input.md` through the
-CLI. The CLI resolves assets from the filesystem, not from the fixture's `assets` list.
+CLI with its `case.json` options as `--format`, `--strict` and `--template <fixture dir>/<file>`. The
+CLI resolves assets from the filesystem, not from the fixture's `assets` list.
 
 Using the CLI (`hosts/cli`). Write output outside the repo: without `-o`, `convert` writes next to
 its input.
@@ -109,7 +110,7 @@ The layering is strict (D8): **core crates → the `compyla` facade → hosts**.
 `compyla-core` directly.
 
 - **`compyla-core`** holds the parser, the IR, validation and the per-format composed models. It does
-  no I/O (D11) and never touches the filesystem or network. Image bytes come through the host's
+  no I/O (D11): no filesystem, no network. Image bytes come through the host's
   asset resolver (`Fn(&str) -> Asset`). Of a template, core sees only its layouts
   (`validate::pptx::layout::TemplateLayouts`). That is what lets one core build for native, WASM,
   napi-rs and PyO3.
@@ -119,9 +120,15 @@ The layering is strict (D8): **core crates → the `compyla` facade → hosts**.
   - `ir_input.rs` validates IR JSON submitted in place of markdown (§10.7).
   - **Compose lives in `validate/`** (D15). `validate::pptx::model` builds the `Deck` and
     `validate::xlsx` builds the `Workbook`. `lint` and `convert` share this one composed model, so
-    they can't disagree. Put placement, inference and fit logic in compose, not in a renderer. The
-    renderers serialize what compose decided. One exception today: `compyla-pptx` binds layouts
-    itself when it renders into the house template.
+    they can't disagree. Put placement, inference and fit decisions in compose, not in a renderer.
+    Renderers turn those decisions into geometry, which core can't see. `compyla-pptx` does four
+    things:
+    - assigns slots to the template's placeholders;
+    - puts free shapes over the master's areas;
+    - orders shapes for reading;
+    - fits images.
+
+    It also binds layouts itself for the house template. `compyla-xlsx` sizes columns.
 - **`compyla-ooxml`** provides:
   - the deterministic zip writer (fixed timestamps and order, pure-Rust DEFLATE);
   - an XML writer that text can't escape from;
@@ -167,16 +174,18 @@ lint, compose, render and inspect. An `inspect` fixture has no `input.md`; its `
 - **Diagnostics** are compared in §11.2 order:
   - `code`, `severity` and `line` always (an absent line must match an absent line);
   - `column` and `path` only where the expected diagnostic has them;
-  - `message` and `hint` never;
-  - an inspect fixture's `issues` only as `(code, severity)`.
+  - `message` and `hint` never.
 
   Put a `column` in an expectation only where the code's registry `position` has one.
+- **Inspect fixtures** match the report exactly, except `issues`, which are compared as
+  `(code, severity)` in the report's own order.
 - **Render fixtures** are rendered twice and must be byte-identical.
   - `spec/tools/render_check.py` then projects the file into styles, slides, cells, text and XPath
     assertions.
   - Only the keys a fixture lists under `output` are checked.
   - Paragraphs and texts match as in-order subsequences.
-- **Never hand-make template packages.** Edit the generating script, regenerate, and commit both:
+- **Never hand-make template packages.** Edit the generating script, regenerate, and commit the
+  script with what it generates. The generators:
   - the template packages for `inspect`, and for any other suite that needs one, come from
     `python3 -I spec/tools/make_templates.py`, which regenerates every one of them at once;
   - `house.potx` comes from `python3 -I crates/compyla-pptx/house/make_house.py`.
