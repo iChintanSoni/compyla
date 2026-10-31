@@ -76,7 +76,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.89
+      # The toolchain goes through the input, not the ref: Dependabot reads a ref like `@1.89` as
+      # an action release and "bumps" it to a Rust that doesn't exist (#51).
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.89"
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --workspace --lib --bins
 

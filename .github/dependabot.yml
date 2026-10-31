@@ -11,15 +11,16 @@ updates:
       rust:
         update-types: [minor, patch]
 
+  # The TypeScript prototype under packages/ is frozen as the conformance oracle until Phase D
+  # retires it (#27), so its versions stay put: a limit of 0 turns version updates off. Security
+  # updates still arrive; they have their own limit.
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
       day: monday
+    open-pull-requests-limit: 0
     labels: ["dependencies", "type: chore"]
-    groups:
-      javascript:
-        update-types: [minor, patch]
 
   - package-ecosystem: github-actions
     directory: /
