@@ -105,7 +105,7 @@ prototype.
 | C50 | `inspect_template` is specified end to end: an invalid template's report has `kind: null` and its reason; layouts report their OOXML type; Word's page defaults where a template is silent (§10.4, §10.5) | Undefined for invalid packages | inspect/101–110 |
 | C51 | pptx rendering is specified: placeholders by slot, text (bullets, numbering, code, quotes), tables, images (`contain` by default, `cover` cropped), shared slots, links to slides, notes, and the package (§8.8) | Undefined beyond the projection | render/109–render/114 |
 | C52 | From review of the pptx renderer: images over §12.1's limits are `limit_exceeded`, and unreadable ones `image_unsupported`; nested images and tables are `pptx_ignored_content`; numbering outside DrawingML's range is text; notes are plain; `lang` reaches the output (§5, §8.8, §12.1) | Unchecked, silent, or schema-invalid output | render/115, lint/136 |
-| C53 | Nothing a slide holds is dropped: content on a layout without slots goes into its first content placeholder or over the master's body area, and a title on Blank over the master's title area; EXIF orientation is honored; show settings naming removed slides are dropped (§8.6, §8.8) | Dropped content, sideways photos, a show of missing slides | render/116 |
+| C53 | Nothing a slide holds is dropped: content on a layout without slots goes into its first content placeholder or over the master's body area, and a title on Blank over the master's title area; EXIF orientation is honored, with the tag set to 1 in the image written; show and view settings naming removed slides are dropped (§8.6, §8.8) | Dropped content, sideways photos, a show of missing slides | render/116 |
 
 0.2 also corrects 0.1's *text* in one place where the prototype was right: `---` in xlsx is ignored
 without a diagnostic (§5).
@@ -780,7 +780,8 @@ their own except where their content needs it, so they inherit the layout's.
 - **Images** are a picture in the slot. With `fit=contain`, the default, the whole image is scaled
   to fit and centered; with `fit=cover` it fills the slot, cropped evenly from both sides (always
   leaving some of the image). A JPEG's EXIF orientation is honored: the picture is turned and
-  flipped so the image shows upright, and fitted by its upright shape. An image whose bytes can't be
+  flipped so the image shows upright, and fitted by its upright shape. The image is written with
+  its orientation tag set to 1, so a viewer that applies the tag itself doesn't turn it twice. An image whose bytes can't be
   written shows its alt text (§5), in its share of the slot.
 - **Several blocks in one slot** (§8.6): if all are text, they share the placeholder's text body.
   Otherwise the slot's height is divided among them in order; the first keeps the placeholder, and
@@ -792,8 +793,8 @@ their own except where their content needs it, so they inherit the layout's.
   the notes doesn't jump: a notes page's own relationship to its slide must stay unambiguous.
 - **The package** (§10.4): the template's own slides are removed, with every part no longer reached
   from the presentation, and a `.potx` is written as a presentation. What named those slides goes
-  with them: custom shows, sections, and the show settings' slide range or custom show, so the show
-  plays every slide. An edited part in UTF-16 is written as UTF-8.
+  with them: custom shows, sections, the show settings' slide range or custom show (so the show
+  plays every slide), and the outline view's slide list. An edited part in UTF-16 is written as UTF-8.
 
 ---
 

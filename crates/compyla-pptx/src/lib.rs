@@ -17,7 +17,7 @@ use compyla_core::validate::pptx::layout::Layout as HouseLayout;
 use compyla_core::validate::pptx::model::{Content, Deck, Fit, Slide};
 use compyla_ooxml::dom::REL_NS;
 use compyla_ooxml::package::{self, HYPERLINK, Properties, Relationships};
-use compyla_ooxml::template::{Invalid, Template};
+use compyla_ooxml::template::{Invalid, Relationship, Template};
 use compyla_ooxml::xml::Writer;
 
 use crate::layouts::{Layout, Placeholder, Rect};
@@ -840,6 +840,11 @@ impl SlideWriter<'_> {
             }
             number += 1;
         };
+        // The picture is turned by its shape (§8.8), so the copy written carries no turn of its own.
+        let bytes = match compyla_core::image::as_stored(&bytes) {
+            std::borrow::Cow::Owned(copy) => copy,
+            std::borrow::Cow::Borrowed(_) => bytes,
+        };
         self.media.parts.push((part.clone(), bytes));
         self.media
             .by_source
@@ -944,6 +949,20 @@ fn assemble(
         .iter()
         .map(|(n, ..)| n.to_ascii_lowercase())
         .collect();
+    let typed = |name: &str, kind: &str| {
+        template
+            .content_type(name)
+            .is_some_and(|t| t.eq_ignore_ascii_case(&format!("{PML}.{kind}+xml")))
+    };
+    // The view settings' outline lists the template's slides, which are gone (§8.8): what it
+    // relates to is neither followed nor kept.
+    let view_relationships = |part: &str| -> Result<Vec<Relationship>, Invalid> {
+        Ok(template
+            .relationships(part)?
+            .into_iter()
+            .filter(|r| !(typed(part, "viewProps") && r.kind.ends_with("/slide")))
+            .collect())
+    };
     // What the package reaches from its main part, following relationships.
     let mut reachable: HashSet<String> = HashSet::new();
     let mut queue = vec![main.clone()];
@@ -954,8 +973,7 @@ fn assemble(
         let targets: Vec<String> = match new_rels.get(&part) {
             Some(targets) => targets.clone(),
             None if new_names.contains(&part.to_ascii_lowercase()) => Vec::new(),
-            None => template
-                .relationships(&part)?
+            None => view_relationships(&part)?
                 .into_iter()
                 .filter(|r| !r.external)
                 .map(|r| r.target)
@@ -1016,14 +1034,34 @@ fn assemble(
             entries.push((name.to_string(), presentation_rels.to_xml()));
             continue;
         }
+        if is_rels(name) && typed(&rels_owner(name), "viewProps") {
+            let owner = rels_owner(name);
+            let folder = owner.rsplit_once('/').map_or("", |(f, _)| f);
+            let mut kept = Relationships::new();
+            for r in view_relationships(&owner)? {
+                let target = if r.external {
+                    r.target.clone()
+                } else {
+                    relative(folder, &r.target)
+                };
+                kept.add_with_id(&r.id, &r.kind, &target, r.external);
+            }
+            if !kept.is_empty() {
+                entries.push((name.to_string(), kept.to_xml()));
+            }
+            continue;
+        }
         let content_type = template.content_type(name).filter(|_| !is_rels(name));
         if let Some(content_type) = content_type {
             overrides.insert(name.to_string(), content_type.to_string());
         }
-        // Show settings may name the template's slides or custom shows, which are gone.
-        let data = if content_type == Some(&format!("{PML}.presProps+xml")) {
+        // Show and view settings may name the template's slides or custom shows, which are gone.
+        let data = if typed(name, "presProps") {
             presentation::show_properties(data)
                 .map_err(|why| Invalid(format!("has show settings that can't be edited: {why}")))?
+        } else if typed(name, "viewProps") {
+            presentation::view_properties(data)
+                .map_err(|why| Invalid(format!("has view settings that can't be edited: {why}")))?
         } else {
             data.to_vec()
         };
@@ -1148,6 +1186,108 @@ mod tests {
             names.contains(&"ppt/media/compyla2.png".to_string()),
             "{names:?}"
         );
+    }
+
+    #[test]
+    fn the_outline_view_keeps_no_template_slide() {
+        // The house template with a slide of its own that only the outline view names.
+        let mut entries = compyla_ooxml::read::entries(HOUSE).unwrap();
+        let slide = format!("{PML}.slide+xml");
+        for (name, data) in &mut entries {
+            match name.as_str() {
+                "[Content_Types].xml" => {
+                    let types = String::from_utf8(data.clone()).unwrap().replace(
+                        "</Types>",
+                        &format!(
+                            r#"<Override PartName="/ppt/slides/template.xml" ContentType="{slide}"/></Types>"#
+                        ),
+                    );
+                    *data = types.into_bytes();
+                }
+                "ppt/viewProps.xml" => {
+                    let view = String::from_utf8(data.clone()).unwrap().replace(
+                        "<p:normalViewPr>",
+                        r#"<p:outlineViewPr><p:cViewPr/><p:sldLst><p:sld r:id="rId1"/></p:sldLst></p:outlineViewPr><p:normalViewPr>"#,
+                    );
+                    *data = view.into_bytes();
+                }
+                _ => {}
+            }
+        }
+        entries.push((
+            "ppt/_rels/viewProps.xml.rels".into(),
+            format!(
+                r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{REL}/slide" Target="slides/template.xml"/></Relationships>"#
+            )
+            .into_bytes(),
+        ));
+        entries.push((
+            "ppt/slides/template.xml".into(),
+            br#"<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree/></p:cSld></p:sld>"#.to_vec(),
+        ));
+        let template = Template::read(&compyla_ooxml::zip::write(&entries)).unwrap();
+        let document = compyla_core::parse("## One\n\nText.\n").document;
+        let sidecar = compyla_core::Sidecar::default();
+        let input = compyla_core::validate::Input {
+            document: &document,
+            sidecar: &sidecar,
+            assets: &|_| compyla_core::Asset::Exists,
+        };
+        let compyla_core::validate::Composed::Pptx(deck) = compyla_core::validate::validate(
+            &input,
+            compyla_core::Format::Pptx,
+            &mut compyla_core::diagnostic::Sink::new(),
+        ) else {
+            unreachable!()
+        };
+        let bytes = render(&deck, &template, &Properties::default(), &|_| None).unwrap();
+        let parts: HashMap<String, Vec<u8>> = compyla_ooxml::read::entries(&bytes)
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert!(!parts.contains_key("ppt/slides/template.xml"));
+        assert!(!parts.contains_key("ppt/_rels/viewProps.xml.rels"));
+        let view = String::from_utf8(parts["ppt/viewProps.xml"].clone()).unwrap();
+        assert!(
+            view.contains("<p:outlineViewPr><p:cViewPr/></p:outlineViewPr>"),
+            "{view}"
+        );
+        let types = String::from_utf8(parts["[Content_Types].xml"].clone()).unwrap();
+        assert!(!types.contains("template.xml"), "{types}");
+    }
+
+    #[test]
+    fn a_turned_photo_is_written_as_stored_and_turned_by_its_shape() {
+        let jpeg = include_bytes!(
+            "../../../spec/conformance/render/116-pptx-orientation-free-shapes/rotated.jpg"
+        );
+        assert_eq!(compyla_core::image::orientation(jpeg), 6);
+        let document = compyla_core::parse("## P\n\n![p](r.jpg)\n").document;
+        let sidecar = compyla_core::Sidecar::default();
+        let input = compyla_core::validate::Input {
+            document: &document,
+            sidecar: &sidecar,
+            assets: &|_| compyla_core::Asset::Exists,
+        };
+        let compyla_core::validate::Composed::Pptx(deck) = compyla_core::validate::validate(
+            &input,
+            compyla_core::Format::Pptx,
+            &mut compyla_core::diagnostic::Sink::new(),
+        ) else {
+            unreachable!()
+        };
+        let images = |_: &str| Some(jpeg.to_vec());
+        let bytes = render(&deck, &house(), &Properties::default(), &images).unwrap();
+        let parts: HashMap<String, Vec<u8>> = compyla_ooxml::read::entries(&bytes)
+            .unwrap()
+            .into_iter()
+            .collect();
+        assert_eq!(
+            compyla_core::image::orientation(&parts["ppt/media/compyla1.jpeg"]),
+            1
+        );
+        let slide = String::from_utf8(parts["ppt/slides/slide1.xml"].clone()).unwrap();
+        assert!(slide.contains(r#"<a:xfrm rot="5400000">"#), "{slide}");
     }
 
     #[test]
