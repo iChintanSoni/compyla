@@ -1,0 +1,56 @@
+{
+  "diagnostics": [],
+  "output": {
+    "slides": [
+      {
+        "layout": "Title Slide",
+        "title": "Part two",
+        "texts": [],
+        "notes": null
+      },
+      {
+        "layout": "Quote",
+        "title": "Simplicity",
+        "texts": [
+          "Simplicity is prerequisite for reliability."
+        ],
+        "notes": null
+      },
+      {
+        "layout": "Picture with Caption",
+        "title": "The chart",
+        "texts": [
+          "Revenue grew in every region."
+        ],
+        "notes": null
+      },
+      {
+        "layout": "Comparison",
+        "title": "Before and after",
+        "texts": [
+          "Before",
+          "After",
+          "Metric",
+          "Value",
+          "Speed",
+          "2x"
+        ],
+        "notes": null
+      }
+    ],
+    "package": {
+      "xpath": [
+        {
+          "part": "ppt/slides/slide3.xml",
+          "expr": "count(//p:pic[.//p:ph[@type='pic']])",
+          "equals": 1
+        },
+        {
+          "part": "ppt/slides/slide4.xml",
+          "expr": "string(//p:graphicFrame//p:ph/@idx)",
+          "equals": "4"
+        }
+      ]
+    }
+  }
+}

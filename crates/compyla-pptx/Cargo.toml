@@ -1,0 +1,20 @@
+[package]
+name = "compyla-pptx"
+description = "Compyla's pptx renderer: a composed deck, written into a template package (markdown-spec.md §8, architecture.md D12)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+compyla-core.workspace = true
+compyla-ooxml.workspace = true
+quick-xml.workspace = true
+
+[dev-dependencies]
+zip = { version = "9", default-features = false, features = ["deflate"] }
+
+[lints]
+workspace = true

@@ -15,6 +15,20 @@ impl Writer {
         }
     }
 
+    /// A fragment, without the declaration, for splicing into a document.
+    pub fn fragment() -> Self {
+        Self { out: String::new() }
+    }
+
+    /// Markup already escaped, from another writer's [`Writer::into_string`].
+    pub fn raw(&mut self, markup: &str) {
+        self.out.push_str(markup);
+    }
+
+    pub fn into_string(self) -> String {
+        self.out
+    }
+
     /// `<name attrs…>`.
     pub fn open(&mut self, name: &str, attrs: &[(&str, &str)]) {
         self.start(name, attrs);

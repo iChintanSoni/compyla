@@ -1,0 +1,10 @@
+{
+  "description": "Speaker notes keep text formatting and list items; a fragment link jumps to the slide whose title it names; an external link's target is a URI.",
+  "spec": [
+    "§8.2",
+    "§8.7",
+    "C51"
+  ],
+  "oracle": "corrected",
+  "format": "pptx"
+}

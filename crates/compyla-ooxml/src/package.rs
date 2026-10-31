@@ -92,6 +92,8 @@ impl Package {
 #[derive(Default)]
 pub struct Relationships {
     items: Vec<(String, String, bool)>,
+    /// Ids given with [`Relationships::add_with_id`]; the rest are numbered.
+    ids: Vec<Option<String>>,
 }
 
 impl Relationships {
@@ -102,6 +104,12 @@ impl Relationships {
     /// A relationship to another part, by its path relative to the source part's folder.
     pub fn add(&mut self, kind: &str, target: &str) -> String {
         self.push(kind, target, false)
+    }
+
+    /// A relationship with a given id, kept from a template whose parts refer to it.
+    pub fn add_with_id(&mut self, id: &str, kind: &str, target: &str, external: bool) {
+        self.items.push((kind.into(), target.into(), external));
+        self.ids.push(Some(id.to_string()));
     }
 
     /// A relationship to an external resource, such as a hyperlink's URL.
@@ -115,6 +123,8 @@ impl Relationships {
 
     fn push(&mut self, kind: &str, target: &str, external: bool) -> String {
         self.items.push((kind.into(), target.into(), external));
+        self.ids.push(None);
+        // Numbered ids never collide with given ones, which keep their template's form.
         format!("rId{}", self.items.len())
     }
 
@@ -129,7 +139,9 @@ impl Relationships {
             )],
         );
         for (index, (kind, target, external)) in self.items.iter().enumerate() {
-            let id = format!("rId{}", index + 1);
+            let id = self.ids[index]
+                .clone()
+                .unwrap_or_else(|| format!("rId{}", index + 1));
             let mut attrs = vec![("Id", id.as_str()), ("Type", kind), ("Target", target)];
             if *external {
                 attrs.push(("TargetMode", "External"));
@@ -152,12 +164,25 @@ pub struct Properties {
 /// Adds the core and extended properties parts, and the package relationships to them and to the
 /// main part (`main`, with its relationship type `OFFICE_DOCUMENT`).
 pub fn add_package_parts(package: &mut Package, main: &str, properties: &Properties) {
+    package.add_relationships("", &package_relationships(main));
+    package.add("docProps/core.xml", CORE_PROPERTIES, core_xml(properties));
+    package.add("docProps/app.xml", EXTENDED_PROPERTIES, app_xml());
+}
+
+/// The package's own relationships: to the main part (`OFFICE_DOCUMENT`) and the properties.
+pub fn package_relationships(main: &str) -> Relationships {
     let mut rels = Relationships::new();
     rels.add(OFFICE_DOCUMENT, main);
     rels.add(CORE_RELATIONSHIP, "docProps/core.xml");
     rels.add(EXTENDED_RELATIONSHIP, "docProps/app.xml");
-    package.add_relationships("", &rels);
+    rels
+}
 
+pub const CORE_PROPERTIES_TYPE: &str = CORE_PROPERTIES;
+pub const EXTENDED_PROPERTIES_TYPE: &str = EXTENDED_PROPERTIES;
+
+/// `docProps/core.xml`: title and creator from `meta` only, and the fixed timestamps (§13).
+pub fn core_xml(properties: &Properties) -> Vec<u8> {
     let mut core = Writer::new();
     core.open(
         "cp:coreProperties",
@@ -181,8 +206,11 @@ pub fn add_package_parts(package: &mut Package, main: &str, properties: &Propert
         core.element(stamp, &[("xsi:type", "dcterms:W3CDTF")], TIMESTAMP);
     }
     core.close("cp:coreProperties");
-    package.add("docProps/core.xml", CORE_PROPERTIES, core.finish());
+    core.finish()
+}
 
+/// `docProps/app.xml`: the application name, and nothing from the environment.
+pub fn app_xml() -> Vec<u8> {
     let mut app = Writer::new();
     app.open(
         "Properties",
@@ -193,5 +221,23 @@ pub fn add_package_parts(package: &mut Package, main: &str, properties: &Propert
     );
     app.element("Application", &[], "Compyla");
     app.close("Properties");
-    package.add("docProps/app.xml", EXTENDED_PROPERTIES, app.finish());
+    app.finish()
+}
+
+/// A hyperlink target as a URI: characters a URI can't hold (controls, space, `"<>\^`{|}`) are
+/// percent-encoded; others, including non-ASCII ones (an IRI), are kept.
+pub fn uri(url: &str) -> std::borrow::Cow<'_, str> {
+    let unsafe_byte = |b: u8| b <= b' ' || b == 0x7F || b"\"<>\\^`{|}".contains(&b);
+    if !url.bytes().any(unsafe_byte) {
+        return std::borrow::Cow::Borrowed(url);
+    }
+    let mut out = String::with_capacity(url.len() + 8);
+    for c in url.chars() {
+        if c.is_ascii() && unsafe_byte(c as u8) {
+            out.push_str(&format!("%{:02X}", c as u8));
+        } else {
+            out.push(c);
+        }
+    }
+    std::borrow::Cow::Owned(out)
 }

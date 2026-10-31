@@ -13,7 +13,7 @@ name = "compyla"
 path = "src/main.rs"
 
 [dependencies]
-compyla = { workspace = true, features = ["xlsx"] }
+compyla = { workspace = true, features = ["pptx", "xlsx"] }
 serde_json.workspace = true
 
 [lints]

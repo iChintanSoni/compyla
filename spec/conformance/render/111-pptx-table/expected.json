@@ -1,0 +1,39 @@
+{
+  "diagnostics": [],
+  "output": {
+    "slides": [
+      {
+        "layout": "Title and Content",
+        "title": "Regions",
+        "texts": [
+          "Region",
+          "Revenue",
+          "APAC",
+          "120",
+          "EMEA",
+          "98"
+        ],
+        "notes": null
+      }
+    ],
+    "package": {
+      "xpath": [
+        {
+          "part": "ppt/slides/slide1.xml",
+          "expr": "count(//a:tbl/a:tr)",
+          "equals": 3
+        },
+        {
+          "part": "ppt/slides/slide1.xml",
+          "expr": "string(//a:tbl/a:tblPr/@firstRow)",
+          "equals": "1"
+        },
+        {
+          "part": "ppt/slides/slide1.xml",
+          "expr": "string((//a:tbl/a:tr)[2]/a:tc[2]//a:pPr/@algn)",
+          "equals": "r"
+        }
+      ]
+    }
+  }
+}

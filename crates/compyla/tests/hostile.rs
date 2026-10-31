@@ -86,6 +86,7 @@ fn a_huge_ir_position_doesnt_overflow() {
 }
 
 #[test]
+#[cfg(feature = "xlsx")]
 fn a_blocked_convert_reports_its_error_past_the_cap() {
     // 1,100 warnings sort before the error, which the cap still keeps (§11.2).
     let source = format!(
@@ -111,6 +112,7 @@ fn a_blocked_convert_reports_its_error_past_the_cap() {
 }
 
 #[test]
+#[cfg(feature = "xlsx")]
 fn many_excel_tables_convert() {
     // Each Excel table is a package part: more than 65,535 parts need Zip64.
     let source = format!(

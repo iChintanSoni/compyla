@@ -241,7 +241,7 @@ fn worksheet(
         for (reference, link) in hyperlinks {
             match link {
                 Link::Url(url) => {
-                    let id = rels.add_external(HYPERLINK, &uri(url));
+                    let id = rels.add_external(HYPERLINK, &package::uri(url));
                     xml.empty("hyperlink", &[("ref", &reference), ("r:id", &id)]);
                 }
                 Link::Sheet(name) => {
@@ -651,24 +651,6 @@ impl Strings {
     }
 }
 
-/// A hyperlink target as a URI: characters a URI can't hold (controls, space, `"<>\^`{|}`) are
-/// percent-encoded; others, including non-ASCII ones (an IRI), are kept.
-fn uri(url: &str) -> Cow<'_, str> {
-    let unsafe_byte = |b: u8| b <= b' ' || b == 0x7F || b"\"<>\\^`{|}".contains(&b);
-    if !url.bytes().any(unsafe_byte) {
-        return Cow::Borrowed(url);
-    }
-    let mut out = String::with_capacity(url.len() + 8);
-    for c in url.chars() {
-        if c.is_ascii() && unsafe_byte(c as u8) {
-            out.push_str(&format!("%{:02X}", c as u8));
-        } else {
-            out.push(c);
-        }
-    }
-    Cow::Owned(out)
-}
-
 /// `<t>`, preserving whitespace a parser would otherwise strip.
 fn text_element(xml: &mut Writer, text: &str) {
     let preserve = text.trim() != text || text.contains(['\n', '\t']);
@@ -713,10 +695,10 @@ mod tests {
     #[test]
     fn hyperlink_targets_are_uris() {
         assert_eq!(
-            uri("https://example.com/a?b=c#d"),
+            package::uri("https://example.com/a?b=c#d"),
             "https://example.com/a?b=c#d"
         );
-        assert_eq!(uri("a b<c>\"|é"), "a%20b%3Cc%3E%22%7Cé");
+        assert_eq!(package::uri("a b<c>\"|é"), "a%20b%3Cc%3E%22%7Cé");
     }
 
     #[test]

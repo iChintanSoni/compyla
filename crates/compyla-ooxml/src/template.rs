@@ -212,6 +212,17 @@ impl Template {
             .map(|&index| self.parts[index].1.as_slice())
     }
 
+    /// The `[Content_Types].xml` defaults (extension, lowercased → content type).
+    pub fn defaults(&self) -> impl Iterator<Item = (&str, &str)> {
+        let mut defaults: Vec<(&str, &str)> = self
+            .defaults
+            .iter()
+            .map(|(e, t)| (e.as_str(), t.as_str()))
+            .collect();
+        defaults.sort();
+        defaults.into_iter()
+    }
+
     /// Every part, in package order.
     pub fn parts(&self) -> impl Iterator<Item = (&str, &[u8])> {
         self.parts.iter().map(|(n, d)| (n.as_str(), d.as_slice()))

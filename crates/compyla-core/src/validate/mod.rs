@@ -60,7 +60,7 @@ pub struct Input<'a> {
 #[derive(Debug)]
 pub enum Composed {
     Flow,
-    Pptx,
+    Pptx(pptx::model::Deck),
     Xlsx(xlsx::Workbook),
 }
 
@@ -78,8 +78,7 @@ pub fn validate(input: &Input<'_>, format: Format, out: &mut Sink) -> Composed {
         }
         Format::Pptx => {
             images(input, out);
-            pptx::validate(input, out);
-            Composed::Pptx
+            Composed::Pptx(pptx::validate(input, out))
         }
         Format::Xlsx => Composed::Xlsx(xlsx::validate(input, out)),
     }

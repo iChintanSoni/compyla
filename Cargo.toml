@@ -19,6 +19,7 @@ publish = false
 compyla-core = { path = "crates/compyla-core" }
 compyla = { path = "crates/compyla", default-features = false }
 compyla-ooxml = { path = "crates/compyla-ooxml" }
+compyla-pptx = { path = "crates/compyla-pptx" }
 compyla-xlsx = { path = "crates/compyla-xlsx" }
 crc32fast = "1.5"
 miniz_oxide = "0.9"

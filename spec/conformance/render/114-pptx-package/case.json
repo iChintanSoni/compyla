@@ -1,0 +1,11 @@
+{
+  "description": "The output is a presentation, not a template; the house notes master is kept for notes; properties come from meta.",
+  "spec": [
+    "§10.4",
+    "§13",
+    "C44",
+    "C51"
+  ],
+  "oracle": "corrected",
+  "format": "pptx"
+}

@@ -1,0 +1,41 @@
+{
+  "diagnostics": [],
+  "output": {
+    "slides": [
+      {
+        "layout": "Title Slide",
+        "title": "One",
+        "texts": [],
+        "notes": "A note."
+      },
+      {
+        "layout": "Section Header",
+        "title": "Two",
+        "texts": [],
+        "notes": null
+      }
+    ],
+    "properties": {
+      "title": "Package",
+      "creator": "Ana, Bo"
+    },
+    "package": {
+      "partsPresent": [
+        "ppt/notesMasters/notesMaster1.xml",
+        "ppt/notesSlides/notesSlide1.xml",
+        "docProps/core.xml"
+      ],
+      "partsAbsent": [
+        "ppt/slides/slide3\\.xml",
+        "docProps/thumbnail\\..*"
+      ],
+      "xpath": [
+        {
+          "part": "[Content_Types].xml",
+          "expr": "count(//*[local-name()='Override'][@PartName='/ppt/presentation.xml'][@ContentType='application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml'])",
+          "equals": 1
+        }
+      ]
+    }
+  }
+}

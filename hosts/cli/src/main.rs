@@ -16,7 +16,7 @@ usage: compyla parse <file.md>
 
   parse     print the document's IR and parse diagnostics as JSON
   lint      check the document for a format; the format defaults to the frontmatter's `format`
-  convert   write the document in a format (xlsx in this build), next to the input by default
+  convert   write the document in a format (pptx or xlsx in this build), next to the input by default
   template inspect   print a template's report as JSON: kind, theme, fonts, styles, layouts
 
   --ir       the input is IR JSON (markdown-spec.md §10.7) instead of markdown

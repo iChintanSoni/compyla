@@ -1,0 +1,14 @@
+{
+  "description": "Inferred layouts bind to the house template's: Quote holds the quote; Picture with Caption the image and caption; Comparison's columns put their first text block in the heading.",
+  "spec": [
+    "§8.3",
+    "§8.5",
+    "§8.6",
+    "C51"
+  ],
+  "oracle": "corrected",
+  "format": "pptx",
+  "assets": [
+    "chart.png"
+  ]
+}

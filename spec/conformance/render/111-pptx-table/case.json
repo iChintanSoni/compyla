@@ -1,0 +1,9 @@
+{
+  "description": "A table fills its slot as a table frame in the content placeholder, header row first, with column alignment.",
+  "spec": [
+    "§8.6",
+    "C51"
+  ],
+  "oracle": "corrected",
+  "format": "pptx"
+}
