@@ -40,13 +40,16 @@ spec 0.2 (markdown-spec.md §0.2). The `oracle` field in `case.json` records whi
 | inspect | `<template report>` (`template-report.schema.json`) | Exact JSON equality, except `issues`, compared as `(code, severity)` in order; their messages document the reason and aren't compared |
 
 **Diagnostics** are compared as lists of `(code, severity, line, column, path)` in the order
-markdown-spec.md §11.2 defines (line, absent first; then column; then code), keeping duplicates.
+markdown-spec.md §11.2 defines (line, absent first; then column; then code; then path, absent first,
+in document order), keeping duplicates.
 `line` is always compared: a document-level diagnostic has none, and the actual one must have none
 either. `column` and `path` are compared only when the expected diagnostic has them (§11.3).
 `message` and `hint` are never compared. Expected diagnostics in fixtures carry only `code`,
 `severity`, `line`, `column` where the code's registry `position` has one, and `path` where the
 fixture pins the IR node. The prototype emits no paths, so the oracle
-(`spec/tools/oracle.mjs`) doesn't compare them; the Rust runner does.
+(`spec/tools/oracle.mjs`) doesn't compare them; the Rust runner does. For the same reason, only a
+hand-written (`corrected` or `none`) fixture can carry a path, and a fixture whose only correction is
+a path is `none`: the oracle can't see that difference.
 
 ## Running a case
 

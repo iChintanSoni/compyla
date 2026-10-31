@@ -117,6 +117,8 @@ for (const suite of ["parse", "lint", "compose", "render", "inspect"]) {
         const severity = kase.strict && entry.strictPromotable ? "error" : entry.severity;
         if (d.severity !== severity) problem(where, `${d.code} must be ${severity} here, not ${d.severity}`);
         if (suite === "inspect") continue;
+        // The prototype emits no paths: its expectations can't pin one, and `--write` would drop it.
+        if (d.path !== undefined && kase.oracle === "prototype") problem(where, `${d.code} has a path, which the prototype oracle can't check`);
         if (!STAGES_BY_SUITE[suite].includes(entry.stage)) problem(where, `${d.code} is a ${entry.stage}-stage code; it can't appear in the ${suite} suite`);
         if (suite !== "parse" && !entry.profiles.includes("*") && !entry.profiles.includes(kase.format)) {
           problem(where, `${d.code} doesn't apply to ${kase.format}`);
