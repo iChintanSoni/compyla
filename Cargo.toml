@@ -1,0 +1,30 @@
+# Compyla's Rust implementation (architecture.md D10). The TypeScript prototype in packages/ is the
+# conformance oracle until this passes spec/conformance (roadmap Phases B and C).
+[workspace]
+resolver = "3"
+members = ["crates/*", "hosts/cli", "hosts/wasm"]
+exclude = ["spikes"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+# MSRV policy: the oldest stable Rust we support. Raised only deliberately, in its own change.
+rust-version = "1.88"
+license = "MIT"
+repository = "https://github.com/iChintanSoni/compyla"
+publish = false
+
+[workspace.dependencies]
+compyla-core = { path = "crates/compyla-core" }
+compyla = { path = "crates/compyla" }
+comrak = { version = "0.59", default-features = false }
+saphyr-parser = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
