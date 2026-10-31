@@ -18,7 +18,10 @@ pub fn inspect(bytes: &[u8]) -> Value {
             "kind": null,
             "theme": { "fonts": {}, "colors": {} },
             "fonts": [],
-            "issues": [issue(Diagnostic::new("template_invalid", format!("The template {reason}.")))],
+            "issues": [issue(Diagnostic::new(
+                "template_invalid",
+                format!("The template {}.", compyla_core::diagnostic::quoted(&reason, 300)),
+            ))],
         }),
     }
 }

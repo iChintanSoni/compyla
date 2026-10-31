@@ -92,18 +92,19 @@ pub fn part(template: &Template, name: &str) -> Result<Part, Invalid> {
     };
     // Relationships that go whatever refers to them (by type: an Id-less one has the id "", which
     // nothing can refer to); hyperlinks, which go if anything but a hyperlink refers to them; and
-    // embedded data, which goes unless something kept refers to it.
+    // embedded data, which goes unless something kept refers to it. Ids compare trimmed, as
+    // references do.
     let by_type: Vec<bool> = relationships.iter().map(removable).collect();
     let mut removable: HashSet<&str> = relationships
         .iter()
         .zip(&by_type)
-        .filter(|(r, removable)| **removable && !r.id.is_empty())
-        .map(|(r, _)| r.id.as_str())
+        .filter(|(r, removable)| **removable && !r.id.trim().is_empty())
+        .map(|(r, _)| r.id.trim())
         .collect();
     let hyperlinks: HashSet<&str> = relationships
         .iter()
-        .filter(|r| is_hyperlink(r) && !removable.contains(r.id.as_str()))
-        .map(|r| r.id.as_str())
+        .filter(|r| is_hyperlink(r) && !removable.contains(r.id.trim()))
+        .map(|r| r.id.trim())
         .collect();
     let text = if is_xml(template, name) {
         let data = template.part(name).unwrap_or_default();
@@ -111,17 +112,9 @@ pub fn part(template: &Template, name: &str) -> Result<Part, Invalid> {
     } else {
         None
     };
-    // An object, a control or an action is found by its name, whatever it refers to.
-    let named = text.as_deref().is_some_and(|text| {
-        contains(text, b"oleObj")
-            || contains(text, b"control")
-            || contains_ignoring_case(text, b"ppaction")
-    });
-    if !named
-        && !by_type.contains(&true)
-        && hyperlinks.is_empty()
-        && !relationships.iter().any(is_embedding)
-    {
+    // Every kept XML part is read: an object, a control or an action is found by what it is,
+    // however it is written (character references and all), whatever it refers to.
+    if text.is_none() && !by_type.contains(&true) && !relationships.iter().any(is_embedding) {
         return unchanged(relationships);
     }
     let nodes = match &text {
@@ -250,14 +243,14 @@ pub fn part(template: &Template, name: &str) -> Result<Part, Invalid> {
         }
     }
     let removed_here = |index: usize, r: &Relationship| {
-        by_type[index] || (!r.id.is_empty() && removable.contains(r.id.as_str()))
+        by_type[index] || (!r.id.trim().is_empty() && removable.contains(r.id.trim()))
     };
     // Which relationships go, by position: ids needn't be there, or unique.
     let gone: Vec<bool> = relationships
         .iter()
         .enumerate()
         .map(|(index, r)| {
-            let id = r.id.as_str();
+            let id = r.id.trim();
             removed_here(index, r)
                 || (within.contains(id) && !outside.contains(id))
                 || (is_embedding(r) && !outside.contains(id))
@@ -275,7 +268,7 @@ pub fn part(template: &Template, name: &str) -> Result<Part, Invalid> {
         if removed.len() >= REPORTED {
             break;
         }
-        let id = relationship.id.as_str();
+        let id = relationship.id.trim();
         if !removed_here(index, relationship) || owned.contains(id) {
             continue;
         }
@@ -389,18 +382,6 @@ fn navigates(action: &str) -> bool {
             let verb = rest.split('?').next().unwrap_or_default();
             NAVIGATION.contains(&verb)
         })
-}
-
-fn contains(haystack: &[u8], needle: &[u8]) -> bool {
-    haystack
-        .windows(needle.len())
-        .any(|window| window == needle)
-}
-
-fn contains_ignoring_case(haystack: &[u8], needle: &[u8]) -> bool {
-    haystack
-        .windows(needle.len())
-        .any(|window| window.eq_ignore_ascii_case(needle))
 }
 
 fn suffix(kind: &str) -> &str {
@@ -532,7 +513,7 @@ fn nodes(text: &[u8]) -> Result<Vec<Node>, Error> {
                         || (attribute_namespace == VML_OFFICE && local == "relid")
                     {
                         // An empty id names no relationship (`r:id=""` on an action, say).
-                        let id = value()?;
+                        let id = value()?.trim().to_string();
                         if !id.is_empty() {
                             refs.push((qualified.to_string(), id));
                         }
@@ -1346,5 +1327,52 @@ mod tests {
                 target: "https://tracker.example/a.png".into()
             }]
         );
+    }
+
+    #[test]
+    fn actions_are_found_however_they_are_written() {
+        // Character references, an action without `ppaction`, and a part related only to its
+        // master: nothing names a hyperlink, and every action still goes.
+        let tree = [
+            shape(
+                2,
+                r#"<a:hlinkClick r:id="" action="&#112;paction://macro?name=Evil"/>"#,
+            ),
+            shape(
+                3,
+                r#"<a:hlinkHover r:id="" action="pp&#x61;ction://ole?verb=0"/>"#,
+            ),
+            shape(4, r#"<a:hlinkClick r:id="" action="macro:Module1.Evil"/>"#),
+        ]
+        .concat();
+        let template = template(layout(&tree, "").as_bytes(), &[MASTER]);
+        let part = part(&template, LAYOUT).unwrap();
+        assert_eq!(part.removed.len(), 3);
+        assert!(!text(&part.xml).contains("action"));
+    }
+
+    #[test]
+    fn ids_compare_trimmed() {
+        // A picture names `rId8` through a relationship whose Id is written ` rId8 `.
+        let xml = layout(
+            r#"<p:pic><p:nvPicPr><p:cNvPr id="2" name="a"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:link="rId8"/></p:blipFill><p:spPr/></p:pic>"#,
+            "",
+        );
+        let template = template(
+            xml.as_bytes(),
+            &[
+                MASTER,
+                (" rId8 ", "hyperlink", "https://tracker.example/a.png", true),
+            ],
+        );
+        let part = part(&template, LAYOUT).unwrap();
+        assert_eq!(part.removed.len(), 1);
+        assert!(text(&part.xml).contains("<a:blip/>"));
+    }
+
+    #[test]
+    fn a_kept_part_that_isnt_well_formed_is_invalid() {
+        let template = template(b"<p:sldLayout><a>quality control</b>", &[MASTER]);
+        assert!(part(&template, LAYOUT).is_err());
     }
 }

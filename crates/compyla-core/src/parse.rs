@@ -921,8 +921,10 @@ fn tag_name(html: &str) -> Option<&str> {
 }
 
 /// The §4.5 link allowlist, applied to a destination as a browser reads it (C59): without leading
-/// and trailing spaces and controls, and without tabs and line breaks anywhere. Any other control
-/// character refuses it. It must pass percent-decoded too, so `%5C%5Chost` is a UNC path.
+/// and trailing spaces and C0 controls, and without tabs and line breaks anywhere. Any other
+/// control character refuses it, and so does a leading space or formatting character that isn't
+/// ASCII. Percent-decoded, the part before any query or fragment must pass too: `%5C%5Chost` is a
+/// UNC path, `%2F…` an absolute one, and an encoded colon a scheme.
 pub fn destination_allowed(url: &str) -> bool {
     let read = |url: &str| -> String {
         url.trim_matches(|c: char| c <= ' ')
@@ -931,10 +933,13 @@ pub fn destination_allowed(url: &str) -> bool {
             .collect()
     };
     let url = read(url);
-    if url.chars().any(|c| c.is_control()) {
+    if url.chars().any(|c| c.is_control())
+        || url.starts_with(|c: char| c.is_whitespace() || crate::diagnostic::is_formatting(c))
+    {
         return false;
     }
-    let decoded: String = read(&crate::validate::percent_decode(&url))
+    let path = url.split(['?', '#']).next().unwrap_or_default();
+    let decoded: String = read(&crate::validate::percent_decode(path))
         .chars()
         .filter(|c| !c.is_control())
         .collect();

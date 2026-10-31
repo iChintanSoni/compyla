@@ -230,7 +230,8 @@ fn slide_rules(
             Diagnostic::new(
                 "unknown_layout",
                 format!(
-                    "Unknown layout `{name}`; the layout is inferred from the content instead. Valid layouts: {}.",
+                    "Unknown layout `{}`; the layout is inferred from the content instead. Valid layouts: {}.",
+                    crate::diagnostic::quoted(name, 100),
                     names()
                 ),
             )
@@ -319,10 +320,13 @@ fn not_in_template(composed: &[Composed<'_>], template: &TemplateLayouts, out: &
                     format!(
                         "The template has no {} layout (by name or by type); its slides use the template's `{}` layout instead.",
                         composed.bound.name,
-                        composed
-                            .bound
-                            .template
-                            .map_or("", |index| template.layouts[index].name.as_str()),
+                        crate::diagnostic::quoted(
+                            composed
+                                .bound
+                                .template
+                                .map_or("", |index| template.layouts[index].name.as_str()),
+                            100
+                        ),
                     ),
                 )
                 .hint("Add the layout to the template, or map the name to one of its layouts with `layoutAliases`."),

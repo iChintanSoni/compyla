@@ -124,6 +124,32 @@ impl Diagnostic {
     }
 }
 
+/// Text that isn't the engine's (a template's names and targets, a parser's reason, a document's
+/// layout name) as a message quotes it: at most `most` characters, with control and bidi
+/// formatting characters escaped, so it can't write to a terminal or reorder the message's line
+/// (markdown-spec.md §10.4).
+pub fn quoted(text: &str, most: usize) -> String {
+    let mut out = String::with_capacity(text.len().min(most.saturating_mul(4)));
+    for (count, c) in text.chars().enumerate() {
+        if count == most {
+            out.push('…');
+            break;
+        }
+        if c.is_control() || is_formatting(c) {
+            out.extend(c.escape_unicode());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Characters that change how a line reads without showing: bidi controls, zero-width
+/// characters, separators and the byte order mark.
+pub fn is_formatting(c: char) -> bool {
+    matches!(c, '\u{061C}' | '\u{200B}'..='\u{200F}' | '\u{2028}'..='\u{202E}' | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}')
+}
+
 /// Sorts per markdown-spec.md §11.2: line (absent first), column (absent first), code, path.
 /// How many diagnostics an operation reports before ending with `diagnostics_truncated` (§11.2).
 pub const CAP: usize = 1000;

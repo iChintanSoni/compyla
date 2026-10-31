@@ -618,33 +618,13 @@ fn content_removed(part: &str, what: &compyla_ooxml::sanitize::Removed) -> Diagn
 /// A value from a template (a target, a type, an action, a part name), as a message shows it.
 #[cfg(feature = "pptx")]
 fn shown(text: &str) -> String {
-    clipped(text, 100)
-}
-
-/// Template text as a message shows it: at most `most` characters, with control and bidi
-/// formatting characters escaped, so a template can't write to a terminal or reorder a message's
-/// line (§10.4).
-fn clipped(text: &str, most: usize) -> String {
-    let mut out = String::with_capacity(text.len().min(most * 4));
-    for (count, c) in text.chars().enumerate() {
-        if count == most {
-            out.push('…');
-            break;
-        }
-        let formatting = matches!(c, '\u{200E}' | '\u{200F}' | '\u{061C}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}');
-        if c.is_control() || formatting {
-            out.extend(c.escape_unicode());
-        } else {
-            out.push(c);
-        }
-    }
-    out
+    compyla_core::diagnostic::quoted(text, 100)
 }
 
 /// Why a template is unusable, as `template_invalid` and `render_failed` show it: the reason quotes
 /// the template's own text (part names, parser errors).
 fn reason(why: &str) -> String {
-    clipped(why, 300)
+    compyla_core::diagnostic::quoted(why, 300)
 }
 
 fn properties(meta: &serde_json::Map<String, serde_json::Value>) -> Properties {
