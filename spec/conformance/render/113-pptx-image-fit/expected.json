@@ -1,0 +1,38 @@
+{
+  "diagnostics": [],
+  "output": {
+    "slides": [
+      {
+        "layout": "Picture with Caption",
+        "title": "Contain",
+        "texts": [],
+        "notes": null
+      },
+      {
+        "layout": "Picture with Caption",
+        "title": "Cover",
+        "texts": [],
+        "notes": null
+      }
+    ],
+    "package": {
+      "xpath": [
+        {
+          "part": "ppt/slides/slide1.xml",
+          "expr": "count(//a:srcRect)",
+          "equals": 0
+        },
+        {
+          "part": "ppt/slides/slide1.xml",
+          "expr": "string(//p:pic/p:spPr/a:xfrm/a:ext/@cy)",
+          "equals": "1543050"
+        },
+        {
+          "part": "ppt/slides/slide2.xml",
+          "expr": "string(//a:srcRect/@l)",
+          "equals": "34169"
+        }
+      ]
+    }
+  }
+}

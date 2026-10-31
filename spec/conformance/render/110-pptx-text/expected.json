@@ -1,0 +1,62 @@
+{
+  "diagnostics": [],
+  "output": {
+    "slides": [
+      {
+        "layout": "Title Slide",
+        "title": "Text",
+        "texts": [],
+        "notes": null
+      },
+      {
+        "layout": "Title and Content",
+        "title": "Bullets",
+        "texts": [
+          "Plain first.",
+          "One bold",
+          "Nested",
+          "Two",
+          "Three",
+          "Four",
+          "☑ Done",
+          "☐ Open"
+        ],
+        "notes": null
+      },
+      {
+        "layout": "Title and Content",
+        "title": "Code",
+        "texts": [
+          "fn main() {",
+          "    run();",
+          "}"
+        ],
+        "notes": null
+      }
+    ],
+    "package": {
+      "xpath": [
+        {
+          "part": "ppt/slides/slide2.xml",
+          "expr": "count(//a:p[a:pPr/a:buNone])",
+          "equals": 1
+        },
+        {
+          "part": "ppt/slides/slide2.xml",
+          "expr": "count(//a:pPr[@lvl='1'])",
+          "equals": 1
+        },
+        {
+          "part": "ppt/slides/slide2.xml",
+          "expr": "string(//a:buAutoNum/@startAt)",
+          "equals": "3"
+        },
+        {
+          "part": "ppt/slides/slide3.xml",
+          "expr": "count(//a:rPr/a:latin[@typeface='Consolas'])",
+          "equals": 3
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "description": "An image is whole inside its slot by default (contain), centered; with fit=cover it fills the slot, cropped evenly.",
+  "spec": [
+    "§8.4",
+    "C51"
+  ],
+  "oracle": "corrected",
+  "format": "pptx",
+  "assets": [
+    "wide.png"
+  ]
+}

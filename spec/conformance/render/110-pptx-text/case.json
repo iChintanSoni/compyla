@@ -1,0 +1,9 @@
+{
+  "description": "A text block's paragraphs: plain ones without bullets, list items at their level with the template's bullets, numbered lists from their start, task items marked; code one paragraph per line in a monospace face.",
+  "spec": [
+    "§8.6",
+    "C51"
+  ],
+  "oracle": "corrected",
+  "format": "pptx"
+}

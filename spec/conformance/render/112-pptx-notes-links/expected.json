@@ -1,0 +1,42 @@
+{
+  "diagnostics": [],
+  "output": {
+    "slides": [
+      {
+        "layout": "Title Slide",
+        "title": "Review",
+        "texts": [
+          "See the summary and the site."
+        ],
+        "notes": "Open with thanks.\nRevenue\nCosts"
+      },
+      {
+        "layout": "Title and Content",
+        "title": "Summary",
+        "texts": [
+          "Done."
+        ],
+        "notes": null
+      }
+    ],
+    "package": {
+      "xpath": [
+        {
+          "part": "ppt/slides/slide1.xml",
+          "expr": "count(//a:hlinkClick[@action='ppaction://hlinksldjump'])",
+          "equals": 1
+        },
+        {
+          "part": "ppt/slides/_rels/slide1.xml.rels",
+          "expr": "string(//rel:Relationship[@TargetMode='External']/@Target)",
+          "equals": "https://example.com/a%20b"
+        },
+        {
+          "part": "ppt/notesSlides/notesSlide1.xml",
+          "expr": "count(//a:r/a:rPr[@i='1'])",
+          "equals": 1
+        }
+      ]
+    }
+  }
+}

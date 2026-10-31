@@ -115,6 +115,7 @@ version = "0.0.0"
 dependencies = [
  "compyla-core",
  "compyla-ooxml",
+ "compyla-pptx",
  "compyla-xlsx",
  "jsonschema",
  "serde",
@@ -149,6 +150,16 @@ dependencies = [
  "miniz_oxide",
  "quick-xml",
  "serde_json",
+ "zip",
+]
+
+[[package]]
+name = "compyla-pptx"
+version = "0.0.0"
+dependencies = [
+ "compyla-core",
+ "compyla-ooxml",
+ "quick-xml",
  "zip",
 ]
 

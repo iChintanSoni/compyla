@@ -103,6 +103,7 @@ prototype.
 | C48 | xlsx rendering: the header row is bold on a light fill unless an Excel table styles it; an Excel table with no data rows gets an empty one; hyperlinked text is underlined in the link color and line breaks wrap (§9.2, §9.6) | Header style unspecified; an Excel table with no data rows was invalid | render/104, render/105, render/106, render/107 |
 | C49 | xlsx output, from review: the diagnostics cap keeps errors first, so a blocked `convert` always reports why (§11.2); text that looks like a SpreadsheetML escape reads back as written; Excel table headers keep links and rich text; emphasis on a number becomes the cell's font; an erroring formula's text is its `raw` (§9.3, §9.5, §9.6) | A blocked `convert` could report no error; `_x0041_` read back as "A"; header links dropped silently | render/108 |
 | C50 | `inspect_template` is specified end to end: an invalid template's report has `kind: null` and its reason; layouts report their OOXML type; Word's page defaults where a template is silent (§10.4, §10.5) | Undefined for invalid packages | inspect/101–110 |
+| C51 | pptx rendering is specified: placeholders by slot, text (bullets, numbering, code, quotes), tables, images (`contain` by default, `cover` cropped), shared slots, links to slides, notes, and the package (§8.8) | Undefined beyond the projection | render/109–render/114 |
 
 0.2 also corrects 0.1's *text* in one place where the prototype was right: `---` in xlsx is ignored
 without a diagnostic (§5).
@@ -741,6 +742,37 @@ larger than its placeholder produces `content_overflow` (warning, render stage).
 | `unknown_directive` / `directive_misplaced` | warning | §1.5, §8.2–§8.4 |
 | `content_overflow` | warning | Render stage, §8.6 |
 | `font_unresolved` | warning | §3 |
+
+### 8.8 Rendering *(C51)*
+
+Each slide is written into its bound layout (§8.5). The title goes into the layout's title
+placeholder; a layout without one (Blank) has no title. Slot `i` (§8.6) goes into the layout's
+`i`-th content placeholder, in shape order: any placeholder but the title, date, footer, header and
+slide number. An empty slot's placeholder is left out. Placeholders carry no geometry or formatting of
+their own except where their content needs it, so they inherit the layout's.
+
+- **Text** (a text block, code, a quote) shares one text body:
+  - Paragraphs, and demoted headings (in bold), have no bullet.
+  - List items are bulleted at their nesting level (at most nine levels). Numbered lists count from
+    their start, and task items begin with ☑ or ☐. An item's further paragraphs align with its text.
+    A content placeholder (type `obj`) shows the template's bullets; other placeholders (subtitles,
+    captions, notes), whose styles usually have none, get explicit ones.
+  - Code is one paragraph per line, indentation kept, in a monospace face (Consolas), as inline code
+    is. A quote's content is italic.
+- **Tables** are a table frame in the slot's geometry: the header first, the template's default
+  table style, and each column's alignment.
+- **Images** are a picture in the slot. With `fit=contain`, the default, the whole image is scaled
+  to fit and centered; with `fit=cover` it fills the slot, cropped evenly from both sides. An image
+  whose bytes can't be written shows its alt text (§5).
+- **Several blocks in one slot** (§8.6): if all are text, they share the placeholder's text body.
+  Otherwise the slot's height is divided among them in order; the first keeps the placeholder, and
+  the rest are shapes of their own.
+- **Links:** an external destination is a hyperlink. A fragment matching a slide title's slug
+  (§8.7) jumps to that slide; one that matches none has no link.
+- **Speaker notes** (§8.2) are the body of the slide's notes page, when the template has a notes
+  master.
+- **The package** (§10.4): the template's own slides are removed, with every part no longer reached
+  from the presentation, and a `.potx` is written as a presentation.
 
 ---
 

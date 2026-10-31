@@ -86,7 +86,11 @@ pub fn convert(
     options: &Options,
     assets: &dyn Fn(&str) -> Asset,
 ) -> Result<ConvertResult, OperationError> {
-    render(check(from_markdown(source), options, assets, true)?)
+    let assets = converting(assets);
+    render(
+        check(from_markdown(source), options, &assets, true)?,
+        &assets,
+    )
 }
 
 /// `convert` for IR input (§10.7).
@@ -95,14 +99,25 @@ pub fn convert_ir(
     options: &Options,
     assets: &dyn Fn(&str) -> Asset,
 ) -> Result<ConvertResult, OperationError> {
-    render(check(from_ir(json)?, options, assets, true)?)
+    let assets = converting(assets);
+    render(check(from_ir(json)?, options, &assets, true)?, &assets)
+}
+
+/// The asset resolver as `convert` sees it (§10.3): an image that exists without bytes can't be
+/// written, so it is unresolved.
+fn converting(assets: &dyn Fn(&str) -> Asset) -> impl Fn(&str) -> Asset + '_ {
+    move |src| match assets(src) {
+        Asset::Exists => Asset::NotFound,
+        resolved => resolved,
+    }
 }
 
 /// Whether this build can render `format` (`renderer_unavailable`, §10.6).
 pub fn renderer_available(format: Format) -> bool {
     match format {
         Format::Xlsx => cfg!(feature = "xlsx"),
-        Format::Docx | Format::Pdf | Format::Pptx => false,
+        Format::Pptx => cfg!(feature = "pptx"),
+        Format::Docx | Format::Pdf => false,
     }
 }
 
@@ -254,8 +269,15 @@ fn check(
     })
 }
 
-fn render(checked: Checked) -> Result<ConvertResult, OperationError> {
+#[cfg_attr(not(feature = "pptx"), allow(unused_variables))]
+fn render(
+    checked: Checked,
+    assets: &dyn Fn(&str) -> Asset,
+) -> Result<ConvertResult, OperationError> {
     let format = checked.composed.as_ref().map(|(_, format, _)| *format);
+    // Rendering may add `render_failed`.
+    #[cfg_attr(not(feature = "pptx"), allow(unused_mut))]
+    let mut diagnostics = checked.diagnostics;
     let bytes = match checked.composed {
         _ if checked.blocked => None,
         #[cfg(feature = "xlsx")]
@@ -266,12 +288,36 @@ fn render(checked: Checked) -> Result<ConvertResult, OperationError> {
             };
             Some(compyla_xlsx::render(&workbook, &properties))
         }
+        #[cfg(feature = "pptx")]
+        Some((Composed::Pptx(deck), _, properties)) => {
+            let properties = compyla_ooxml::Properties {
+                title: properties.title,
+                creator: properties.creator,
+            };
+            let images = |src: &str| match assets(src) {
+                Asset::Bytes(bytes) => Some(bytes),
+                _ => None,
+            };
+            let rendered =
+                compyla_pptx::render(&deck, &compyla_pptx::house(), &properties, &images);
+            match rendered {
+                Ok(bytes) => Some(bytes),
+                // A failure while rendering is the error diagnostic `render_failed` (§11.1).
+                Err(why) => {
+                    diagnostics.push(Diagnostic::new(
+                        "render_failed",
+                        format!("The document couldn't be rendered: the template {}.", why.0),
+                    ));
+                    None
+                }
+            }
+        }
         _ => None,
     };
     Ok(ConvertResult {
         bytes,
         format,
-        diagnostics: checked.diagnostics,
+        diagnostics,
     })
 }
 

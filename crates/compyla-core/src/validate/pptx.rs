@@ -3,7 +3,8 @@
 //! fit (§8.3, §8.5, §8.6). Validation (§8.7) and the compose summary share one composition, so
 //! they can't disagree about a slide's content or layout.
 
-mod layout;
+pub mod layout;
+pub mod model;
 mod slides;
 
 use std::collections::HashSet;
@@ -17,7 +18,8 @@ use super::{Input, Slugger, at, for_each_block, fragment_links, options, title};
 use crate::diagnostic::{Diagnostic, Sink};
 use crate::ir::{Block, Directive, Document, Position};
 
-pub fn validate(input: &Input<'_>, out: &mut Sink) {
+/// The profile's diagnostics, and the composed deck the renderer writes.
+pub fn validate(input: &Input<'_>, out: &mut Sink) -> model::Deck {
     let deck = slides::deck(&input.document.body);
     // `layout`, `notes` and `col` directives whose placement is settled here: used, or already
     // reported. The rest are nested where they can have no effect.
@@ -51,11 +53,12 @@ pub fn validate(input: &Input<'_>, out: &mut Sink) {
             diagnostic = diagnostic.at(p.line, Some(p.column));
         }
         out.push(diagnostic);
-        return;
+        return model::deck(&composed, &input.document.body);
     }
     nested_directives(&input.document.body, &settled, out);
     super::image_directives(&input.document.body, &image_options, out);
     anchors(input, &composed, out);
+    model::deck(&composed, &input.document.body)
 }
 
 /// The compose summary (spec/conformance/compose.schema.json): slides with their titles, resolved

@@ -11,14 +11,16 @@ publish.workspace = true
 [dependencies]
 compyla-core.workspace = true
 compyla-ooxml.workspace = true
+compyla-pptx = { workspace = true, optional = true }
 compyla-xlsx = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 
 [features]
-default = ["xlsx"]
+default = ["pptx", "xlsx"]
 # Renderers. A build without one reports `renderer_unavailable` (markdown-spec.md §10.6), as the
 # core-only WASM build does for every format.
+pptx = ["dep:compyla-pptx"]
 xlsx = ["dep:compyla-xlsx"]
 
 [dev-dependencies]
