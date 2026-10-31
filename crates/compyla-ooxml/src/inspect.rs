@@ -61,7 +61,8 @@ impl Fonts {
 }
 
 /// The warnings a template earns wherever it is used (markdown-spec.md §10.4): `no_theme` without
-/// a theme part, and, for a docx template, `no_styles_xml` without a styles part.
+/// a theme part (or with one that isn't an `a:theme`), and, for a docx template, `no_styles_xml`
+/// without a styles part.
 pub fn warnings(template: &Template) -> Result<Vec<Diagnostic>, Invalid> {
     let mut out = Vec::new();
     if theme(template)?.is_none() {

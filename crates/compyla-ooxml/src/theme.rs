@@ -17,7 +17,8 @@ pub const LT1: usize = 1;
 pub const ACCENT1: usize = 4;
 pub const HLINK: usize = 10;
 
-/// The longest font name a workbook can hold (SpreadsheetML `name/@val`, MS-OI29500 §2.1.711).
+/// The longest font name a workbook can hold, in UTF-16 code units (SpreadsheetML `name/@val`,
+/// MS-OI29500 §2.1.711).
 const MAX_FONT_NAME: usize = 31;
 
 /// WCAG 2's minimum contrast for normal text (1.4.3, AA).
@@ -39,7 +40,8 @@ pub struct Theme {
     pub minor: Fonts,
 }
 
-/// A font scheme entry's typefaces; the Latin one is never empty.
+/// A font scheme entry's typefaces. Read the Latin one through [`Theme::heading_font`] and
+/// [`Theme::body_font`], which a workbook can always name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Fonts {
     pub latin: String,
@@ -86,10 +88,10 @@ impl Theme {
             };
             let latin = typeface("latin");
             Fonts {
-                latin: if latin.trim().is_empty() || latin.chars().count() > MAX_FONT_NAME {
-                    default.to_string()
-                } else {
+                latin: if nameable(&latin) {
                     latin
+                } else {
+                    default.to_string()
                 },
                 east_asian: typeface("ea"),
                 complex: typeface("cs"),
@@ -113,6 +115,21 @@ impl Theme {
         }
     }
 
+    /// The heading font's Latin typeface, or Calibri Light where a workbook can't name it (the
+    /// fields are public, so a caller may have set anything).
+    pub fn heading_font(&self) -> &str {
+        Some(self.major.latin.as_str())
+            .filter(|name| nameable(name))
+            .unwrap_or("Calibri Light")
+    }
+
+    /// The body font's Latin typeface, or Calibri where a workbook can't name it.
+    pub fn body_font(&self) -> &str {
+        Some(self.minor.latin.as_str())
+            .filter(|name| nameable(name))
+            .unwrap_or("Calibri")
+    }
+
     /// The WCAG 2 contrast ratio between two of its colors, by slot.
     pub fn contrast(&self, a: usize, b: usize) -> f64 {
         let (a, b) = (luminance(self.color(a)), luminance(self.color(b)));
@@ -132,9 +149,13 @@ impl Theme {
         }
         xml.close("a:clrScheme");
         xml.open("a:fontScheme", &[("name", "Compyla")]);
-        for (entry, fonts) in [("a:majorFont", &self.major), ("a:minorFont", &self.minor)] {
+        let entries = [
+            ("a:majorFont", &self.major, self.heading_font()),
+            ("a:minorFont", &self.minor, self.body_font()),
+        ];
+        for (entry, fonts, latin) in entries {
             xml.open(entry, &[]);
-            xml.empty("a:latin", &[("typeface", &fonts.latin)]);
+            xml.empty("a:latin", &[("typeface", latin)]);
             xml.empty("a:ea", &[("typeface", &fonts.east_asian)]);
             xml.empty("a:cs", &[("typeface", &fonts.complex)]);
             xml.close(entry);
@@ -147,6 +168,11 @@ impl Theme {
         xml.close("a:theme");
         xml.finish()
     }
+}
+
+/// Whether a workbook can name a font: not blank, and no longer than 31 UTF-16 code units.
+fn nameable(name: &str) -> bool {
+    !name.trim().is_empty() && name.encode_utf16().count() <= MAX_FONT_NAME
 }
 
 /// WCAG 2's relative luminance of an RRGGBB color (checked by [`Theme::color`]).
@@ -208,6 +234,15 @@ mod tests {
             (theme.major.latin.as_str(), theme.minor.latin.as_str()),
             ("Calibri Light", "Calibri")
         );
+        // Counted in UTF-16 code units, as Excel counts: 21 characters, 37 units.
+        assert!(!nameable(&format!("Font {}", "\u{1D400}".repeat(16))));
+        assert!(nameable(&"x".repeat(31)));
+        // A name set through the public fields is checked where it is written.
+        let mut set = theme.clone();
+        set.minor.latin = String::new();
+        assert_eq!(set.body_font(), "Calibri");
+        let xml = String::from_utf8(set.to_xml()).unwrap();
+        assert!(xml.contains(r#"<a:minorFont><a:latin typeface="Calibri"/>"#));
     }
 
     #[test]

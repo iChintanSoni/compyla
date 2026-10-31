@@ -678,8 +678,8 @@ fn link_color(theme: Option<&Theme>) -> Vec<(&'static str, &'static str)> {
 /// A font's typeface and theme scheme: the theme's heading or body font, else Calibri.
 fn font_name(theme: Option<&Theme>, heading: bool) -> (&str, Option<&'static str>) {
     match theme {
-        Some(theme) if heading => (&theme.major.latin, Some("major")),
-        Some(theme) => (&theme.minor.latin, Some("minor")),
+        Some(theme) if heading => (theme.heading_font(), Some("major")),
+        Some(theme) => (theme.body_font(), Some("minor")),
         None => ("Calibri", None),
     }
 }
