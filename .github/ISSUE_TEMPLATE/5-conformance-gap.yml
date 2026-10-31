@@ -35,4 +35,4 @@ body:
     attributes:
       label: Oracle
       description: See spec/conformance/README.md.
-      options: [prototype, corrected, none, Not sure]
+      options: [prototype, corrected, "No oracle (the prototype can't produce it)", Not sure]
