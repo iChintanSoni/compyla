@@ -1,0 +1,32 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "paragraph",
+        "runs": [
+          {
+            "text": "share "
+          },
+          {
+            "text": "ok",
+            "link": "docs/a%20b.md"
+          }
+        ],
+        "position": {
+          "line": 1,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": [
+    {
+      "code": "link_scheme_blocked",
+      "severity": "warning",
+      "line": 1,
+      "column": 1
+    }
+  ]
+}

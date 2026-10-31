@@ -139,12 +139,13 @@ def pptx(path, main_type="presentation", extra=(), repeat_ids=1, odd=False,
 
 
 def active_content(entries):
-    """Active and external content in the parts a deck keeps (§10.4, C58): on the master, a linked
-    picture, a hyperlink, a hyperlink §4.5 refuses, an action that runs a program, and a picture
-    linked through a hyperlink relationship; on a layout, an embedded OLE object (with its
-    alternate and preview), a linked one, an ActiveX control, an animation of the embedded object
-    and a legacy VML drawing; and external relationships nothing refers to, from the presentation
-    (one with its target mode in lower case) and the theme."""
+    """Active and external content in the parts a deck keeps (§10.4, C58, C59): on the master, a
+    linked picture, a hyperlink, two hyperlinks §4.5 refuses (one behind a leading space), an action
+    that runs a program, and a picture linked through a hyperlink relationship; on a layout, an
+    embedded OLE object (with its alternate and preview), a linked one, an ActiveX control, an
+    Office add-in, an animation of the embedded object and a legacy VML drawing; on another layout,
+    an action that runs a macro; and external relationships nothing refers to, from the
+    presentation (one with its target mode in lower case) and the theme."""
     parts = dict(entries)
     mc = "http://schemas.openxmlformats.org/markup-compatibility/2006"
     ole_uri = "http://schemas.openxmlformats.org/presentationml/2006/ole"
@@ -163,24 +164,27 @@ def active_content(entries):
     picture = ('<p:pic><p:nvPicPr><p:cNvPr id="10" name="Tracker"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr>'
                '<p:blipFill><a:blip r:link="rId20"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>'
                '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="12700" cy="12700"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>')
-    def linked(id, name, hlink):
+    def linking(id, name, hlink):
         return (f'<p:sp><p:nvSpPr><p:cNvPr id="{id}" name="{name}">{hlink}</p:cNvPr><p:cNvSpPr/><p:nvPr/></p:nvSpPr>'
                 f'<p:spPr/><p:txBody><a:bodyPr/><a:p><a:r><a:t>{name}</a:t></a:r></a:p></p:txBody></p:sp>')
 
-    link = linked(11, "Site", '<a:hlinkClick r:id="rId21"/>')
+    link = linking(11, "Site", '<a:hlinkClick r:id="rId21"/>')
     # A hyperlink §4.5 refuses, an action that runs a program, and a picture linked through a
     # relationship of the hyperlink type that no hyperlink refers to.
-    refused = linked(13, "Help", '<a:hlinkClick r:id="rId22"/>')
-    program = linked(14, "Run", '<a:hlinkClick r:id="rId23" action="ppaction://program"/>')
+    refused = linking(13, "Help", '<a:hlinkClick r:id="rId22"/>')
+    program = linking(14, "Run", '<a:hlinkClick r:id="rId23" action="ppaction://program"/>')
     spoof = picture.replace('id="10" name="Tracker"', 'id="12" name="Spoof"').replace('r:link="rId20"', 'r:link="rId24"')
+    # A refused destination behind a leading space, as a browser reads it (§4.5, C59).
+    spaced = linking(15, "Space", '<a:hlinkClick r:id="rId25"/>')
     master = "ppt/slideMasters/slideMaster1.xml"
-    parts[master] = parts[master].replace("</p:spTree></p:cSld>", picture + link + refused + program + spoof + "</p:spTree></p:cSld>", 1)
+    parts[master] = parts[master].replace("</p:spTree></p:cSld>", picture + link + refused + program + spoof + spaced + "</p:spTree></p:cSld>", 1)
     add_rels("ppt/slideMasters/_rels/slideMaster1.xml.rels",
              ("rId20", "image", "https://tracker.example/pixel.png", True),
              ("rId21", "hyperlink", "https://example.com/", True),
              ("rId22", "hyperlink", "ms-msdt:/id PCWDiagnostic", True),
              ("rId23", "hyperlink", "file:///C:/Windows/System32/calc.exe", True),
-             ("rId24", "hyperlink", "https://tracker.example/spoof.png", True))
+             ("rId24", "hyperlink", "https://tracker.example/spoof.png", True),
+             ("rId25", "hyperlink", " file://evil.example/share/x", True))
 
     embedded = (f'<mc:AlternateContent xmlns:mc="{mc}"><mc:Choice xmlns:v="urn:schemas-microsoft-com:vml" Requires="v">'
                 + frame(20, '<p:oleObj name="Document" r:id="rId10" imgW="1270000" imgH="952500" progId="Word.Document.12"><p:embed/></p:oleObj>')
@@ -199,15 +203,29 @@ def active_content(entries):
     timing = ('<p:timing><p:tnLst><p:par><p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot"><p:childTnLst>'
               '<p:set><p:cBhvr><p:cTn id="2" dur="1" fill="hold"/><p:tgtEl><p:spTgt spid="20"/></p:tgtEl><p:attrNameLst><p:attrName>style.visibility</p:attrName></p:attrNameLst></p:cBhvr>'
               '<p:to><p:strVal val="visible"/></p:to></p:set></p:childTnLst></p:cTn></p:par></p:tnLst></p:timing>')
+    # An Office add-in, loaded from a file share.
+    web_ns = "http://schemas.microsoft.com/office/webextensions/webextension/2010/11"
+    addin = ('<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="23" name="Add-in"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>'
+             '<p:xfrm><a:off x="0" y="0"/><a:ext cx="914400" cy="457200"/></p:xfrm>'
+             f'<a:graphic><a:graphicData uri="{web_ns}"><we:webextensionref xmlns:we="{web_ns}" r:id="rId16"/></a:graphicData></a:graphic></p:graphicFrame>')
     layout = "ppt/slideLayouts/slideLayout2.xml"
-    parts[layout] = (parts[layout].replace("</p:spTree></p:cSld>", embedded + linked + "</p:spTree>" + controls + "</p:cSld>" + timing, 1))
+    parts[layout] = (parts[layout].replace("</p:spTree></p:cSld>", embedded + linked + addin + "</p:spTree>" + controls + "</p:cSld>" + timing, 1))
     add_rels("ppt/slideLayouts/_rels/slideLayout2.xml.rels",
              ("rId10", "package", "../embeddings/Microsoft_Word_Document.docx", False),
              ("rId11", "image", "../media/preview.png", False),
              ("rId12", "oleObject", "file:///C:/Finance/budget.xlsx", True),
              ("rId13", "control", "../activeX/activeX1.xml", False),
              ("rId14", "image", "../media/control.png", False),
-             ("rId15", "vmlDrawing", "../drawings/vmlDrawing1.vml", False))
+             ("rId15", "vmlDrawing", "../drawings/vmlDrawing1.vml", False),
+             ("rId16", "http://schemas.microsoft.com/office/2011/relationships/webextension", "../webextensions/webextension1.xml", False))
+    parts["ppt/webextensions/webextension1.xml"] = (
+        f'{DECL}<we:webextension xmlns:we="{web_ns}" id="{{A0B1C2D3-0000-4000-8000-000000000001}}">'
+        '<we:reference id="wa000000001" version="1.0.0.0" store="\\\\evil.example\\addins" storeType="Filesystem"/>'
+        '<we:alternateReferences/><we:properties/><we:bindings/><we:snapshot/></we:webextension>')
+    # An action that runs a macro, in a layout whose only relationship is its master: an action
+    # is found by its name, whatever the part relates to.
+    other = "ppt/slideLayouts/slideLayout3.xml"
+    parts[other] = parts[other].replace("</p:spTree></p:cSld>", linking(24, "Macro", '<a:hlinkClick r:id="" action="ppaction://macro?name=Run"/>') + "</p:spTree></p:cSld>", 1)
     # Legacy VML, as Office writes it: not well-formed XML, and never read, since it goes unparsed.
     parts["ppt/drawings/vmlDrawing1.vml"] = b'<xml xmlns:v="urn:schemas-microsoft-com:vml"><v:shape id="_x0000_s1025"><br></v:shape></xml>'
     parts["ppt/embeddings/Microsoft_Word_Document.docx"] = b"An embedded document, not opened by any fixture.\n"
@@ -229,7 +247,8 @@ def active_content(entries):
         '<Default Extension="docx" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document"/>'
         '<Default Extension="png" ContentType="image/png"/>'
         '<Default Extension="vml" ContentType="application/vnd.openxmlformats-officedocument.vmlDrawing"/>'
-        '<Override PartName="/ppt/activeX/activeX1.xml" ContentType="application/vnd.ms-office.activeX+xml"/></Types>'))
+        '<Override PartName="/ppt/activeX/activeX1.xml" ContentType="application/vnd.ms-office.activeX+xml"/>'
+        '<Override PartName="/ppt/webextensions/webextension1.xml" ContentType="application/vnd.ms-office.webextension+xml"/></Types>'))
     return list(parts.items())
 
 

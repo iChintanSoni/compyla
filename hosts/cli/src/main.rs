@@ -274,10 +274,30 @@ fn print_diagnostic(file: &Path, d: &Diagnostic) {
         Severity::Error => "error",
         Severity::Warning => "warning",
     };
-    println!("{location}: {severity}[{}]: {}", d.code, d.message);
+    println!(
+        "{location}: {severity}[{}]: {}",
+        d.code,
+        printable(&d.message)
+    );
     if let Some(hint) = &d.hint {
-        println!("  hint: {hint}");
+        println!("  hint: {}", printable(hint));
     }
+}
+
+/// `text` safe for a terminal: control and bidi formatting characters escaped. Messages can quote
+/// a template's text (layout names, for one), and nothing they quote may move the cursor, color
+/// the line or reorder it.
+fn printable(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        let formatting = matches!(c, '\u{200E}' | '\u{200F}' | '\u{061C}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}');
+        if c.is_control() || formatting {
+            out.extend(c.escape_unicode());
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 fn exit_for(diagnostics: &[Diagnostic]) -> ExitCode {

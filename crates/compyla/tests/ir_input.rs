@@ -169,6 +169,43 @@ fn ir_input_gets_the_text_rules_with_paths() {
     assert_eq!(p.runs[0].text, "a\u{FFFD}bcbad");
 }
 
+#[test]
+fn a_link_is_checked_as_a_browser_reads_it() {
+    // Leading spaces and controls, and tabs or line breaks inside, don't hide a scheme (§4.5,
+    // C59); markdown's parser trims them, but IR input arrives as written.
+    let ir = json!({
+        "irVersion": "0.1",
+        "meta": {},
+        "body": [{ "type": "paragraph", "runs": [
+            { "text": "a", "link": " file:///etc/passwd" },
+            { "text": "b", "link": "\tms-msdt:/id PCWDiagnostic" },
+            { "text": "c", "link": "fi\tle://host/share" },
+            { "text": "d", "link": " https://a.example " }
+        ] }]
+    });
+    let (document, diagnostics) = compyla::load_ir(&ir.to_string()).unwrap();
+    let blocked: Vec<Option<String>> = diagnostics
+        .iter()
+        .filter(|d| d.code == "link_scheme_blocked")
+        .map(|d| d.path.clone())
+        .collect();
+    assert_eq!(
+        blocked,
+        [
+            Some("/body/0/runs/0/link".into()),
+            Some("/body/0/runs/1/link".into()),
+            Some("/body/0/runs/2/link".into()),
+        ]
+    );
+    let compyla::ir::Block::Paragraph(p) = &document.body[0] else {
+        panic!()
+    };
+    assert_eq!(
+        p.runs.last().unwrap().link.as_deref(),
+        Some(" https://a.example ")
+    );
+}
+
 fn lint_ir(ir: &Value, format: compyla::Format) -> Vec<compyla::Diagnostic> {
     let options = compyla::Options {
         format: Some(format),

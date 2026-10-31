@@ -1,0 +1,8 @@
+{
+  "description": "A destination is checked percent-decoded too: %5C%5Chost%5Cshare is a UNC path and is removed with link_scheme_blocked, keeping its text; an encoded relative path stays (§4.5, C59).",
+  "spec": [
+    "§4.5",
+    "C59"
+  ],
+  "oracle": "corrected"
+}

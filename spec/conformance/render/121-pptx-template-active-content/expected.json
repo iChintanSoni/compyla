@@ -39,6 +39,18 @@
     {
       "code": "template_content_removed",
       "severity": "warning"
+    },
+    {
+      "code": "template_content_removed",
+      "severity": "warning"
+    },
+    {
+      "code": "template_content_removed",
+      "severity": "warning"
+    },
+    {
+      "code": "template_content_removed",
+      "severity": "warning"
     }
   ],
   "output": {
@@ -68,7 +80,8 @@
         "ppt/embeddings/.*",
         "ppt/activeX/.*",
         "ppt/media/(preview|control)\\.png",
-        "ppt/drawings/.*"
+        "ppt/drawings/.*",
+        "ppt/webextensions/.*"
       ],
       "xpath": [
         {
@@ -128,8 +141,8 @@
         },
         {
           "part": "ppt/slideMasters/slideMaster1.xml",
-          "expr": "count(//p:sp[.//a:t='Help' or .//a:t='Run'])",
-          "equals": 2
+          "expr": "count(//p:sp[.//a:t='Help' or .//a:t='Run' or .//a:t='Space'])",
+          "equals": 3
         },
         {
           "part": "ppt/slideMasters/slideMaster1.xml",
@@ -150,6 +163,16 @@
           "part": "[Content_Types].xml",
           "expr": "count(//*[local-name()='Override'][contains(@PartName, 'activeX')])",
           "equals": 0
+        },
+        {
+          "part": "ppt/slideLayouts/slideLayout3.xml",
+          "expr": "count(//a:hlinkClick)",
+          "equals": 0
+        },
+        {
+          "part": "ppt/slideLayouts/slideLayout3.xml",
+          "expr": "count(//p:sp[.//a:t='Macro'])",
+          "equals": 1
         }
       ]
     }

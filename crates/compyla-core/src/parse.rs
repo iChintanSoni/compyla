@@ -920,8 +920,29 @@ fn tag_name(html: &str) -> Option<&str> {
     (len > 0 && rest.chars().next()?.is_ascii_alphabetic()).then(|| &rest[..len])
 }
 
-/// The §4.5 link allowlist.
+/// The §4.5 link allowlist, applied to a destination as a browser reads it (C59): without leading
+/// and trailing spaces and controls, and without tabs and line breaks anywhere. Any other control
+/// character refuses it. It must pass percent-decoded too, so `%5C%5Chost` is a UNC path.
 pub fn destination_allowed(url: &str) -> bool {
+    let read = |url: &str| -> String {
+        url.trim_matches(|c: char| c <= ' ')
+            .chars()
+            .filter(|c| !matches!(c, '\t' | '\n' | '\r'))
+            .collect()
+    };
+    let url = read(url);
+    if url.chars().any(|c| c.is_control()) {
+        return false;
+    }
+    let decoded: String = read(&crate::validate::percent_decode(&url))
+        .chars()
+        .filter(|c| !c.is_control())
+        .collect();
+    allowed(&url) && allowed(&decoded)
+}
+
+/// Whether `url` has an allowed scheme, or is a fragment or a relative reference (§4.5).
+fn allowed(url: &str) -> bool {
     let scheme_len = url
         .chars()
         .take_while(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '.' | '-'))
