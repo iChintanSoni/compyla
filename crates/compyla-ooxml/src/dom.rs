@@ -321,7 +321,9 @@ fn element(
     for attribute in start.attributes() {
         let attribute = attribute.map_err(|e| Error::Malformed(e.to_string()))?;
         let key = attribute.key;
-        if key.as_ref().starts_with("xmlns") {
+        // Namespace declarations only: an attribute whose prefix merely starts with `xmlns` is
+        // an attribute like any other.
+        if key.as_ref() == "xmlns" || key.as_ref().starts_with("xmlns:") {
             continue;
         }
         let (resolved, local) = reader.resolver().resolve_attribute(key);

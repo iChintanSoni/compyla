@@ -23,6 +23,22 @@
     {
       "code": "template_content_removed",
       "severity": "warning"
+    },
+    {
+      "code": "template_content_removed",
+      "severity": "warning"
+    },
+    {
+      "code": "template_content_removed",
+      "severity": "warning"
+    },
+    {
+      "code": "template_content_removed",
+      "severity": "warning"
+    },
+    {
+      "code": "template_content_removed",
+      "severity": "warning"
     }
   ],
   "output": {
@@ -51,7 +67,8 @@
       "partsAbsent": [
         "ppt/embeddings/.*",
         "ppt/activeX/.*",
-        "ppt/media/(preview|control)\\.png"
+        "ppt/media/(preview|control)\\.png",
+        "ppt/drawings/.*"
       ],
       "xpath": [
         {
@@ -82,7 +99,7 @@
         {
           "part": "ppt/slideMasters/slideMaster1.xml",
           "expr": "count(//p:pic)",
-          "equals": 1
+          "equals": 2
         },
         {
           "part": "ppt/slideMasters/slideMaster1.xml",
@@ -105,13 +122,33 @@
           "equals": "https://example.com/"
         },
         {
-          "part": "ppt/_rels/presentation.xml.rels",
-          "expr": "count(//rel:Relationship[@TargetMode='External'])",
+          "part": "ppt/theme/_rels/theme1.xml.rels",
+          "expr": "count(//rel:Relationship)",
           "equals": 0
         },
         {
-          "part": "ppt/theme/_rels/theme1.xml.rels",
-          "expr": "count(//rel:Relationship)",
+          "part": "ppt/slideMasters/slideMaster1.xml",
+          "expr": "count(//p:sp[.//a:t='Help' or .//a:t='Run'])",
+          "equals": 2
+        },
+        {
+          "part": "ppt/slideMasters/slideMaster1.xml",
+          "expr": "count(//a:hlinkClick[@action])",
+          "equals": 0
+        },
+        {
+          "part": "ppt/_rels/presentation.xml.rels",
+          "expr": "count(//rel:Relationship[contains(@Target, 'tracker')])",
+          "equals": 0
+        },
+        {
+          "part": "ppt/slideLayouts/_rels/slideLayout2.xml.rels",
+          "expr": "count(//rel:Relationship[contains(@Type, 'vmlDrawing')])",
+          "equals": 0
+        },
+        {
+          "part": "[Content_Types].xml",
+          "expr": "count(//*[local-name()='Override'][contains(@PartName, 'activeX')])",
           "equals": 0
         }
       ]

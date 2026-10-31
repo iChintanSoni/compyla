@@ -193,23 +193,123 @@ fn a_theme_part_that_isnt_a_theme_is_no_theme() {
     );
 }
 
+const ACTIVE: &[u8] =
+    include_bytes!("../../../spec/conformance/render/121-pptx-template-active-content/brand.potx");
+
+/// render/121's template with the part `name` edited.
+fn active_with(name: &str, edit: impl Fn(&str) -> String) -> Vec<u8> {
+    let entries: Vec<(String, Vec<u8>)> = compyla_ooxml::read::entries(ACTIVE)
+        .unwrap()
+        .into_iter()
+        .map(|(part, data)| {
+            if part == name {
+                let xml = edit(std::str::from_utf8(&data).unwrap());
+                (part, xml.into_bytes())
+            } else {
+                (part, data)
+            }
+        })
+        .collect();
+    compyla_ooxml::zip::write(&entries)
+}
+
+fn converted(source: &str, options: &compyla::Options) -> compyla::ConvertResult {
+    compyla::convert(source, options, &compyla::no_assets).unwrap()
+}
+
 #[test]
 fn removals_are_reported_in_order_by_convert_and_not_by_lint() {
     // Render-stage diagnostics join the others in §11.2 order: without a line, by code.
-    const ACTIVE: &[u8] = include_bytes!(
-        "../../../spec/conformance/render/121-pptx-template-active-content/brand.potx"
-    );
     let source = "# A\n\n---\n\n## B\n\n![Logo](missing.png)\n";
     let options = pptx(Some(ACTIVE), &[]);
     assert_eq!(codes(source, &options), ["layout_not_in_template"]);
-    let convert: Vec<String> = compyla::convert(source, &options, &compyla::no_assets)
-        .unwrap()
+    let convert: Vec<String> = converted(source, &options)
         .diagnostics
         .into_iter()
         .map(|d| d.code)
         .collect();
+    let removed = convert
+        .iter()
+        .filter(|code| *code == "template_content_removed")
+        .count();
+    assert!(removed > 0);
     let mut expected = vec!["layout_not_in_template"];
-    expected.extend(["template_content_removed"; 6]);
+    expected.extend(vec!["template_content_removed"; removed]);
     expected.push("image_unresolved");
     assert_eq!(convert, expected);
+}
+
+#[test]
+fn removals_join_a_list_the_cap_already_cut() {
+    // Lint's diagnostics already fill the cap; the removals, without a line, sort before the
+    // images and push the last of them out, and the list still ends with one truncation (§11.2).
+    let mut source = String::from("# A\n\n---\n\n## B\n\n");
+    for i in 0..1100 {
+        source.push_str(&format!("![Logo](missing{i}.png)\n\n"));
+    }
+    let result = converted(&source, &pptx(Some(ACTIVE), &[]));
+    let codes: Vec<&str> = result.diagnostics.iter().map(|d| d.code.as_str()).collect();
+    let removed = codes
+        .iter()
+        .filter(|code| **code == "template_content_removed")
+        .count();
+    assert!(removed > 0);
+    assert_eq!(codes.len(), 1001);
+    assert!(
+        codes[..removed]
+            .iter()
+            .all(|c| *c == "template_content_removed")
+    );
+    assert!(
+        codes[removed..1000]
+            .iter()
+            .all(|c| *c != "template_content_removed" && *c != "diagnostics_truncated")
+    );
+    assert_eq!(codes[1000], "diagnostics_truncated");
+    assert!(result.bytes.is_some());
+}
+
+#[test]
+fn strict_doesnt_promote_removals() {
+    // `template_content_removed` is advisory: strict mode still renders (§11.1).
+    let options = compyla::Options {
+        strict: true,
+        ..pptx(Some(ACTIVE), &[])
+    };
+    let result = converted("# Active content\n\n---\n\n## Kept\n\nText.\n", &options);
+    assert!(result.bytes.is_some());
+    assert!(!result.diagnostics.is_empty());
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .all(|d| d.code == "template_content_removed"
+                && d.severity == compyla_core::diagnostic::Severity::Warning)
+    );
+}
+
+#[test]
+fn a_templates_text_reaches_messages_escaped() {
+    // A target written to move a terminal's cursor, color the line and forge another.
+    let template = active_with("ppt/_rels/presentation.xml.rels", |xml| {
+        xml.replace(
+            "</Relationships>",
+            r#"<Relationship Id="rIdE" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="https://x.example/&#x1B;[31m&#x202E;red&#10;in.md: 0 errors" TargetMode="External"/></Relationships>"#,
+        )
+    });
+    let result = converted("# A\n", &pptx(Some(&template), &[]));
+    let message = result
+        .diagnostics
+        .iter()
+        .find(|d| d.message.contains("x.example"))
+        .map(|d| d.message.clone())
+        .expect("the removal is reported");
+    assert!(
+        !message.contains(['\u{1b}', '\n', '\u{202e}']),
+        "{message:?}"
+    );
+    assert!(
+        message.contains(r"\u{1b}[31m\u{202e}red\u{a}in.md"),
+        "{message}"
+    );
 }
