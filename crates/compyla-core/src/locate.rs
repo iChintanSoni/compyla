@@ -38,7 +38,9 @@ impl Locator {
         for diagnostic in diagnostics {
             // Every line a profile reports comes from a renumbered position (see the module docs).
             debug_assert!(
-                diagnostic.line.is_none_or(|line| (1..self.slots.len()).contains(&line)),
+                diagnostic
+                    .line
+                    .is_none_or(|line| (1..self.slots.len()).contains(&line)),
                 "{} at line {:?}, which renumbering didn't assign",
                 diagnostic.code,
                 diagnostic.line
