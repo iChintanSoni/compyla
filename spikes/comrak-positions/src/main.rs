@@ -664,10 +664,42 @@ fn tag_name(html: &str) -> Option<&str> {
     (len > 0 && rest.chars().next()?.is_ascii_alphabetic()).then(|| &rest[..len])
 }
 
-/// markdown-spec.md §4.5 link allowlist.
+/// markdown-spec.md §4.5 link allowlist, on the destination as a browser reads it and percent-decoded
+/// too (C59).
 fn destination_allowed(url: &str) -> bool {
+    let read = |url: &str| -> String {
+        url.trim_matches(|c: char| c <= ' ').chars().filter(|c| !matches!(c, '\t' | '\n' | '\r')).collect()
+    };
+    let url = read(url);
+    if url.chars().any(char::is_control) {
+        return false;
+    }
+    let decoded: String = read(&percent_decoded(&url)).chars().filter(|c| !c.is_control()).collect();
+    allowed(&url) && allowed(&decoded)
+}
+
+fn percent_decoded(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let hex = |b: u8| (b as char).to_digit(16);
+    let (mut out, mut i) = (Vec::with_capacity(bytes.len()), 0);
+    while i < bytes.len() {
+        match (bytes[i], bytes.get(i + 1).copied().and_then(hex), bytes.get(i + 2).copied().and_then(hex)) {
+            (b'%', Some(high), Some(low)) => {
+                out.push((high * 16 + low) as u8);
+                i += 3;
+            }
+            (byte, _, _) => {
+                out.push(byte);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn allowed(url: &str) -> bool {
     let scheme_len = url.chars().take_while(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '.' | '-')).count();
-    let has_scheme = scheme_len > 0 && url.chars().next().unwrap().is_ascii_alphabetic() && url[scheme_len..].starts_with(':');
+    let has_scheme = scheme_len > 0 && url.starts_with(|c: char| c.is_ascii_alphabetic()) && url[scheme_len..].starts_with(':');
     if has_scheme {
         let scheme = url[..scheme_len].to_ascii_lowercase();
         return matches!(scheme.as_str(), "http" | "https" | "mailto" | "tel");
