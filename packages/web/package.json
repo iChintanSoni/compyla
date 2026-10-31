@@ -39,6 +39,6 @@
     "esbuild": "^0.28.1",
     "jsdom": "^30.0.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "vitest": "^5.0.5"
   }
 }
