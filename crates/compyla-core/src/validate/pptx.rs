@@ -38,7 +38,7 @@ pub fn validate(input: &Input<'_>, out: &mut Vec<Diagnostic>) {
         slide_rules(slide, &mut settled, out);
     }
     nested_directives(&input.document.body, &settled, out);
-    image_directives(&input.document.body, out);
+    super::image_directives(&input.document.body, &image_options, out);
     anchors(input, &composed, out);
 }
 
@@ -123,7 +123,7 @@ impl<'a> Request<'a> {
 }
 
 /// §8.3, in priority order: explicit; the title slide, when the content fits it; inferred. A name
-/// that is missing or doesn't resolve is inferred instead.
+/// that is missing or doesn't resolve is selected as if there were no layout directive.
 fn compose(slides: Vec<Slide<'_>>) -> Vec<Composed<'_>> {
     let count = slides.len();
     slides
@@ -135,7 +135,7 @@ fn compose(slides: Vec<Slide<'_>>) -> Vec<Composed<'_>> {
                 Request::Explicit(_, layout) => layout,
                 _ => {
                     let written = Measure::new(&slide.content, true);
-                    let title_slide = matches!(request, Request::None)
+                    let title_slide = !matches!(request, Request::Explicit(..))
                         && index == 0
                         && count > 1
                         && Layout::TitleSlide
@@ -297,45 +297,6 @@ fn nested_directives(
     });
 }
 
-/// §1.6, §8.4: `::: image fit=contain|cover` fits the images it wraps, or, when empty, the
-/// immediately following media block. `width=` is a docx and pdf option, ignored quietly here.
-fn image_directives(blocks: &[Block], out: &mut Vec<Diagnostic>) {
-    for (index, block) in blocks.iter().enumerate() {
-        if let Block::Directive(directive) = block
-            && directive.name == "image"
-        {
-            image_options(directive, out);
-            let applies = if directive.children.is_empty() {
-                matches!(blocks.get(index + 1), Some(Block::Media(_)))
-            } else {
-                let mut found = false;
-                for_each_block(&directive.children, &mut |b| {
-                    found |= matches!(b, Block::Media(_));
-                });
-                found
-            };
-            if !applies {
-                out.push(misplaced(
-                    directive,
-                    "`::: image` has no image to apply to; it is ignored.",
-                    "Wrap the image in the directive, or put the image directly after it.",
-                ));
-            }
-        }
-        match block {
-            Block::Section(section) => image_directives(&section.children, out),
-            Block::Quote(quote) => image_directives(&quote.children, out),
-            Block::Directive(directive) => image_directives(&directive.children, out),
-            Block::List(list) => {
-                for item in &list.items {
-                    image_directives(&item.children, out);
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
 fn image_options(directive: &Directive, out: &mut Vec<Diagnostic>) {
     let line = line(directive.position);
     let parsed = options(&directive.args);
@@ -444,16 +405,23 @@ mod tests {
     }
 
     #[test]
-    fn layout_after_content_is_misplaced_and_opaque() {
+    fn layout_after_content_is_misplaced_and_ignored() {
         let source = "## S\n\nIntro.\n\n::: layout Two Content\n\nA\n\n---\n\nB\n\n:::\n";
         assert_eq!(lint(source), expect(&[("directive_misplaced", 5)]));
-        // Its body isn't entered: the `---` inside doesn't split, and it is one block.
+        // Ignored like any misplaced annotation (§1.5): its body is entered, so the `---` inside
+        // splits the slide and its paragraphs count in place.
         assert_eq!(
             shape(source),
-            [(
-                "Two Content".to_string(),
-                vec!["paragraph".to_string(), "directive:layout".to_string()]
-            )]
+            [
+                (
+                    "Title Slide".to_string(),
+                    vec!["paragraph".to_string(), "paragraph".to_string()]
+                ),
+                (
+                    "Title and Content".to_string(),
+                    vec!["paragraph".to_string()]
+                )
+            ]
         );
     }
 
@@ -476,10 +444,19 @@ mod tests {
     }
 
     #[test]
-    fn an_unresolved_name_is_inferred_not_title_slide() {
+    fn an_unresolved_name_is_selected_as_if_absent() {
+        // As if there were no layout directive (§8.3): the title-slide rule still applies.
         let source = "# Deck\n\n::: layout Fancy :::\n\nSubtitle.\n\n---\n\n## Next\n\nText.\n";
         assert_eq!(lint(source), expect(&[("unknown_layout", 3)]));
-        assert_eq!(shape(source)[0].0, "Title and Content");
+        assert_eq!(shape(source)[0].0, "Title Slide");
+    }
+
+    #[test]
+    fn the_quote_layout_holds_a_quote_or_text_only() {
+        let table = "## Q\n\n::: layout Quote\n\n| A |\n|---|\n| 1 |\n\n:::\n";
+        assert_eq!(lint(table), expect(&[("layout_overflow", 3)]));
+        let quote = "## Q\n\n::: layout Quote\n\n> Words.\n\n:::\n";
+        assert_eq!(lint(quote), []);
     }
 
     #[test]

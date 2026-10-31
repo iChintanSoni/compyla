@@ -82,6 +82,20 @@ impl<'a> Walk<'a> {
         }
     }
 
+    /// Whether a `layout` reached now would be the slide's leading one: nothing but notes and the
+    /// title heading precede it (§8.3).
+    fn leads(&self) -> bool {
+        let mut title = false;
+        for item in &self.current {
+            match item {
+                Item::Notes(_) => {}
+                Item::Heading(_) if !title => title = true,
+                _ => return false,
+            }
+        }
+        true
+    }
+
     fn finish(mut self) -> Vec<Vec<Item<'a>>> {
         self.done.push(self.current);
         self.done
@@ -109,7 +123,10 @@ impl<'a> Walk<'a> {
     fn directive(&mut self, d: &'a Directive) {
         match d.name.as_str() {
             "col" => self.current.push(Item::Col(d)),
-            "layout" => self.current.push(Item::Layout(d)),
+            "layout" if self.split && self.leads() => self.current.push(Item::Layout(d)),
+            // A `layout` that isn't leading is misplaced and so ignored (§1.5): its children count
+            // in its place, like any ignored annotation's (§8.1, §8.6).
+            "layout" => self.blocks(&d.children),
             "notes" => self.current.push(Item::Notes(d)),
             name => match directive(name) {
                 None | Some((DirectiveKind::Annotation, _)) => self.blocks(&d.children),

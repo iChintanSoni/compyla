@@ -6,7 +6,7 @@ use crate::ir::{Block, Directive};
 
 pub fn validate(input: &Input<'_>, format: Format, out: &mut Vec<Diagnostic>) {
     headings(&input.document.body, 0, out);
-    image_directives(&input.document.body, out);
+    super::image_directives(&input.document.body, &image_options, out);
     page_geometry(input, out);
     anchors(input, format, out);
 }
@@ -43,50 +43,6 @@ fn headings(blocks: &[Block], parent: u8, out: &mut Vec<Diagnostic>) {
             _ => {}
         }
     }
-}
-
-/// §1.6, §6.1: `::: image width=N%` sizes the images it wraps, or the next media block when empty.
-fn image_directives(blocks: &[Block], out: &mut Vec<Diagnostic>) {
-    for (index, block) in blocks.iter().enumerate() {
-        match block {
-            Block::Directive(d) if d.name == "image" => {
-                image_options(d, out);
-                let applies = if d.children.is_empty() {
-                    matches!(blocks.get(index + 1), Some(Block::Media(_)))
-                } else {
-                    contains_media(&d.children)
-                };
-                if !applies {
-                    out.push(at(
-                        Diagnostic::new(
-                            "directive_misplaced",
-                            "`::: image` has no image to apply to; it is ignored.",
-                        )
-                        .hint(
-                            "Wrap the image in the directive, or put the image directly after it.",
-                        ),
-                        d.position.map(|p| p.line),
-                    ));
-                }
-                image_directives(&d.children, out);
-            }
-            Block::Section(s) => image_directives(&s.children, out),
-            Block::Quote(q) => image_directives(&q.children, out),
-            Block::Directive(d) => image_directives(&d.children, out),
-            Block::List(l) => {
-                for item in &l.items {
-                    image_directives(&item.children, out);
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-fn contains_media(blocks: &[Block]) -> bool {
-    let mut found = false;
-    super::for_each_block(blocks, &mut |b| found |= matches!(b, Block::Media(_)));
-    found
 }
 
 fn image_options(d: &Directive, out: &mut Vec<Diagnostic>) {

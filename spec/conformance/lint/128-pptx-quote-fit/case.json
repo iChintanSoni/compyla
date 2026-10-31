@@ -1,0 +1,9 @@
+{
+  "description": "The Quote layout holds only a quote or a text block.",
+  "spec": [
+    "\u00a78.6",
+    "C45"
+  ],
+  "oracle": "corrected",
+  "format": "pptx"
+}
