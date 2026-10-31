@@ -1116,10 +1116,14 @@ The core performs no I/O (architecture.md D11). Hosts supply resolvers:
 A template's kind is determined from its package's main content type, not its file name. These
 produce `template_invalid` (error):
 - a package that isn't a well-formed OOXML package of an accepted kind
-- a macro-enabled package (`.docm`, `.dotm`, `.pptm`, `.potm`, or any package containing a VBA project)
+- a macro-enabled package (`.docm`, `.dotm`, `.pptm`, `.potm`, or any package containing a VBA project
+  or its data, or an Excel 4.0 macro sheet, found by part name, content type or relationship type;
+  content types compare without case)
 - an encrypted or password-protected package
-- package XML containing a DTD
+- package XML containing a DTD (XML parts may be UTF-8 or UTF-16 and are checked as characters)
 - a package that violates the limits in §12.1, or has entries with absolute paths or `..` segments
+  (after percent-decoding; a segment of dots, or with trailing dots or spaces, counts as `..`), or
+  whose central directory and local headers disagree about an entry's name
 
 A template without a theme part produces `no_theme` (warning; defaults are used). A docx template
 without a styles part produces `no_styles_xml` (warning; house styles are used).
@@ -1273,6 +1277,7 @@ particular, it needs to keep only the diagnostics it may report (§11.2). *(C47)
 | Slides; sheets | 10,000; 1,000 |
 | Image size, encoded / decoded | 50 MiB / 100 megapixels |
 | Template package, compressed / uncompressed / entries / compression ratio | 50 MiB / 256 MiB / 10,000 / 100:1 |
+| Elements in a template XML part read as a tree (a docx body is searched, not read whole) | 500,000 |
 
 ### 12.2 Security
 

@@ -1,0 +1,10 @@
+{
+  "description": "Masters and layouts listed many times over are read and reported once; a color slot outside the twelve isn't reported, and a placeholder type outside ST_PlaceholderType reads as obj.",
+  "spec": [
+    "\u00a710.5",
+    "\u00a712.1",
+    "C50"
+  ],
+  "oracle": "none",
+  "template": "template.pptx"
+}

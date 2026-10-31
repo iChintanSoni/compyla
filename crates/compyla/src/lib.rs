@@ -125,6 +125,10 @@ pub fn load_ir(json: &str) -> Result<(ir::Document, Vec<Diagnostic>), OperationE
     Ok((loaded.document, loaded.diagnostics))
 }
 
+/// The largest template package accepted (markdown-spec.md §12.1). Hosts need read no more than one
+/// byte past it.
+pub const TEMPLATE_SIZE_LIMIT: usize = compyla_ooxml::read::MAX_COMPRESSED;
+
 /// `inspect_template` (markdown-spec.md §10.5): the template report
 /// (`spec/template-report.schema.json`) for a template package's bytes. An invalid template is
 /// reported, not refused: its report has `kind: null` and its `template_invalid` issue.

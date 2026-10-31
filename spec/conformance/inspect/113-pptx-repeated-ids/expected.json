@@ -1,0 +1,84 @@
+{
+  "kind": "pptx",
+  "theme": {
+    "fonts": {
+      "major": "Brand Display",
+      "minor": "Brand Sans"
+    },
+    "colors": {
+      "dk1": "000000",
+      "lt1": "FFFFFF",
+      "dk2": "1F2A44",
+      "lt2": "E8ECF3",
+      "accent1": "2F5BEA",
+      "accent2": "00A88F",
+      "accent3": "F2A900",
+      "accent4": "D64545",
+      "accent5": "7A4FD1",
+      "accent6": "4A5568",
+      "hlink": "0563C1",
+      "folHlink": "954F72"
+    }
+  },
+  "fonts": [
+    {
+      "family": "Brand Display",
+      "embedded": false
+    },
+    {
+      "family": "Brand Sans",
+      "embedded": true
+    },
+    {
+      "family": "Source Serif 4",
+      "embedded": false
+    }
+  ],
+  "slideSize": {
+    "width": 960,
+    "height": 540
+  },
+  "layouts": [
+    {
+      "name": "Title Slide",
+      "type": "title",
+      "placeholders": [
+        {
+          "type": "ctrTitle",
+          "name": "Title 1"
+        },
+        {
+          "type": "obj",
+          "index": 1,
+          "name": "Subtitle 2"
+        }
+      ]
+    },
+    {
+      "name": "Titel und Inhalt",
+      "type": "obj",
+      "placeholders": [
+        {
+          "type": "title",
+          "name": "Titel 1"
+        },
+        {
+          "type": "obj",
+          "index": 1,
+          "name": "Inhaltsplatzhalter 2"
+        },
+        {
+          "type": "dt",
+          "index": 10,
+          "name": "Datumsplatzhalter 3"
+        }
+      ]
+    },
+    {
+      "name": "Blank",
+      "type": "blank",
+      "placeholders": []
+    }
+  ],
+  "issues": []
+}

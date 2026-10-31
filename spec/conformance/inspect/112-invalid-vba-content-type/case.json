@@ -1,0 +1,9 @@
+{
+  "description": "A VBA project is found by its content type, compared without case, whatever the part is called.",
+  "spec": [
+    "\u00a710.4",
+    "C50"
+  ],
+  "oracle": "none",
+  "template": "template.docx"
+}

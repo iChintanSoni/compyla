@@ -1,0 +1,10 @@
+{
+  "description": "A body with more elements than a part's tree may hold still yields the final section's page setup; a zero page width falls back to the default.",
+  "spec": [
+    "\u00a710.5",
+    "\u00a712.1",
+    "C50"
+  ],
+  "oracle": "none",
+  "template": "template.docx"
+}

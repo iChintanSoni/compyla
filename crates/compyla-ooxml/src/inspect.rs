@@ -3,6 +3,8 @@
 //! styles. Lengths are in points.
 
 use compyla_core::diagnostic::Diagnostic;
+use std::collections::{HashMap, HashSet};
+
 use serde_json::{Map, Value, json};
 
 use crate::dom::{Element, MAIN_A, MAIN_P, MAIN_W, MAIN_X, REL_NS};
@@ -65,8 +67,8 @@ fn report(template: &Template) -> Result<Value, Invalid> {
     let theme_part = match template.related(&main, "theme")? {
         Some(part) => Some(part),
         // pptx: the theme hangs off the first slide master.
-        None => match first_master(template)? {
-            Some(master) => template.related(&master, "theme")?,
+        None => match masters(template)?.first() {
+            Some(master) => template.related(master, "theme")?,
             None => None,
         },
     };
@@ -136,7 +138,14 @@ fn theme_json(theme: &Element, fonts: &mut Fonts) -> Value {
     }
     let mut colors = Map::new();
     if let Some(scheme) = elements.and_then(|e| e.child(MAIN_A, "clrScheme")) {
+        const SLOTS: [&str; 12] = [
+            "dk1", "lt1", "dk2", "lt2", "accent1", "accent2", "accent3", "accent4", "accent5",
+            "accent6", "hlink", "folHlink",
+        ];
         for slot in &scheme.children {
+            if slot.namespace != MAIN_A || !SLOTS.contains(&slot.name.as_str()) {
+                continue;
+            }
             let color = slot
                 .child(MAIN_A, "srgbClr")
                 .and_then(|c| c.attr("val"))
@@ -160,11 +169,13 @@ fn points(value: f64) -> Value {
     }
 }
 
-fn twips(element: Option<&Element>, attribute: &str, default: f64) -> Value {
+/// A length in twips as points; `default` where it is missing or out of range. A page size must be
+/// positive; a margin may be zero.
+fn twips(element: Option<&Element>, attribute: &str, default: f64, positive: bool) -> Value {
     let value = element
         .and_then(|e| e.attr_ns(MAIN_W, attribute))
         .and_then(|v| v.parse::<f64>().ok())
-        .filter(|v| v.is_finite() && *v >= 0.0)
+        .filter(|v| v.is_finite() && (*v > 0.0 || (!positive && *v == 0.0)))
         .unwrap_or(default);
     points(value / 20.0)
 }
@@ -221,31 +232,50 @@ fn docx(
     }
 
     // The final section's page setup; Word's defaults (Letter, 1-inch margins) where it is silent.
-    let document = template.xml(main)?;
-    let section = document
-        .as_ref()
-        .and_then(|d| d.path(&[(MAIN_W, "body"), (MAIN_W, "sectPr")]));
-    let size = section.and_then(|s| s.child(MAIN_W, "pgSz"));
-    let margins = section.and_then(|s| s.child(MAIN_W, "pgMar"));
+    // The body can be large, so only the section is read into a tree.
+    let path = [(MAIN_W, "document"), (MAIN_W, "body"), (MAIN_W, "sectPr")];
+    let section = template.find_last(main, &path)?;
+    let size = section.as_ref().and_then(|s| s.child(MAIN_W, "pgSz"));
+    let margins = section.as_ref().and_then(|s| s.child(MAIN_W, "pgMar"));
     report.insert("styles".into(), Value::Array(styles));
     report.insert(
         "page".into(),
         json!({
-            "width": twips(size, "w", 12_240.0),
-            "height": twips(size, "h", 15_840.0),
+            "width": twips(size, "w", 12_240.0, true),
+            "height": twips(size, "h", 15_840.0, true),
             "margins": {
-                "top": twips(margins, "top", 1_440.0),
-                "right": twips(margins, "right", 1_440.0),
-                "bottom": twips(margins, "bottom", 1_440.0),
-                "left": twips(margins, "left", 1_440.0),
+                "top": twips(margins, "top", 1_440.0, false),
+                "right": twips(margins, "right", 1_440.0, false),
+                "bottom": twips(margins, "bottom", 1_440.0, false),
+                "left": twips(margins, "left", 1_440.0, false),
             },
         }),
     );
     Ok(())
 }
 
-fn first_master(template: &Template) -> Result<Option<String>, Invalid> {
-    Ok(masters(template)?.into_iter().next())
+/// The parts a list of ids (`sldMasterId`, `sldLayoutId`) names through `source`'s relationships,
+/// in list order, each once: a package can repeat ids to make a reader do the same work many times.
+fn listed_parts(
+    template: &Template,
+    source: &str,
+    list: Option<&Element>,
+    item: &str,
+) -> Result<Vec<String>, Invalid> {
+    let targets: HashMap<String, String> = template
+        .relationships(source)?
+        .into_iter()
+        .filter(|r| !r.external)
+        .map(|r| (r.id, r.target))
+        .collect();
+    let mut seen = HashSet::new();
+    Ok(list
+        .into_iter()
+        .flat_map(|list| list.children_named(MAIN_P, item))
+        .filter_map(|id| targets.get(id.attr_ns(REL_NS, "id")?))
+        .filter(|target| seen.insert(target.to_ascii_lowercase()))
+        .cloned()
+        .collect())
 }
 
 /// The slide masters, in `sldMasterIdLst` order.
@@ -253,23 +283,13 @@ fn masters(template: &Template) -> Result<Vec<String>, Invalid> {
     if template.kind != Kind::Pptx {
         return Ok(Vec::new());
     }
-    let rels = template.relationships(&template.main)?;
-    let Some(presentation) = template.xml(&template.main)? else {
-        return Ok(Vec::new());
-    };
-    let ids = presentation
-        .child(MAIN_P, "sldMasterIdLst")
-        .map(|list| {
-            list.children_named(MAIN_P, "sldMasterId")
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    Ok(ids
-        .into_iter()
-        .filter_map(|id| id.attr_ns(REL_NS, "id"))
-        .filter_map(|id| rels.iter().find(|r| r.id == id && !r.external))
-        .map(|r| r.target.clone())
-        .collect())
+    let presentation = template.xml(&template.main)?.unwrap_or_default();
+    listed_parts(
+        template,
+        &template.main,
+        presentation.child(MAIN_P, "sldMasterIdLst"),
+        "sldMasterId",
+    )
 }
 
 fn pptx(
@@ -301,27 +321,30 @@ fn pptx(
     }
 
     let mut layouts = Vec::new();
-    for master in masters(template)? {
+    let masters = listed_parts(
+        template,
+        &template.main,
+        presentation.child(MAIN_P, "sldMasterIdLst"),
+        "sldMasterId",
+    )?;
+    // A layout shared by two masters is reported once.
+    let mut seen = HashSet::new();
+    for master in masters {
         let Some(master_xml) = template.xml(&master)? else {
             continue;
         };
         add_typefaces(&master_xml, fonts);
-        let rels = template.relationships(&master)?;
-        let ids = master_xml
-            .child(MAIN_P, "sldLayoutIdLst")
-            .map(|list| {
-                list.children_named(MAIN_P, "sldLayoutId")
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        for id in ids {
-            let Some(part) = id
-                .attr_ns(REL_NS, "id")
-                .and_then(|id| rels.iter().find(|r| r.id == id && !r.external))
-            else {
+        let parts = listed_parts(
+            template,
+            &master,
+            master_xml.child(MAIN_P, "sldLayoutIdLst"),
+            "sldLayoutId",
+        )?;
+        for part in parts {
+            if !seen.insert(part.to_ascii_lowercase()) {
                 continue;
-            };
-            let Some(layout) = template.xml(&part.target)? else {
+            }
+            let Some(layout) = template.xml(&part)? else {
                 continue;
             };
             add_typefaces(&layout, fonts);
@@ -374,11 +397,17 @@ fn layout_json(layout: &Element) -> Value {
                 })
                 .and_then(|c| c.attr("name"))
                 .unwrap_or_default();
+            // ST_PlaceholderType; `obj` when the template omits it or gives another value.
+            const TYPES: [&str; 16] = [
+                "title", "body", "ctrTitle", "subTitle", "dt", "sldNum", "ftr", "hdr", "obj",
+                "chart", "tbl", "clipArt", "dgm", "media", "sldImg", "pic",
+            ];
+            let kind = placeholder
+                .attr("type")
+                .filter(|kind| TYPES.contains(kind))
+                .unwrap_or("obj");
             let mut entry = Map::new();
-            entry.insert(
-                "type".into(),
-                placeholder.attr("type").unwrap_or("obj").into(),
-            );
+            entry.insert("type".into(), kind.into());
             if let Some(index) = placeholder.attr("idx").and_then(|i| i.parse::<u64>().ok()) {
                 entry.insert("index".into(), index.into());
             }

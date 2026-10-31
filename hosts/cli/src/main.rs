@@ -193,7 +193,14 @@ fn report(args: &Args, diagnostics: &[Diagnostic]) {
 }
 
 fn inspect(file: &Path) -> Result<ExitCode, String> {
-    let bytes = std::fs::read(file).map_err(|e| format!("can't read {}: {e}", file.display()))?;
+    // Read no more than one byte past the size limit (§12.1): the report refuses larger packages,
+    // and a huge file shouldn't be read into memory to learn that.
+    use std::io::Read;
+    let limit = compyla::TEMPLATE_SIZE_LIMIT as u64 + 1;
+    let mut bytes = Vec::new();
+    std::fs::File::open(file)
+        .and_then(|f| f.take(limit).read_to_end(&mut bytes))
+        .map_err(|e| format!("can't read {}: {e}", file.display()))?;
     let report = compyla::inspect_template(&bytes);
     println!(
         "{}",

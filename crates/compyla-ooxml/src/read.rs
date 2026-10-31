@@ -40,6 +40,11 @@ pub fn entries(bytes: &[u8]) -> Result<Vec<(String, Vec<u8>)>, Refused> {
     let mut out = Vec::with_capacity(count);
     let mut names = HashSet::new();
     let (mut at, mut total) = (offset, 0usize);
+    // What the archive may inflate to: the lesser of the size limit and the ratio limit. Enforced
+    // while inflating, so overlapping or repeated entries can't make it allocate more. Computed
+    // in u64: on 32-bit hosts the product overflows usize.
+    let budget =
+        (MAX_RATIO as u64 * bytes.len().max(1) as u64).min(MAX_UNCOMPRESSED as u64) as usize;
     for _ in 0..count {
         if u32_at(bytes, at)? != 0x0201_4b50 {
             return refuse("has a damaged central directory");
@@ -73,36 +78,77 @@ pub fn entries(bytes: &[u8]) -> Result<Vec<(String, Vec<u8>)>, Refused> {
         }
         let local_name = usize::from(u16_at(bytes, local + 26)?);
         let local_extra = usize::from(u16_at(bytes, local + 28)?);
-        let data = slice(bytes, local + 30 + local_name + local_extra, compressed)?;
-        let left = MAX_UNCOMPRESSED - total;
-        let content = match method {
-            0 => data.to_vec(),
-            8 => miniz_oxide::inflate::decompress_to_vec_with_limit(data, left + 1)
-                .map_err(|_| Refused("has an entry that doesn't decompress".into()))?,
-            _ => return refuse("uses a compression method other than DEFLATE"),
-        };
-        total += content.len();
-        if total > MAX_UNCOMPRESSED {
-            return refuse("is larger than 256 MiB uncompressed");
+        // A reader that walks local headers must see the same name.
+        if slice(bytes, local + 30, local_name)? != name.as_bytes() {
+            return refuse(format!("has an entry whose names disagree (`{name}`)"));
         }
+        let data = slice(bytes, local + 30 + local_name + local_extra, compressed)?;
+        let left = budget - total;
+        let content =
+            match method {
+                0 if data.len() <= left => data.to_vec(),
+                0 => return refuse(over(budget)),
+                8 => miniz_oxide::inflate::decompress_to_vec_with_limit(data, left).map_err(
+                    |error| match error.status {
+                        miniz_oxide::inflate::TINFLStatus::HasMoreOutput => Refused(over(budget)),
+                        _ => Refused("has an entry that doesn't decompress".into()),
+                    },
+                )?,
+                _ => return refuse("uses a compression method other than DEFLATE"),
+            };
+        total += content.len();
         out.push((name, content));
-    }
-    if total > MAX_RATIO * bytes.len().max(1) {
-        return refuse("compresses more than 100:1");
     }
     Ok(out)
 }
 
-/// §10.4: no absolute paths, `..` segments or backslashes.
+/// The refusal for inflating past `budget`.
+fn over(budget: usize) -> String {
+    if budget < MAX_UNCOMPRESSED {
+        "compresses more than 100:1".into()
+    } else {
+        "is larger than 256 MiB uncompressed".into()
+    }
+}
+
+/// §10.4: no absolute paths or `..` segments, however written. Part names are URIs (OPC), so they
+/// are checked percent-decoded; a segment of dots, or with trailing dots or spaces (which Windows
+/// drops), counts as `..`; backslashes, drive letters, controls and empty segments are refused.
 fn check_name(name: &str) -> Result<(), Refused> {
-    let unsafe_name = name.starts_with('/')
-        || name.contains('\\')
-        || name.contains(':')
-        || name.split('/').any(|segment| segment == "..");
+    let decoded = percent_decoded(name);
+    let segments: Vec<&str> = decoded.trim_end_matches('/').split('/').collect();
+    let unsafe_name = decoded.starts_with('/')
+        || decoded.contains(['\\', ':'])
+        || decoded.chars().any(char::is_control)
+        || segments
+            .iter()
+            .any(|segment| segment.is_empty() || segment.trim_end_matches(['.', ' ']).is_empty());
     if unsafe_name {
         return refuse(format!("has an entry with an unsafe path (`{name}`)"));
     }
     Ok(())
+}
+
+fn percent_decoded(name: &str) -> String {
+    let bytes = name.as_bytes();
+    let hex = |b: u8| (b as char).to_digit(16);
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && let (Some(high), Some(low)) = (
+                bytes.get(i + 1).copied().and_then(hex),
+                bytes.get(i + 2).copied().and_then(hex),
+            )
+        {
+            out.push((high * 16 + low) as u8);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// The end of central directory record: the last signature in the final 64 KiB + 22 bytes.
@@ -154,14 +200,32 @@ mod tests {
     fn refuses_unsafe_and_hostile_archives() {
         let reason = |bytes: &[u8]| entries(bytes).unwrap_err().0;
         assert_eq!(reason(b"not a zip"), "isn't a zip package");
-        assert!(reason(&archive(&[("../evil.xml", b"x")])).contains("unsafe path"));
-        assert!(reason(&archive(&[("/abs.xml", b"x")])).contains("unsafe path"));
+        for name in [
+            "../evil.xml",
+            "/abs.xml",
+            "a/%2e%2e/b.xml",
+            "a/.. /b.xml",
+            "a/.../b.xml",
+            "a\\b.xml",
+            "C:/x.xml",
+            "a//b.xml",
+            "a\u{0}.xml",
+        ] {
+            assert!(
+                reason(&archive(&[(name, b"x")])).contains("unsafe path"),
+                "{name}"
+            );
+        }
         assert!(reason(&archive(&[("a.xml", b"x"), ("A.xml", b"y")])).contains("twice"));
         // A bomb: 1 MiB of zeros compresses about 1000:1.
         assert!(reason(&archive(&[("bomb.xml", &vec![0; 1 << 20])])).contains("100:1"));
         let mut ole = vec![0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
         ole.extend([0; 100]);
         assert!(reason(&ole).contains("encrypted"));
+        // A large archive's ratio limit, computed without overflow on 32-bit hosts.
+        let mut big = archive(&[("a.xml", b"<a/>")]);
+        big.extend(vec![0; 43_000_000]);
+        assert!(entries(&big).is_err(), "trailing bytes hide the end record");
         let mut truncated = archive(&[("a.xml", &[b'x'; 100])]);
         truncated.drain(10..40);
         assert!(entries(&truncated).is_err());
