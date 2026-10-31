@@ -12,5 +12,8 @@ publish.workspace = true
 compyla-core.workspace = true
 compyla-ooxml.workspace = true
 
+[dev-dependencies]
+zip = { version = "9", default-features = false, features = ["deflate"] }
+
 [lints]
 workspace = true

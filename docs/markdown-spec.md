@@ -101,6 +101,7 @@ prototype.
 | C46 | xlsx: a column whose cells match different tests, or that has no literal values, is `general`: each cell keeps its own type. Percent formats default to just enough decimals. Currency codes are any three letters. A sheet qualifies both cells of a range. Booleans in formulas are written in uppercase. An overridden empty annotation is misplaced. Column parameters follow §1.6's unknown/invalid split. A misplaced directive's arguments aren't checked (§1.5, §9.3–§9.6) | Numbers mixed with percents became percents (`42` → 4200%); mixed and formula-only columns were text; `9.5%` showed as 10%; an overridden annotation vanished silently | compose/103, compose/105, compose/112, lint/129, lint/130 |
 | C47 | Limits (§12.1) hold for every input: IR input is counted as markdown is, and cells per row and slides are enforced. A limit stops processing, so no validate-stage diagnostic follows one. IR positions are at most 2³²−1, and IR text rules cover every string. Nested annotations of the same name: the innermost applies (§9.4, §10.7, §12.1) | Unenforced for IR input, rows and slides: hostile input crashed, hung or placed cells past XFD | lint/132, lint/133, lint/134, lint/135 |
 | C48 | xlsx rendering: the header row is bold on a light fill unless an Excel table styles it; an Excel table with no data rows gets an empty one; hyperlinked text is underlined in the link color and line breaks wrap (§9.2, §9.6) | Header style unspecified; an Excel table with no data rows was invalid | render/104, render/105, render/106, render/107 |
+| C49 | xlsx output, from review: the diagnostics cap keeps errors first, so a blocked `convert` always reports why (§11.2); text that looks like a SpreadsheetML escape reads back as written; Excel table headers keep links and rich text; emphasis on a number becomes the cell's font; an erroring formula's text is its `raw` (§9.3, §9.5, §9.6) | A blocked `convert` could report no error; `_x0041_` read back as "A"; header links dropped silently | render/108 |
 
 0.2 also corrects 0.1's *text* in one place where the prototype was right: `---` in xlsx is ignored
 without a diagnostic (§5).
@@ -835,7 +836,7 @@ cmp-op    = "=" / "<>" / "<=" / ">=" / "<" / ">"
   `Revenue!A1:Revenue!B2`).
 - A formula that doesn't match, calls a function not on the allowlist, or qualifies a sheet the
   workbook doesn't have produces `formula_error` (warning). The cell is then written as **literal
-  text**, never as a formula.
+  text**, never as a formula: its `raw` text, as authored. *(C49)*
 
 **Allowlist.** Pure spreadsheet functions only:
 
@@ -979,6 +980,10 @@ whatever `lang` is.
   them too.
 - A cell with a hyperlink shows its text underlined, in the link color. A cell whose text has a line
   break wraps its text. *(C48)*
+- A number or boolean whose text is bold, italic or struck through keeps that emphasis as the cell's
+  font. Rich text keeps the cell's own styling (a bold title, a link's underline) in every run.
+- Text reads back exactly as written, including text that looks like a SpreadsheetML character
+  escape (`_x0041_` is written as `_x005F_x0041_`), in cells, sheet names and table names. *(C49)*
 - Fragment links resolve against the slugs of the **repaired** sheet names (§9.6), and link to cell
   A1 of that sheet.
 
@@ -1013,6 +1018,8 @@ key for a default sheet). Formulas and fragment links refer to sheets by their r
 - **Automatic names** are `Table1`, `Table2`, … in workbook order, skipping names already used.
 - **Style.** `striped` maps to `TableStyleMedium2` (the default), `plain` to `TableStyleLight1`.
 - **`autofilter`** shows filter buttons on the table's header row.
+- **Header cells** keep their links and rich text when their text is already the column name; a
+  repaired header is written as its new name. *(C49)*
 - **Data rows.** An Excel table needs at least one: a table with none is placed with one empty data
   row (§9.2), which its range includes. *(C48)*
 
@@ -1213,8 +1220,10 @@ fonts, an empty workbook) have no `line`.
   column (absent first), then code, then path (absent first). Paths compare in document order:
   reference token by token, array indices numerically and other tokens as strings, and a path comes
   before the longer paths it is a prefix of (`/body/2` < `/body/2/children/0` < `/body/10`).
-- **Cap.** An implementation MAY stop after 1,000 diagnostics, ending the list with
-  `diagnostics_truncated` (warning, advisory). The cap applies after sorting.
+- **Cap.** An implementation MAY report at most 1,000 diagnostics, ending the list with
+  `diagnostics_truncated` (warning, advisory). The cap applies after escalation and sorting, and
+  keeps errors before warnings: the first 1,000 errors in order, then as many of the first warnings
+  as fit, all in order. So when an error blocks `convert`, the list always shows one. *(C49)*
 
 ### 11.3 Positions
 

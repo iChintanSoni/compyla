@@ -299,12 +299,11 @@ fn resolve_format(options: &Options, document: &ir::Document) -> Result<Format, 
         })
 }
 
-/// Strict escalation (§11.1), order (§11.2) and the cap.
+/// Strict escalation (§11.1), order (§11.2) and the cap, which keeps errors first.
 fn finish(diagnostics: &mut Vec<Diagnostic>, strict: bool) {
     compyla_core::diagnostic::escalate(diagnostics, strict);
     compyla_core::diagnostic::sort(diagnostics);
-    if diagnostics.len() > DIAGNOSTICS_CAP {
-        diagnostics.truncate(DIAGNOSTICS_CAP);
+    if compyla_core::diagnostic::cap(diagnostics) {
         diagnostics.push(Diagnostic::new(
             "diagnostics_truncated",
             format!("Only the first {DIAGNOSTICS_CAP} diagnostics are reported."),

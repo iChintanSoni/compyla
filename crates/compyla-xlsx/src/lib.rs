@@ -5,6 +5,7 @@
 //! Styles are assigned in the order cells first need them, strings are shared in the order they
 //! first appear, and parts are written in a fixed order, so the bytes are reproducible (§13).
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 
 use compyla_core::ir::Run;
@@ -117,7 +118,11 @@ fn workbook_xml(workbook: &Workbook, sheet_ids: &[String]) -> Vec<u8> {
         let number = (index + 1).to_string();
         xml.empty(
             "sheet",
-            &[("name", &sheet.name), ("sheetId", &number), ("r:id", id)],
+            &[
+                ("name", &xstring(&sheet.name)),
+                ("sheetId", &number),
+                ("r:id", id),
+            ],
         );
     }
     xml.close("sheets");
@@ -193,7 +198,7 @@ fn worksheet(
         match &cell.value {
             CellValue::Empty => xml.empty("c", &attrs),
             CellValue::Text(runs) => {
-                let index = strings.index(runs).to_string();
+                let index = strings.index(runs, &StyleKey::of(cell).font).to_string();
                 attrs.push(("t", "s"));
                 xml.open("c", &attrs);
                 xml.element("v", &[], &index);
@@ -212,7 +217,7 @@ fn worksheet(
             }
             CellValue::Formula(formula) => {
                 xml.open("c", &attrs);
-                xml.element("f", &[], formula);
+                xml.element("f", &[], &xstring(formula));
                 xml.close("c");
             }
         }
@@ -236,11 +241,12 @@ fn worksheet(
         for (reference, link) in hyperlinks {
             match link {
                 Link::Url(url) => {
-                    let id = rels.add_external(HYPERLINK, url);
+                    let id = rels.add_external(HYPERLINK, &uri(url));
                     xml.empty("hyperlink", &[("ref", &reference), ("r:id", &id)]);
                 }
                 Link::Sheet(name) => {
                     let location = format!("'{}'!A1", name.replace('\'', "''"));
+                    let location = xstring(&location);
                     xml.empty("hyperlink", &[("ref", &reference), ("location", &location)]);
                 }
             }
@@ -281,8 +287,8 @@ fn table_xml(
         &[
             ("xmlns", MAIN),
             ("id", &id),
-            ("name", &excel.name),
-            ("displayName", &excel.name),
+            ("name", &xstring(&excel.name)),
+            ("displayName", &xstring(&excel.name)),
             ("ref", reference),
             ("totalsRowShown", "0"),
         ],
@@ -297,7 +303,7 @@ fn table_xml(
     for (index, header) in excel.headers.iter().enumerate() {
         xml.empty(
             "tableColumn",
-            &[("id", &(index + 1).to_string()), ("name", header)],
+            &[("id", &(index + 1).to_string()), ("name", &xstring(header))],
         );
     }
     xml.close("tableColumns");
@@ -335,6 +341,7 @@ fn address(column: u32, row: u32) -> String {
 struct Font {
     bold: bool,
     italic: bool,
+    strike: bool,
     link: bool,
 }
 
@@ -355,8 +362,9 @@ impl StyleKey {
         StyleKey {
             format: cell.format.clone(),
             font: Font {
-                bold: cell.role == Role::Title || house_header,
-                italic: cell.role == Role::Note,
+                bold: cell.role == Role::Title || house_header || cell.marks.bold,
+                italic: cell.role == Role::Note || cell.marks.italic,
+                strike: cell.marks.strike,
                 link: cell.link.is_some(),
             },
             header_fill: house_header,
@@ -384,7 +392,9 @@ struct Styles {
     keys: Vec<StyleKey>,
     by_key: HashMap<StyleKey, usize>,
     fonts: Vec<Font>,
+    font_ids: HashMap<Font, usize>,
     formats: Vec<String>,
+    format_ids: HashMap<String, u32>,
 }
 
 impl Default for Styles {
@@ -394,6 +404,7 @@ impl Default for Styles {
             font: Font {
                 bold: false,
                 italic: false,
+                strike: false,
                 link: false,
             },
             header_fill: false,
@@ -403,7 +414,9 @@ impl Default for Styles {
             keys: Vec::new(),
             by_key: HashMap::new(),
             fonts: Vec::new(),
+            font_ids: HashMap::new(),
             formats: Vec::new(),
+            format_ids: HashMap::new(),
         };
         styles.index(&plain);
         styles
@@ -415,10 +428,13 @@ impl Styles {
         if let Some(&index) = self.by_key.get(key) {
             return index;
         }
-        if !self.fonts.contains(&key.font) {
+        if !self.font_ids.contains_key(&key.font) {
+            self.font_ids.insert(key.font.clone(), self.fonts.len());
             self.fonts.push(key.font.clone());
         }
-        if builtin_format(&key.format).is_none() && !self.formats.contains(&key.format) {
+        if builtin_format(&key.format).is_none() && !self.format_ids.contains_key(&key.format) {
+            let id = 164 + self.formats.len() as u32;
+            self.format_ids.insert(key.format.clone(), id);
             self.formats.push(key.format.clone());
         }
         self.keys.push(key.clone());
@@ -427,10 +443,7 @@ impl Styles {
     }
 
     fn format_id(&self, code: &str) -> u32 {
-        builtin_format(code).unwrap_or_else(|| {
-            let index = self.formats.iter().position(|f| f == code).unwrap_or(0);
-            164 + index as u32
-        })
+        builtin_format(code).unwrap_or_else(|| self.format_ids[code])
     }
 
     fn to_xml(&self) -> Vec<u8> {
@@ -457,6 +470,9 @@ impl Styles {
             }
             if font.italic {
                 xml.empty("i", &[]);
+            }
+            if font.strike {
+                xml.empty("strike", &[]);
             }
             if font.link {
                 xml.empty("u", &[]);
@@ -504,12 +520,7 @@ impl Styles {
         xml.open("cellXfs", &[("count", &self.keys.len().to_string())]);
         for key in &self.keys {
             let format = self.format_id(&key.format).to_string();
-            let font = self
-                .fonts
-                .iter()
-                .position(|f| *f == key.font)
-                .unwrap_or(0)
-                .to_string();
+            let font = self.font_ids[&key.font].to_string();
             let fill = if key.header_fill { "2" } else { "0" };
             let mut attrs = vec![
                 ("numFmtId", format.as_str()),
@@ -549,28 +560,42 @@ impl Styles {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Shared strings: one entry per distinct text, rich text keeping bold, italic and strike (§9.5).
+// Shared strings: one entry per distinct text. Rich text keeps bold, italic and strike (§9.5); since
+// a run's properties replace the cell's font, every run of a rich string carries the cell's font
+// too (a bold title, an italic note, a link's underline and color).
 
-/// A string's runs with the marks a cell keeps: `code` is plain, and links belong to the cell.
-type Rich = Vec<(String, bool, bool, bool)>;
+/// A run as written: its text, then bold, italic, strike and link styling.
+type RichRun = (String, bool, bool, bool, bool);
 
 #[derive(Default)]
 struct Strings {
-    items: Vec<Rich>,
-    by_text: HashMap<Rich, usize>,
+    items: Vec<Vec<RichRun>>,
+    by_text: HashMap<Vec<RichRun>, usize>,
     /// String cells written, for `count`.
     references: usize,
 }
 
 impl Strings {
-    fn index(&mut self, runs: &[Run]) -> usize {
+    fn index(&mut self, runs: &[Run], cell: &Font) -> usize {
         self.references += 1;
-        let mut rich: Rich = Vec::new();
+        let marked = runs.iter().any(|r| r.bold || r.italic || r.strike);
+        let mut rich: Vec<RichRun> = Vec::new();
         for run in runs {
-            let marks = (run.bold, run.italic, run.strike);
+            let marks = if marked {
+                (
+                    run.bold || cell.bold,
+                    run.italic || cell.italic,
+                    run.strike || cell.strike,
+                    cell.link,
+                )
+            } else {
+                (false, false, false, false)
+            };
             match rich.last_mut() {
-                Some(last) if (last.1, last.2, last.3) == marks => last.0.push_str(&run.text),
-                _ => rich.push((run.text.clone(), marks.0, marks.1, marks.2)),
+                Some(last) if (last.1, last.2, last.3, last.4) == marks => {
+                    last.0.push_str(&run.text);
+                }
+                _ => rich.push((run.text.clone(), marks.0, marks.1, marks.2, marks.3)),
             }
         }
         if let Some(&index) = self.by_text.get(&rich) {
@@ -590,26 +615,31 @@ impl Strings {
         );
         for item in &self.items {
             xml.open("si", &[]);
-            let plain = item.iter().all(|(_, b, i, s)| !b && !i && !s);
-            if plain {
+            if item.iter().all(|&(_, b, i, s, l)| !(b || i || s || l)) {
                 let text: String = item.iter().map(|(t, ..)| t.as_str()).collect();
                 text_element(&mut xml, &text);
             } else {
-                for (text, bold, italic, strike) in item {
+                for (text, bold, italic, strike, link) in item {
                     xml.open("r", &[]);
-                    if *bold || *italic || *strike {
-                        xml.open("rPr", &[]);
-                        if *bold {
-                            xml.empty("b", &[]);
-                        }
-                        if *italic {
-                            xml.empty("i", &[]);
-                        }
-                        if *strike {
-                            xml.empty("strike", &[]);
-                        }
-                        xml.close("rPr");
+                    xml.open("rPr", &[]);
+                    xml.empty("rFont", &[("val", "Calibri")]);
+                    if *bold {
+                        xml.empty("b", &[]);
                     }
+                    if *italic {
+                        xml.empty("i", &[]);
+                    }
+                    if *strike {
+                        xml.empty("strike", &[]);
+                    }
+                    if *link {
+                        xml.empty("color", &[("rgb", LINK_COLOR)]);
+                    }
+                    xml.empty("sz", &[("val", "11")]);
+                    if *link {
+                        xml.empty("u", &[]);
+                    }
+                    xml.close("rPr");
                     text_element(&mut xml, text);
                     xml.close("r");
                 }
@@ -621,6 +651,24 @@ impl Strings {
     }
 }
 
+/// A hyperlink target as a URI: characters a URI can't hold (controls, space, `"<>\^`{|}`) are
+/// percent-encoded; others, including non-ASCII ones (an IRI), are kept.
+fn uri(url: &str) -> Cow<'_, str> {
+    let unsafe_byte = |b: u8| b <= b' ' || b == 0x7F || b"\"<>\\^`{|}".contains(&b);
+    if !url.bytes().any(unsafe_byte) {
+        return Cow::Borrowed(url);
+    }
+    let mut out = String::with_capacity(url.len() + 8);
+    for c in url.chars() {
+        if c.is_ascii() && unsafe_byte(c as u8) {
+            out.push_str(&format!("%{:02X}", c as u8));
+        } else {
+            out.push(c);
+        }
+    }
+    Cow::Owned(out)
+}
+
 /// `<t>`, preserving whitespace a parser would otherwise strip.
 fn text_element(xml: &mut Writer, text: &str) {
     let preserve = text.trim() != text || text.contains(['\n', '\t']);
@@ -629,12 +677,56 @@ fn text_element(xml: &mut Writer, text: &str) {
     } else {
         &[]
     };
-    xml.element("t", attrs, text);
+    xml.element("t", attrs, &xstring(text));
+}
+
+/// Text for an ST_Xstring value (ECMA-376 Part 1, §22.9.2.19), where `_xHHHH_` stands for the
+/// character U+HHHH: a literal one is written with its underscore escaped as `_x005F_`, so the text
+/// reads back as written (markdown-spec.md §9.5, §12.2).
+fn xstring(text: &str) -> Cow<'_, str> {
+    let bytes = text.as_bytes();
+    let escaped = |i: usize| {
+        bytes.get(i..i + 7).is_some_and(|w| {
+            w[0] == b'_'
+                && w[1] == b'x'
+                && w[2..6].iter().all(u8::is_ascii_hexdigit)
+                && w[6] == b'_'
+        })
+    };
+    if !(0..bytes.len()).any(escaped) {
+        return Cow::Borrowed(text);
+    }
+    let mut out = String::with_capacity(text.len() + 7);
+    for (i, c) in text.char_indices() {
+        if escaped(i) {
+            out.push_str("_x005F");
+        }
+        out.push(c);
+    }
+    Cow::Owned(out)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hyperlink_targets_are_uris() {
+        assert_eq!(
+            uri("https://example.com/a?b=c#d"),
+            "https://example.com/a?b=c#d"
+        );
+        assert_eq!(uri("a b<c>\"|é"), "a%20b%3Cc%3E%22%7Cé");
+    }
+
+    #[test]
+    fn literal_escapes_are_escaped() {
+        assert_eq!(xstring("plain"), "plain");
+        assert_eq!(xstring("_x0041_"), "_x005F_x0041_");
+        assert_eq!(xstring("a_x003A_b_x12_"), "a_x005F_x003A_b_x12_");
+        assert_eq!(xstring("_x005F_"), "_x005F_x005F_");
+        assert_eq!(xstring("é_x00e9_"), "é_x005F_x00e9_");
+    }
 
     #[test]
     fn addresses() {

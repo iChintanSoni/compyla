@@ -1,0 +1,11 @@
+{
+  "description": "Text reads back as written, even when it looks like a SpreadsheetML character escape (in a sheet name and in cells); an Excel table's header keeps its link and rich text; an erroring formula is its raw text.",
+  "spec": [
+    "\u00a79.3",
+    "\u00a79.5",
+    "\u00a79.6",
+    "C49"
+  ],
+  "oracle": "corrected",
+  "format": "xlsx"
+}

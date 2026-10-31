@@ -12,7 +12,9 @@ use super::grid::{self, MAX_COLUMNS, MAX_ROW};
 use super::names::{self, fold, utf16_len};
 use super::values::{self, ColumnType, Converted, Literal};
 use super::walk::{self, Attached, Walk};
-use super::{Cell, CellValue, ExcelTable, Link, Range, Role, Sheet, Workbook, excerpt, line_of};
+use super::{
+    Cell, CellValue, ExcelTable, Link, Marks, Range, Role, Sheet, Workbook, excerpt, line_of,
+};
 use crate::diagnostic::{Diagnostic, Sink};
 use crate::ir::{Document, Run, Table, plain_text};
 use crate::validate::{Slugger, at, percent_decode, row_line};
@@ -452,16 +454,18 @@ impl Composer<'_, '_> {
             })
         });
 
-        // The header row, whole: in an Excel table, its repaired headers as plain text, since
-        // they must equal the table's column names.
+        // The header row, whole. An Excel table's header cells must read as its column names:
+        // a cell that does keeps its runs and link, and a repaired one (`table_header_invalid`)
+        // is written as its new name.
         for c in 0..columns {
             let column = left + c as u32;
             let runs = table.header.get(c).map_or(&[][..], |cell| &cell.runs);
             let mut cell = self.text(header_row, column, Role::Header, runs);
             if let Some(excel) = &excel_table {
                 cell.role = Role::TableHeader;
-                cell.value = CellValue::Text(vec![Run::plain(excel.headers[c].clone())]);
-                cell.link = None;
+                if plain_text(runs) != excel.headers[c] {
+                    cell.value = CellValue::Text(vec![Run::plain(excel.headers[c].clone())]);
+                }
             } else if plain_text(runs).is_empty() {
                 cell.value = CellValue::Empty;
             }
@@ -492,6 +496,7 @@ impl Composer<'_, '_> {
             value: CellValue::Text(runs.to_vec()),
             format: "General".into(),
             link: self.link(runs),
+            marks: Marks::default(),
         }
     }
 
@@ -663,6 +668,10 @@ impl Composer<'_, '_> {
                         _ => (text_value(), kind.number_format()),
                     }
                 };
+                let marks = match value {
+                    CellValue::Number(_) | CellValue::Boolean(_) => Marks::common(&source.runs),
+                    _ => Marks::default(),
+                };
                 cells.push(Cell {
                     row: header_row + 1 + r as u32,
                     column: left + c as u32,
@@ -670,6 +679,7 @@ impl Composer<'_, '_> {
                     value,
                     format,
                     link: self.link(&source.runs),
+                    marks,
                 });
             }
         }

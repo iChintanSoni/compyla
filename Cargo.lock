@@ -164,6 +164,7 @@ version = "0.0.0"
 dependencies = [
  "compyla-core",
  "compyla-ooxml",
+ "zip",
 ]
 
 [[package]]

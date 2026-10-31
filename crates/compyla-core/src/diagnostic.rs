@@ -117,10 +117,11 @@ pub const CAP: usize = 1000;
 /// One more than [`CAP`], so a collector still shows that the cap was exceeded.
 const KEEP: usize = CAP + 1;
 
-/// Collects diagnostics in bounded memory (§12.1). An operation reports only the first [`CAP`] in
-/// §11.2 order, so once many are collected, only the first `CAP + 1` in that order are kept: what is
-/// reported is exactly what keeping everything would report. A located sink maps each diagnostic to
-/// its final position as it arrives (`crate::locate`), since the order depends on it.
+/// Collects diagnostics in bounded memory (§12.1). An operation reports at most [`CAP`], errors
+/// first ([`cap`]), so once many are collected, only the first `CAP + 1` in §11.2 order of each class
+/// are kept: errors, strict-promotable warnings (errors under `strict`) and advisory warnings. What
+/// is reported is exactly what keeping everything would report. A located sink maps each diagnostic
+/// to its final position as it arrives (`crate::locate`), since the order depends on it.
 #[derive(Debug, Default)]
 pub struct Sink {
     items: Vec<Diagnostic>,
@@ -175,10 +176,19 @@ impl Sink {
         }
         self.blocking.see(&diagnostic);
         self.items.push(diagnostic);
-        if self.items.len() >= 2 * KEEP {
+        if self.items.len() >= 4 * KEEP {
             // Stable, like the final sort, so ties keep the order they arrived in.
             sort(&mut self.items);
-            self.items.truncate(KEEP);
+            let mut kept = [0usize; 3];
+            self.items.retain(|d| {
+                let class = match d.severity {
+                    Severity::Error => 0,
+                    Severity::Warning if code_info(&d.code).strict_promotable => 1,
+                    Severity::Warning => 2,
+                };
+                kept[class] += 1;
+                kept[class] <= KEEP
+            });
         }
     }
 
@@ -206,6 +216,30 @@ impl std::ops::Deref for Sink {
     fn deref(&self) -> &[Diagnostic] {
         &self.items
     }
+}
+
+/// The cap (§11.2), on sorted diagnostics: at most [`CAP`], errors before warnings: the first `CAP`
+/// errors, then as many of the first warnings as fit, all kept in order. So when an error blocks
+/// `convert`, the list shows one. Returns whether any were dropped.
+pub fn cap(diagnostics: &mut Vec<Diagnostic>) -> bool {
+    if diagnostics.len() <= CAP {
+        return false;
+    }
+    let errors = diagnostics
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .count();
+    let (mut errors_left, mut warnings_left) = (CAP, CAP.saturating_sub(errors));
+    diagnostics.retain(|d| {
+        let left = match d.severity {
+            Severity::Error => &mut errors_left,
+            Severity::Warning => &mut warnings_left,
+        };
+        let keep = *left > 0;
+        *left = left.saturating_sub(1);
+        keep
+    });
+    true
 }
 
 pub fn sort(diagnostics: &mut [Diagnostic]) {
@@ -285,9 +319,21 @@ mod tests {
         sort(&mut kept);
         let mut expected = all;
         sort(&mut expected);
-        // Between compactions a sink holds up to twice the bound; the first `KEEP` are exact.
-        assert!((KEEP..2 * KEEP).contains(&kept.len()), "{}", kept.len());
+        // Between compactions a sink holds up to four times the bound; the first `KEEP` are exact.
+        assert!((KEEP..4 * KEEP).contains(&kept.len()), "{}", kept.len());
         assert_eq!(kept[..KEEP], expected[..KEEP]);
+    }
+
+    #[test]
+    fn the_cap_keeps_errors_first() {
+        let mut diagnostics: Vec<Diagnostic> = (1..=1_500)
+            .map(|line| Diagnostic::new("heading_skip", "w").at_line(line))
+            .collect();
+        diagnostics.push(Diagnostic::new("limit_exceeded", "e").at_line(2_000));
+        assert!(cap(&mut diagnostics));
+        assert_eq!(diagnostics.len(), CAP);
+        assert_eq!(diagnostics.last().unwrap().code, "limit_exceeded");
+        assert_eq!(diagnostics[CAP - 2].line, Some(999));
     }
 
     #[test]

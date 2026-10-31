@@ -73,6 +73,29 @@ pub struct Cell {
     /// The number format code (§9.4, §9.5).
     pub format: String,
     pub link: Option<Link>,
+    /// Emphasis on the whole cell: a number or boolean whose text was bold, italic or struck
+    /// through keeps it as the cell's font. Text keeps its marks in its runs.
+    pub marks: Marks,
+}
+
+/// Bold, italic and strikethrough.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct Marks {
+    pub bold: bool,
+    pub italic: bool,
+    pub strike: bool,
+}
+
+impl Marks {
+    /// The marks every run has.
+    pub fn common(runs: &[Run]) -> Marks {
+        let all = |mark: fn(&Run) -> bool| !runs.is_empty() && runs.iter().all(mark);
+        Marks {
+            bold: all(|r| r.bold),
+            italic: all(|r| r.italic),
+            strike: all(|r| r.strike),
+        }
+    }
 }
 
 /// What a cell is in its range, which decides its style (§9.2).

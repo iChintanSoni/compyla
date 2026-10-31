@@ -138,7 +138,8 @@ Goal: output that is faithful to a real corporate template, and identical bytes 
 - [ ] pdf via Typst with a theme derived from the template (D13)
 - [ ] Render conformance suite passing for all four formats. The Rust runner (`render_suite`) renders
       each fixture twice for byte identity and checks it with `render_check.py`; xlsx passes
-      (render/003, 104–107, including C46's `general` columns and percent decimals)
+      (render/003, 104–108, including C46's `general` columns and percent decimals, and C49's
+      text fidelity)
 - [ ] `convert` locates render-stage diagnostics through the same `locate` renumbering as `lint`
 - [ ] Real-viewer verification in CI (test only, D4): OOXML schema validation + LibreOffice → PNG visual diffs
 
