@@ -145,9 +145,11 @@ Goal: one engine, every channel (D10).
 - [ ] MCP server (D17): the four operations as tools; dialect spec, diagnostics registry and template
       reports as resources
 - [ ] HTTP server with request-size, upload and decompression limits (template uploads are zip files)
-- [ ] Resource hardening before the server is public: fuzz every operation for panics (Phase B found a
-      percent-decoding panic by review), and a memory budget at the 10 MiB input limit. Peak memory
-      is about 0.7 GB today, mostly comrak's AST during parsing, which is too much for a shared server
+- [ ] Resource hardening before the server is public: fuzz every operation for panics, hangs and
+      memory growth. Phase B's review found a panic, four quadratic paths and unbounded diagnostic
+      memory by hand; all are fixed, with regression tests in `crates/compyla/tests/hostile.rs`.
+      Also set a memory budget at the 10 MiB input limit: peak memory is about 0.7 GB today, mostly
+      comrak's AST during parsing, which is too much for a shared server
 - [ ] Move the web lint UI and docs site onto the Node/WASM host (D9), then retire `packages/`
 - [ ] Docs rewrite: quickstart, per-host reference, MCP guide
 - [ ] Publish 0.1 to npm, PyPI and crates.io, plus CLI binaries on GitHub Releases, with semver

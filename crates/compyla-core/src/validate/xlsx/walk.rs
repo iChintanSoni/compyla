@@ -5,7 +5,7 @@
 //! bodies of ignored annotations and unknown directives. Every H1, wherever it is, starts a sheet.
 
 use super::{excerpt, line_of};
-use crate::diagnostic::Diagnostic;
+use crate::diagnostic::{Diagnostic, Sink};
 use crate::ir::{Block, Directive, Paragraph, Position, Section, Table, plain_text};
 use crate::validate::{DirectiveKind, at, directive};
 
@@ -68,7 +68,7 @@ struct Wrap {
     used: bool,
 }
 
-pub fn walk<'a>(body: &'a [Block], out: &mut Vec<Diagnostic>) -> Walk<'a> {
+pub fn walk<'a>(body: &'a [Block], out: &mut Sink) -> Walk<'a> {
     let mut walker = Walker {
         walk: Walk {
             sheets: vec![RawSheet {
@@ -102,7 +102,7 @@ struct Walker<'a, 'o> {
     wraps: Vec<Wrap>,
     /// Set at the sheet limit: nothing further is processed (§12.1).
     stopped: bool,
-    out: &'o mut Vec<Diagnostic>,
+    out: &'o mut Sink,
 }
 
 const MAPPING: &str = "xlsx maps `#` to sheets, `##` to range titles, tables to ranges and paragraphs to table notes.";
@@ -246,32 +246,26 @@ impl<'a> Walker<'a, '_> {
         }
     }
 
-    /// The directive of `slot` that applies to `table`: the innermost wrapping one, else the waiting
-    /// empty one. A wrapping annotation overrides a waiting empty one of the same name, which is then
-    /// misplaced (§9.4). A wrapping `anchor` or `table` applies to its first table only.
+    /// The directive of `slot` that applies to the next table: the innermost wrapping one (an
+    /// enclosing one of the same name has no effect on it, §9.4), else the waiting empty one. A
+    /// wrapping annotation overrides a waiting empty one of the same name, which is then misplaced.
+    /// A wrapping `columns` applies to every table it wraps; `anchor` and `table` to the first only.
     fn attach(&mut self, slot: Slot) -> Option<usize> {
         let waiting = self.waiting[slot as usize].take();
         let mut chosen = None;
         let mut exhausted = None;
-        for wrap in self
+        if let Some(wrap) = self
             .wraps
             .iter_mut()
             .rev()
-            .filter(|w| w.active && w.slot == slot)
+            .find(|w| w.active && w.slot == slot)
         {
-            if slot == Slot::Columns {
-                // `columns` applies to every table it wraps; the innermost wins.
-                self.walk.applied[wrap.id] = true;
-                chosen.get_or_insert(wrap.id);
+            if slot != Slot::Columns && wrap.used {
+                exhausted = Some(wrap.id);
             } else {
-                if wrap.used {
-                    exhausted = Some(wrap.id);
-                } else {
-                    wrap.used = true;
-                    self.walk.applied[wrap.id] = true;
-                    chosen = Some(wrap.id);
-                }
-                break;
+                wrap.used = true;
+                self.walk.applied[wrap.id] = true;
+                chosen = Some(wrap.id);
             }
         }
         if let Some(id) = exhausted {
@@ -332,7 +326,13 @@ impl<'a> Walker<'a, '_> {
         self.blocks(&d.children);
         self.wraps.pop();
         if !self.stopped && !self.walk.applied[id] {
-            self.misplaced(id, "wraps no table in its sheet".to_string());
+            self.misplaced(
+                id,
+                format!(
+                    "applies to no table: it wraps none in its sheet, or only ones inside a nested `{}`",
+                    d.name
+                ),
+            );
         }
     }
 

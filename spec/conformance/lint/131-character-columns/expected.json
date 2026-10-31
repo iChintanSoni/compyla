@@ -1,0 +1,16 @@
+{
+  "diagnostics": [
+    {
+      "code": "link_anchor_unresolved",
+      "severity": "warning",
+      "line": 3,
+      "column": 5
+    },
+    {
+      "code": "link_anchor_unresolved",
+      "severity": "warning",
+      "line": 5,
+      "column": 6
+    }
+  ]
+}

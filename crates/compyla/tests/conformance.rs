@@ -101,7 +101,7 @@ fn assets_for(fixture: &Path, case: &Value) -> impl Fn(&str) -> compyla::Asset {
 fn lint_suite() {
     let fixtures = suite("lint");
     assert!(
-        fixtures.len() >= 38,
+        fixtures.len() >= 43,
         "expected the full lint suite, found {}",
         fixtures.len()
     );
@@ -185,7 +185,12 @@ fn lint_ir_agrees_with_lint() {
         let mut ir = serde_json::to_value(compyla::parse(&input).ir).unwrap();
         strip_positions(&mut ir);
 
-        let from_markdown = profile(compyla::lint(&input, &options, &assets).unwrap());
+        let linted = compyla::lint(&input, &options, &assets).unwrap();
+        // A limit stops processing, and the parsed IR lacks what the limit cut: not the same input.
+        if linted.iter().any(|d| d.code == "limit_exceeded") {
+            continue;
+        }
+        let from_markdown = profile(linted);
         let from_ir = profile(compyla::lint_ir(&ir.to_string(), &options, &assets).unwrap());
         let codes = |diagnostics: &[compyla::Diagnostic]| {
             let mut codes: Vec<String> = diagnostics.iter().map(|d| d.code.clone()).collect();

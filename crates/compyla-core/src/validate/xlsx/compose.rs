@@ -13,7 +13,7 @@ use super::names::{self, fold, utf16_len};
 use super::values::{self, ColumnType, Literal};
 use super::walk::{self, Attached, Walk};
 use super::{ExcelTable, Range, Sheet, Workbook, excerpt, line_of};
-use crate::diagnostic::Diagnostic;
+use crate::diagnostic::{Diagnostic, Sink};
 use crate::ir::{Document, Run, Table, plain_text};
 use crate::validate::{at, row_line};
 
@@ -21,12 +21,22 @@ use crate::validate::{at, row_line};
 const MAX_CELL_TEXT: usize = 32_767;
 const MAX_FORMULA: usize = 8_192;
 
-/// Composes the workbook for `document`, with every validate-stage diagnostic of the xlsx profile
-/// except fragment links (which need the parse sidecar). `title_line` is the line of the `title`
-/// frontmatter key, where diagnostics about a default sheet's name point.
-pub fn compose(document: &Document, title_line: Option<usize>) -> (Workbook, Vec<Diagnostic>) {
-    let mut out = Vec::new();
-    let walked = walk::walk(&document.body, &mut out);
+fn formula_too_long(address: &str, line: Option<usize>) -> Diagnostic {
+    at(
+        Diagnostic::new(
+            "xlsx_limit_exceeded",
+            format!("The formula in {address} is longer than Excel's 8,192 characters."),
+        )
+        .hint("Split the calculation across cells."),
+        line,
+    )
+}
+
+/// Composes the workbook for `document`, collecting every validate-stage diagnostic of the xlsx
+/// profile except fragment links (which need the parse sidecar). `title_line` is the line of the
+/// `title` frontmatter key, where diagnostics about a default sheet's name point.
+pub fn compose(document: &Document, title_line: Option<usize>, out: &mut Sink) -> Workbook {
+    let walked = walk::walk(&document.body, out);
     let default_name = document
         .meta
         .get("title")
@@ -42,12 +52,12 @@ pub fn compose(document: &Document, title_line: Option<usize>) -> (Workbook, Vec
             )
             .hint("Add a table, under a `#` heading for each sheet."),
         );
-        let name = names::sheet_name(&default_name, 1, &HashSet::new(), title_line, &mut out);
+        let name = names::sheet_name(&default_name, 1, &HashSet::new(), title_line, out);
         let sheets = vec![Sheet {
             name,
             ranges: Vec::new(),
         }];
-        return (Workbook { sheets }, out);
+        return Workbook { sheets };
     }
 
     let mut sheet_names: Vec<String> = Vec::new();
@@ -57,7 +67,7 @@ pub fn compose(document: &Document, title_line: Option<usize>) -> (Workbook, Vec
             Some(heading) => (plain_text(&heading.title), line_of(heading.position)),
             None => (default_name.clone(), title_line),
         };
-        let name = names::sheet_name(&raw, index + 1, &taken, line, &mut out);
+        let name = names::sheet_name(&raw, index + 1, &taken, line, out);
         taken.insert(fold(&name));
         sheet_names.push(name);
     }
@@ -68,9 +78,9 @@ pub fn compose(document: &Document, title_line: Option<usize>) -> (Workbook, Vec
         .directives
         .iter()
         .zip(&walked.applied)
-        .map(|(d, applied)| applied.then(|| directives::parse(d, &mut out)))
+        .map(|(d, applied)| applied.then(|| directives::parse(d, out)))
         .collect();
-    let table_names = excel_table_names(&walked, &args, &mut out);
+    let table_names = excel_table_names(&walked, &args, out);
 
     let mut composer = Composer {
         walked: &walked,
@@ -79,7 +89,7 @@ pub fn compose(document: &Document, title_line: Option<usize>) -> (Workbook, Vec
         sheets: &folded,
         matched: HashMap::new(),
         repeated: HashSet::new(),
-        out: &mut out,
+        out,
     };
     let mut sheets = Vec::with_capacity(walked.sheets.len());
     for (sheet, name) in walked.sheets.iter().zip(sheet_names) {
@@ -92,7 +102,7 @@ pub fn compose(document: &Document, title_line: Option<usize>) -> (Workbook, Vec
         sheets.push(Sheet { name, ranges });
     }
     composer.unmatched_columns();
-    (Workbook { sheets }, out)
+    Workbook { sheets }
 }
 
 /// §9.6: explicit names first, in workbook order (a repeat is invalid), then automatic names
@@ -100,7 +110,7 @@ pub fn compose(document: &Document, title_line: Option<usize>) -> (Workbook, Vec
 fn excel_table_names(
     walked: &Walk<'_>,
     args: &[Option<Args>],
-    out: &mut Vec<Diagnostic>,
+    out: &mut Sink,
 ) -> HashMap<usize, String> {
     let ids: Vec<usize> = walked
         .sheets
@@ -213,7 +223,7 @@ struct Composer<'w, 'o> {
     matched: HashMap<usize, Vec<bool>>,
     /// `(directive, entry)` pairs already reported for naming a column an earlier entry named.
     repeated: HashSet<(usize, usize)>,
-    out: &'o mut Vec<Diagnostic>,
+    out: &'o mut Sink,
 }
 
 impl Composer<'_, '_> {
@@ -470,6 +480,11 @@ impl Composer<'_, '_> {
                 let text = plain_text(&cell.runs);
                 self.links(&cell.runs, line, &address);
                 if let Some(source) = cell.raw.strip_prefix('=') {
+                    // Checked before lexing too, so a formula of any size costs little (§12.1).
+                    if utf16_len(source) > MAX_FORMULA {
+                        self.out.push(formula_too_long(&address, line));
+                        continue;
+                    }
                     match formula::translate(source, &context) {
                         Ok(formula) => {
                             self.formula_problems(&formula, line, &address);
@@ -579,14 +594,7 @@ impl Composer<'_, '_> {
             ));
         }
         if formula.past_grid.is_empty() && utf16_len(&formula.written) > MAX_FORMULA {
-            self.out.push(at(
-                Diagnostic::new(
-                    "xlsx_limit_exceeded",
-                    format!("The formula in {address} is longer than Excel's 8,192 characters."),
-                )
-                .hint("Split the calculation across cells."),
-                line,
-            ));
+            self.out.push(formula_too_long(address, line));
         }
     }
 

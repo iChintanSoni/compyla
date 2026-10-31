@@ -1,0 +1,10 @@
+{
+  "diagnostics": [
+    {
+      "code": "limit_exceeded",
+      "severity": "error",
+      "line": 40001,
+      "column": 1
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "description": "A deck with more than 10,000 slides is limit_exceeded at the first node of slide 10,001.",
+  "spec": [
+    "\u00a712.1",
+    "C47"
+  ],
+  "oracle": "corrected",
+  "format": "pptx"
+}

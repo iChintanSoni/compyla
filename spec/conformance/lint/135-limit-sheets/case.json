@@ -1,0 +1,9 @@
+{
+  "description": "A workbook with more than 1,000 sheets is limit_exceeded at the heading of sheet 1,001.",
+  "spec": [
+    "\u00a712.1",
+    "C47"
+  ],
+  "oracle": "corrected",
+  "format": "xlsx"
+}

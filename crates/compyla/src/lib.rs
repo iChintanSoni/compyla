@@ -7,7 +7,7 @@ pub use compyla_core::ir;
 pub use compyla_core::{Asset, Format};
 
 /// Diagnostics beyond this are dropped, ending with `diagnostics_truncated` (§11.2).
-const DIAGNOSTICS_CAP: usize = 1000;
+const DIAGNOSTICS_CAP: usize = compyla_core::diagnostic::CAP;
 
 /// The result of `parse` (markdown-spec.md §10.1).
 #[derive(Debug, Clone, serde::Serialize)]
@@ -53,13 +53,19 @@ pub fn lint(
     options: &Options,
     assets: &dyn Fn(&str) -> Asset,
 ) -> Result<Vec<Diagnostic>, OperationError> {
+    if let Some(diagnostic) = compyla_core::parse::input_too_large(source.len()) {
+        return Ok(finished(vec![diagnostic], options));
+    }
     let compyla_core::ParseOutput {
         document,
         mut diagnostics,
         sidecar,
     } = compyla_core::parse(source);
     let format = resolve_format(options, &document)?;
-    diagnostics.extend(validate(document, &sidecar, format, assets));
+    // A limit stops processing (§12.1).
+    if !diagnostics.iter().any(|d| d.code == "limit_exceeded") {
+        diagnostics.extend(validate(document, &sidecar, format, assets));
+    }
     finish(&mut diagnostics, options.strict);
     Ok(diagnostics)
 }
@@ -98,6 +104,10 @@ pub fn lint_ir(
     assets: &dyn Fn(&str) -> Asset,
 ) -> Result<Vec<Diagnostic>, OperationError> {
     let (document, mut diagnostics) = load_ir(json)?;
+    // A limit stops processing (§12.1).
+    if diagnostics.iter().any(|d| d.code == "limit_exceeded") {
+        return Ok(finished(diagnostics, options));
+    }
     let format = resolve_format(options, &document)?;
     let sidecar = compyla_core::Sidecar::default();
     diagnostics.extend(validate(document, &sidecar, format, assets));
@@ -119,9 +129,9 @@ fn validate(
         sidecar: &sidecar,
         assets,
     };
-    let mut diagnostics = compyla_core::validate::validate(&input, format);
-    locator.locate(&mut diagnostics);
-    diagnostics
+    let mut out = compyla_core::diagnostic::Sink::located(locator);
+    compyla_core::validate::validate(&input, format, &mut out);
+    out.into_vec()
 }
 
 /// The resolver of a host with none: in `lint`, every image exists without bytes (§10.3).
@@ -144,6 +154,11 @@ fn resolve_format(options: &Options, document: &ir::Document) -> Result<Format, 
             message: "No format was given, and the document's frontmatter has no `format`.".into(),
             pointer: None,
         })
+}
+
+fn finished(mut diagnostics: Vec<Diagnostic>, options: &Options) -> Vec<Diagnostic> {
+    finish(&mut diagnostics, options.strict);
+    diagnostics
 }
 
 /// Strict escalation (§11.1), order (§11.2) and the cap.

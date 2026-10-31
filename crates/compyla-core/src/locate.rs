@@ -165,7 +165,7 @@ impl Numbering {
                 // the row's own slot.
                 self.slot(Slot {
                     path: Some(path.to_string()),
-                    line: original.map(|p| p.line + 1),
+                    line: original.map(|p| p.line.saturating_add(1)),
                     column: None,
                 });
                 for r in 0..table.rows.len() {
@@ -264,8 +264,9 @@ mod tests {
             sidecar: &sidecar,
             assets: &no_assets,
         };
-        let mut diagnostics = validate(&input, format);
-        locator.locate(&mut diagnostics);
+        let mut out = crate::diagnostic::Sink::located(locator);
+        validate(&input, format, &mut out);
+        let mut diagnostics = out.into_vec();
         crate::diagnostic::sort(&mut diagnostics);
         diagnostics
     }

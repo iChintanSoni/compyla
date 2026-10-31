@@ -111,6 +111,68 @@ impl Diagnostic {
 }
 
 /// Sorts per markdown-spec.md §11.2: line (absent first), column (absent first), code, path.
+/// How many diagnostics an operation reports before ending with `diagnostics_truncated` (§11.2).
+pub const CAP: usize = 1000;
+
+/// One more than [`CAP`], so a collector still shows that the cap was exceeded.
+const KEEP: usize = CAP + 1;
+
+/// Collects diagnostics in bounded memory (§12.1). An operation reports only the first [`CAP`] in
+/// §11.2 order, so once many are collected, only the first `CAP + 1` in that order are kept: what is
+/// reported is exactly what keeping everything would report. A located sink maps each diagnostic to
+/// its final position as it arrives (`crate::locate`), since the order depends on it.
+#[derive(Debug, Default)]
+pub struct Sink {
+    items: Vec<Diagnostic>,
+    locator: Option<crate::locate::Locator>,
+}
+
+impl Sink {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// A sink for diagnostics on a renumbered document.
+    pub fn located(locator: crate::locate::Locator) -> Self {
+        Self {
+            items: Vec::new(),
+            locator: Some(locator),
+        }
+    }
+
+    pub fn push(&mut self, mut diagnostic: Diagnostic) {
+        if let Some(locator) = &self.locator {
+            locator.locate(std::slice::from_mut(&mut diagnostic));
+        }
+        self.items.push(diagnostic);
+        if self.items.len() >= 2 * KEEP {
+            // Stable, like the final sort, so ties keep the order they arrived in.
+            sort(&mut self.items);
+            self.items.truncate(KEEP);
+        }
+    }
+
+    pub fn into_vec(self) -> Vec<Diagnostic> {
+        self.items
+    }
+}
+
+impl Extend<Diagnostic> for Sink {
+    fn extend<I: IntoIterator<Item = Diagnostic>>(&mut self, diagnostics: I) {
+        for diagnostic in diagnostics {
+            self.push(diagnostic);
+        }
+    }
+}
+
+impl std::ops::Deref for Sink {
+    type Target = [Diagnostic];
+
+    fn deref(&self) -> &[Diagnostic] {
+        &self.items
+    }
+}
+
 pub fn sort(diagnostics: &mut [Diagnostic]) {
     diagnostics.sort_by(|a, b| {
         (a.line, a.column, &a.code)
@@ -168,6 +230,30 @@ pub fn escalate(diagnostics: &mut [Diagnostic], strict: bool) {
 mod tests {
     use super::*;
     use std::cmp::Ordering::{Greater, Less};
+
+    #[test]
+    fn a_sink_keeps_what_sorting_everything_would() {
+        // Lines in a scrambled order, with ties, well past the compaction bound.
+        let all: Vec<Diagnostic> = (0..10_000usize)
+            .map(|i| {
+                let code = if i % 3 == 0 {
+                    "heading_skip"
+                } else {
+                    "unknown_directive"
+                };
+                Diagnostic::new(code, format!("{i}")).at_line((i * 7919) % 2_500 + 1)
+            })
+            .collect();
+        let mut sink = Sink::new();
+        sink.extend(all.clone());
+        let mut kept = sink.into_vec();
+        sort(&mut kept);
+        let mut expected = all;
+        sort(&mut expected);
+        // Between compactions a sink holds up to twice the bound; the first `KEEP` are exact.
+        assert!((KEEP..2 * KEEP).contains(&kept.len()), "{}", kept.len());
+        assert_eq!(kept[..KEEP], expected[..KEEP]);
+    }
 
     #[test]
     fn paths_compare_in_document_order() {

@@ -1,10 +1,10 @@
 //! The docx and pdf profiles (markdown-spec.md §6, §7): flow documents.
 
 use super::{Format, Input, Slugger, at, fragment_links, options, title};
-use crate::diagnostic::Diagnostic;
+use crate::diagnostic::{Diagnostic, Sink};
 use crate::ir::{Block, Directive};
 
-pub fn validate(input: &Input<'_>, format: Format, out: &mut Vec<Diagnostic>) {
+pub fn validate(input: &Input<'_>, format: Format, out: &mut Sink) {
     headings(&input.document.body, 0, out);
     super::image_directives(&input.document.body, &image_options, out);
     page_geometry(input, out);
@@ -13,7 +13,7 @@ pub fn validate(input: &Input<'_>, format: Format, out: &mut Vec<Diagnostic>) {
 
 /// §6.3 `heading_skip`: compares headings within one heading tree. A directive body, list item or
 /// quote starts a tree of its own (§4.2), where the first heading has no parent.
-fn headings(blocks: &[Block], parent: u8, out: &mut Vec<Diagnostic>) {
+fn headings(blocks: &[Block], parent: u8, out: &mut Sink) {
     for block in blocks {
         match block {
             Block::Section(section) => {
@@ -45,7 +45,7 @@ fn headings(blocks: &[Block], parent: u8, out: &mut Vec<Diagnostic>) {
     }
 }
 
-fn image_options(d: &Directive, out: &mut Vec<Diagnostic>) {
+fn image_options(d: &Directive, out: &mut Sink) {
     let line = d.position.map(|p| p.line);
     let parsed = options(&d.args);
     if let Some(key) = parsed.repeated {
@@ -94,7 +94,7 @@ fn image_options(d: &Directive, out: &mut Vec<Diagnostic>) {
 }
 
 /// §7: `page_size` and `margins`, reported at their frontmatter key's line.
-fn page_geometry(input: &Input<'_>, out: &mut Vec<Diagnostic>) {
+fn page_geometry(input: &Input<'_>, out: &mut Sink) {
     let meta = &input.document.meta;
     let line = |key: &str| input.sidecar.meta_lines.get(key).copied();
     if let Some(value) = meta.get("page_size").and_then(|v| v.as_str())
@@ -125,7 +125,7 @@ fn page_geometry(input: &Input<'_>, out: &mut Vec<Diagnostic>) {
 
 /// §6.2: fragment links resolve to heading slugs. Slugs are assigned to every section in document
 /// order; sections inside list items and quotes take a slug but aren't targets (§5).
-fn anchors(input: &Input<'_>, format: Format, out: &mut Vec<Diagnostic>) {
+fn anchors(input: &Input<'_>, format: Format, out: &mut Sink) {
     let mut slugger = Slugger::new();
     let mut targets = Vec::new();
     collect(&input.document.body, true, &mut slugger, &mut targets);
