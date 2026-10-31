@@ -407,8 +407,9 @@ impl Composer<'_, '_> {
             placer.cursor = last_row + 2;
         }
         if last_row > u64::from(MAX_ROW) {
-            // The first data row past the grid, unless it is the empty one an Excel table without
-            // data rows is given (§9.6), which has no line of its own: then the table's.
+            // The first data row past the grid. The table's line instead when its header (or a
+            // title or note above it) is past it, or when that row is the empty one an Excel table
+            // without data rows is given (§9.6), which has no line of its own.
             let first_past = u64::from(MAX_ROW).saturating_sub(header_row) as usize;
             let past = if header_row > u64::from(MAX_ROW) || first_past >= table.rows.len() {
                 line
