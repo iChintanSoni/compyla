@@ -1217,8 +1217,8 @@ produce `template_invalid` (error):
   (after percent-decoding; a segment of dots, or with trailing dots or spaces, counts as `..`), or
   whose central directory and local headers disagree about an entry's name
 
-A template without a theme part produces `no_theme` (warning; defaults are used). A docx template
-without a styles part produces `no_styles_xml` (warning; house styles are used).
+A template without a theme part produces `no_theme` (warning; defaults are used). A docx document
+whose template has no styles part produces `no_styles_xml` (warning; house styles are used).
 
 **Template-first output** (architecture.md D12) keeps the template's styles, numbering, theme,
 masters, layouts, headers and footers, and replaces its content. In addition:
