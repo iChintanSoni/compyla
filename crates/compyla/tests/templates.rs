@@ -70,3 +70,74 @@ fn convert_renders_into_the_supplied_template() {
         .collect::<Vec<_>>();
     assert_eq!(layouts, ["Title Slide", "Titel und Inhalt", "Blank"]);
 }
+
+/// The brand template with `edit` applied to its slide master.
+fn brand_with_master(edit: impl Fn(&str) -> String) -> Vec<u8> {
+    let entries: Vec<(String, Vec<u8>)> = compyla_ooxml::read::entries(BRAND)
+        .unwrap()
+        .into_iter()
+        .map(|(name, data)| {
+            if name == "ppt/slideMasters/slideMaster1.xml" {
+                let xml = edit(std::str::from_utf8(&data).unwrap());
+                (name, xml.into_bytes())
+            } else {
+                (name, data)
+            }
+        })
+        .collect();
+    compyla_ooxml::zip::write(&entries)
+}
+
+#[test]
+fn a_template_without_layouts_is_invalid_not_a_panic() {
+    let empty = brand_with_master(|xml| {
+        let start = xml.find("<p:sldLayoutIdLst>").unwrap();
+        let end = xml.find("</p:sldLayoutIdLst>").unwrap();
+        format!("{}<p:sldLayoutIdLst>{}", &xml[..start], &xml[end..])
+    });
+    let source = "# A\n\n## B\n\nText.\n";
+    assert_eq!(
+        codes(source, &pptx(Some(&empty), &[])),
+        ["template_invalid"]
+    );
+    // Asked for and unusable: its error is reported, not the aliases'.
+    assert_eq!(
+        codes(source, &pptx(Some(&empty), &[("Quote", "Blank")])),
+        ["template_invalid"]
+    );
+}
+
+#[test]
+fn aliases_wait_for_a_template_that_was_asked_for() {
+    let source = "---\ntemplate: missing.potx\n---\n\n# A\n\n## B\n\nText.\n";
+    assert_eq!(
+        codes(source, &pptx(None, &[("Quote", "Blank")])),
+        ["template_unresolved"]
+    );
+    // Other formats ignore `layoutAliases`.
+    let xlsx = compyla::Options {
+        format: Some(compyla::Format::Xlsx),
+        layout_aliases: vec![("Quote".into(), "Blank".into())],
+        ..Default::default()
+    };
+    assert!(codes("# S\n\n| A |\n|---|\n| 1 |\n", &xlsx).is_empty());
+}
+
+#[test]
+fn a_workbook_says_its_template_isnt_used() {
+    // A pptx template's theme tokens aren't applied to workbooks yet; a docx one without styles
+    // doesn't earn `no_styles_xml`, which matters to docx only.
+    let docx =
+        include_bytes!("../../../spec/conformance/lint/143-docx-template-without-theme/brand.docx");
+    for template in [BRAND, &docx[..]] {
+        let options = compyla::Options {
+            format: Some(compyla::Format::Xlsx),
+            template: Some(template.to_vec()),
+            ..Default::default()
+        };
+        assert_eq!(
+            codes("# S\n\n| A |\n|---|\n| 1 |\n", &options),
+            ["xlsx_template_unsupported"]
+        );
+    }
+}

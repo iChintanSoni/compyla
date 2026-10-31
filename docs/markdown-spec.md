@@ -63,7 +63,7 @@ prototype.
 | C8 | Annotation directives apply to the blocks they wrap, or, when empty, to what follows (§1.5) | xlsx dropped wrapped tables; a leaf `layout` emptied its slide | lint/110, compose/102 |
 | C9 | pptx slides split at every `---` in document order (§8.1) | A `---` after a subsection heading didn't split the slide | compose/101 |
 | C10 | pptx fit is checked against the resolved layout, explicit or inferred; demoted headings join text blocks (§8.6) | Explicit layouts only; a demoted heading counted as its own block | lint/108, lint/127 |
-| C11 | `lint` given a template validates layout names against the template's layouts (§8.5) | Built-in names only | render suite (Phase C) |
+| C11 | `lint` given a template validates layout names against the template's layouts (§8.5) | Built-in names only | lint/139 |
 | C12 | Unqualified formula references are **table-relative** and translated to placed addresses (§9.3) | Absolute: a range title, note or stacked table silently shifted every reference (including in `examples/budget.md`) | compose/103, lint/104 |
 | C13 | xlsx paragraphs and range titles that never attach to a table produce `xlsx_ignored_content` (§9.4) | Dropped silently | lint/103 |
 | C14 | xlsx sheet names, table names, table headers and table styles are checked and repaired (§9.6, §9.7) | Unchecked: invalid names produced broken workbooks; unknown styles were replaced silently | lint/105, lint/122 |
@@ -92,7 +92,7 @@ prototype.
 | C37 | `table_malformed` and `document_in_code_fence` flag common LLM table and wrapping mistakes (§4.9) | Silently a paragraph of pipes, or one big code block | parse/120, parse/123 |
 | C38 | pptx inference only picks layouts the content fits; the title-slide rule applies only when the content fits it; layouts bind by name, then by OOXML layout type; the house set has the standard Office layouts (§8.3, §8.5) | Inferred layouts its own check rejected; titles slides held tables; localized templates never matched | compose/107, compose/108, compose/110, lint/121 |
 | C39 | xlsx: tables under level-3+ headings are kept; `columns` keys may be header names; percent values may end in `%`; typed values that don't parse warn; number formats and recalculation are defined (§9) | Tables under `###` dropped; formats undefined; silent text fallback | compose/106, compose/109, lint/125 |
-| C40 | `layout_not_in_template` and `font_unresolved` are validate-stage when their inputs are available, so `lint --strict` agrees with `convert --strict` (§11) | Render-stage only | render suite (Phase C) |
+| C40 | `layout_not_in_template` and `font_unresolved` are validate-stage when their inputs are available, so `lint --strict` agrees with `convert --strict` (§11) | Render-stage only | lint/139 (`layout_not_in_template`) |
 | C41 | Hosts' resolvers are confined (§10.3); templates are stripped of macros, ActiveX, OLE, external references and orphaned parts; template XML may not contain a DTD; Typst runs sandboxed (§10.4, §12.2) | Unspecified | render suite (Phase C) |
 | C42 | `heading_skip` compares headings within one heading tree (§6.3) | A heading in a directive body was compared with the outer section | lint/126 |
 | C43 | An indented code block's position is the first character of its content (§4.1) | Column 1 of its line | parse/125 |
@@ -763,7 +763,8 @@ master's title area, so it is still the slide's title. *(C55)* Slot `i` (§8.6) 
 placeholder but the title, date, footer, header and slide number. An empty slot's placeholder is
 left out. A slot past the bound layout's last content placeholder (a layout bound by fallback can
 have fewer placeholders than the house layout has slots, §8.5) shares that placeholder, as several
-blocks in one slot (below), rather than overlap it. *(C56)* Content on a layout without slots
+blocks in one slot (below), rather than overlap it; on a layout with no content placeholder, every
+slot's content is laid out together, as below. *(C56)* Content on a layout without slots
 (`layout_overflow`, §8.6) goes into the layout's first content placeholder if it has one (Section
 Header's text). Otherwise it is laid out over the
 master's body area with no placeholder: text shares one text box, and other content divides the
@@ -1164,7 +1165,7 @@ no input may make an operation crash or hang (§12.1).
 | `format` | `docx` \| `pdf` \| `pptx` \| `xlsx` | `meta.format` | Target format. Precedence: this option, then `meta.format`, else the operation error `format_missing` |
 | `strict` | boolean | `false` | Escalation (§11.1) |
 | `template` | bytes | — | Template package. Precedence: this option, then `meta.template` through the template resolver, then the house template |
-| `layoutAliases` | map: layout name → template layout name | `{}` | pptx layout binding (§8.5): each maps a name, a house-set name or a new one, to a layout of the supplied template. A target that names none of its layouts, or aliases without a supplied pptx template, is `option_invalid` *(C56)* |
+| `layoutAliases` | map: layout name → template layout name | `{}` | pptx layout binding (§8.5): each maps a name, a house-set name or a new one, to a layout of the supplied template. A target that names none of its layouts, or aliases with no template asked for, is `option_invalid`; when a template was asked for but can't be used, its own error is reported instead. Other formats ignore it *(C56)* |
 
 ### 10.3 Resolvers *(C41)*
 
@@ -1202,7 +1203,7 @@ The core performs no I/O (architecture.md D11). Hosts supply resolvers:
 | docx | `.docx`, `.dotx` |
 | pdf | `.docx`, `.dotx` (page setup and theme tokens) or `.pptx`, `.potx` (theme tokens) |
 | pptx | `.pptx`, `.potx` |
-| xlsx | `.docx`, `.dotx`, `.pptx`, `.potx` (theme tokens). `.xlsx`/`.xltx` produce `xlsx_template_unsupported` (warning) and are not used |
+| xlsx | `.docx`, `.dotx`, `.pptx`, `.potx` (theme tokens). `.xlsx`/`.xltx` produce `xlsx_template_unsupported` (warning) and are not used. Until theme tokens are specified and applied (roadmap), a docx or pptx template isn't used either, with the same warning, so it is never silently the house style *(C56)* |
 
 A template's kind is determined from its package's main content type, not its file name. These
 produce `template_invalid` (error):

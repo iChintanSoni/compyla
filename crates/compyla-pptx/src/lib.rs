@@ -96,12 +96,15 @@ pub fn render(
         .filter(|r| !r.kind.ends_with("/slide"))
         .collect();
 
+    // Each layout's content placeholders, found once however many slides use it.
+    let contents: Vec<Vec<&Placeholder>> = layouts.iter().map(Layout::content).collect();
     for (index, slide) in deck.slides.iter().enumerate() {
         // Bound by validation when a template is supplied; the house template binds here.
-        let layout = match slide.template.and_then(|index| layouts.get(index)) {
-            Some(layout) => layout,
-            None => bind(slide.layout, &layouts),
-        };
+        let bound = slide
+            .template
+            .filter(|&index| index < layouts.len())
+            .unwrap_or_else(|| bind(slide.layout, &layouts));
+        let layout = &layouts[bound];
         let part = format!("ppt/slides/slide{}.xml", index + 1);
         let mut rels = Relationships::new();
         let mut targets = Vec::new();
@@ -122,7 +125,7 @@ pub fn render(
             lang: properties.language.as_deref(),
             notes: false,
         }
-        .slide(slide, layout);
+        .slide(slide, layout, &contents[bound]);
         if let Some(master) = &notes_master
             && !slide.notes.is_empty()
         {
@@ -232,22 +235,49 @@ pub fn render(
 
 /// The house template's layout a house layout binds to (§8.5): by name, then by OOXML type, then
 /// the Title and Content type (`obj`), then the first layout.
-fn bind(layout: HouseLayout, layouts: &[Layout]) -> &Layout {
+fn bind(layout: HouseLayout, layouts: &[Layout]) -> usize {
     let fold = compyla_core::validate::fold;
     let wanted = fold(layout.name());
-    let of_kind = |kind: &str| layouts.iter().find(|l| l.kind.as_deref() == Some(kind));
+    let of_kind = |kind: &str| layouts.iter().position(|l| l.kind.as_deref() == Some(kind));
     layouts
         .iter()
-        .find(|l| fold(&l.name) == wanted)
+        .position(|l| fold(&l.name) == wanted)
         .or_else(|| layout.kind().and_then(of_kind))
         .or_else(|| of_kind("obj"))
-        .unwrap_or(&layouts[0])
+        .unwrap_or(0)
 }
 
 /// The relationships part of `part`.
 fn rels_name(part: &str) -> String {
     let (folder, file) = part.rsplit_once('/').unwrap_or(("", part));
     format!("{folder}/_rels/{file}.rels")
+}
+
+/// The placeholder each slot's blocks go into (§8.8): slot `i` the `i`-th content placeholder. A
+/// slot past the last (a layout bound by fallback can have fewer placeholders than the house layout
+/// has slots) shares the last rather than overlap it, and a layout with none lays all the content
+/// out in one free area (`None`). Empty slots are left out.
+fn assign<'p>(
+    slots: &[Vec<Content>],
+    content: &[&'p Placeholder],
+) -> Vec<(Vec<Content>, Option<&'p Placeholder>)> {
+    let mut out: Vec<(Vec<Content>, Option<&Placeholder>)> = Vec::new();
+    for (index, blocks) in slots.iter().enumerate() {
+        if blocks.is_empty() {
+            continue;
+        }
+        let placeholder = content.get(index).or(content.last()).copied();
+        let same = |last: Option<&Placeholder>| match (placeholder, last) {
+            (Some(a), Some(b)) => std::ptr::eq(a, b),
+            (None, None) => true,
+            _ => false,
+        };
+        match out.last_mut() {
+            Some((shared, last)) if same(*last) => shared.extend(blocks.iter().cloned()),
+            _ => out.push((blocks.clone(), placeholder)),
+        }
+    }
+    out
 }
 
 /// The order to read areas in (§8.8): areas that overlap horizontally form a column (joined
@@ -352,7 +382,7 @@ impl SlideWriter<'_> {
         }
     }
 
-    fn slide(&mut self, slide: &Slide, layout: &Layout) -> Vec<u8> {
+    fn slide(&mut self, slide: &Slide, layout: &Layout, content: &[&Placeholder]) -> Vec<u8> {
         let mut shapes = Writer::fragment();
         match (&slide.title, layout.title()) {
             // The title's paragraph has no properties of its own: the layout's title style applies.
@@ -388,24 +418,7 @@ impl SlideWriter<'_> {
             index: None,
             rect: Some(layout.master_body.unwrap_or(BODY_AREA)),
         };
-        let content = layout.content();
-        // Slot `i` goes into the `i`-th content placeholder. A slot past the last (a layout bound
-        // by fallback can have fewer placeholders than the house layout has slots) shares the last
-        // placeholder rather than overlap it (§8.8); with none, the content is free.
-        let mut slots: Vec<(Vec<Content>, Option<&Placeholder>)> = Vec::new();
-        for (index, blocks) in slide.slots.iter().enumerate() {
-            if blocks.is_empty() {
-                continue;
-            }
-            match (content.get(index).or(content.last()), slots.last_mut()) {
-                (Some(&placeholder), Some((shared, Some(last))))
-                    if std::ptr::eq(placeholder, *last) =>
-                {
-                    shared.extend(blocks.iter().cloned());
-                }
-                (placeholder, _) => slots.push((blocks.clone(), placeholder.copied())),
-            }
-        }
+        let slots = assign(&slide.slots, content);
         let areas: Vec<Option<Rect>> = slots
             .iter()
             .map(|(_, placeholder)| placeholder.unwrap_or(&free).rect)
@@ -1359,6 +1372,36 @@ mod tests {
     }
 
     #[test]
+    fn slots_past_the_placeholders_share_the_last_or_one_free_area() {
+        let text = |s: &str| {
+            Content::Text(vec![compyla_core::validate::pptx::model::Piece::Paragraph(
+                vec![compyla_core::ir::Run::plain(s.to_string())],
+            )])
+        };
+        let slots = vec![vec![text("a")], vec![], vec![text("c")], vec![text("d")]];
+        let ph = |index| Placeholder {
+            kind: "obj".into(),
+            index: Some(index),
+            rect: None,
+        };
+        let (one, two) = (ph(1), ph(2));
+        let assigned = assign(&slots, &[&one, &two]);
+        let shape: Vec<(usize, Option<u32>)> = assigned
+            .iter()
+            .map(|(blocks, p)| (blocks.len(), p.and_then(|p| p.index)))
+            .collect();
+        assert_eq!(shape, [(1, Some(1)), (2, Some(2))]);
+        let free: Vec<usize> = assign(&slots, &[])
+            .iter()
+            .map(|(b, p)| {
+                assert!(p.is_none());
+                b.len()
+            })
+            .collect();
+        assert_eq!(free, [3]);
+    }
+
+    #[test]
     fn areas_are_read_by_column() {
         let rect = |x, y, cx, cy| Some(Rect { x, y, cx, cy });
         // Picture with Caption: the picture (right) is higher than the caption (left).
@@ -1390,7 +1433,7 @@ mod tests {
         let template = house();
         let layouts = layouts::read(&template).unwrap();
         for layout in HouseLayout::HOUSE {
-            assert_eq!(bind(layout, &layouts).name, layout.name());
+            assert_eq!(layouts[bind(layout, &layouts)].name, layout.name());
         }
     }
 }

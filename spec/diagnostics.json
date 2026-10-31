@@ -374,7 +374,7 @@
       "since": "0.1",
       "status": "active",
       "spec": "§8.5, §11.2",
-      "summary": "A layout the deck uses has no match in the template by alias, name or type; the template's Title and Content layout is used."
+      "summary": "A layout the deck uses has no match in the template by alias, name or type; the template's Title and Content layout is used, else its first."
     },
     {
       "code": "layout_overflow",
@@ -668,7 +668,7 @@
       "since": "0.1",
       "status": "active",
       "spec": "§9.7, §10.4",
-      "summary": "An .xlsx/.xltx template was supplied; xlsx templates aren't supported yet and it isn't used."
+      "summary": "A template was supplied for an xlsx document and isn't used: an .xlsx/.xltx one never is, and a docx or pptx one's theme tokens aren't applied yet."
     },
     {
       "code": "content_overflow",
