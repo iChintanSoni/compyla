@@ -29,6 +29,14 @@ NS = {
     "dc": "http://purl.org/dc/elements/1.1/",
 }
 
+# ST_Xstring (ECMA-376 Part 1, §22.9.2.19): `_xHHHH_` stands for U+HHHH, so text reads as Excel shows it.
+XSTRING_ESCAPE = re.compile(r"_x([0-9A-Fa-f]{4})_")
+
+
+def xstring(text):
+    return XSTRING_ESCAPE.sub(lambda m: chr(int(m.group(1), 16)), text) if text else text
+
+
 # Built-in spreadsheet number formats that appear without a <numFmt> record.
 BUILTIN_NUMFMTS = {0: "General", 1: "0", 2: "0.00", 3: "#,##0", 4: "#,##0.00", 9: "0%", 10: "0.00%", 14: "mm-dd-yy", 49: "@"}
 
@@ -191,7 +199,7 @@ def project_xlsx(package):
     shared = []
     if "xl/sharedStrings.xml" in package.namelist():
         for item in xml(package, "xl/sharedStrings.xml").findall("x:si", NS):
-            shared.append("".join(t.text or "" for t in item.iter(f"{{{NS['x']}}}t")))
+            shared.append(xstring("".join(t.text or "" for t in item.iter(f"{{{NS['x']}}}t"))))
     formats = []
     if "xl/styles.xml" in package.namelist():
         styles = xml(package, "xl/styles.xml")
@@ -211,13 +219,13 @@ def project_xlsx(package):
             formula = cell.find("x:f", NS)
             value = cell.find("x:v", NS)
             if formula is not None:
-                entry["formula"] = formula.text or ""
+                entry["formula"] = xstring(formula.text or "")
             elif kind == "s" and value is not None:
                 entry["value"], entry["type"] = shared[int(value.text)], "s"
             elif kind == "inlineStr":
-                entry["value"], entry["type"] = "".join(t.text or "" for t in cell.iter(f"{{{NS['x']}}}t")), "s"
+                entry["value"], entry["type"] = xstring("".join(t.text or "" for t in cell.iter(f"{{{NS['x']}}}t"))), "s"
             elif kind == "str" and value is not None:
-                entry["value"], entry["type"] = value.text, "s"
+                entry["value"], entry["type"] = xstring(value.text), "s"
             elif kind == "b" and value is not None:
                 entry["value"], entry["type"] = value.text == "1", "b"
             elif value is not None:
@@ -228,12 +236,12 @@ def project_xlsx(package):
             style = int(cell.get("s", "0"))
             entry["numFmt"] = formats[style] if style < len(formats) else "General"
             cells[cell.get("r")] = entry
-        sheets.append({"name": sheet.get("name"), "cells": cells})
+        sheets.append({"name": xstring(sheet.get("name")), "cells": cells})
         for target, external in rels(package, part).values():
             if not external and "/tables/" in target:
                 table = xml(package, target)
                 style = table.find("x:tableStyleInfo", NS)
-                tables.append({"name": table.get("name"), "ref": table.get("ref"), "style": style.get("name") if style is not None else None})
+                tables.append({"name": xstring(table.get("name")), "ref": table.get("ref"), "style": style.get("name") if style is not None else None})
     return {"sheets": sheets, "excelTables": tables, "properties": core_properties(package)}
 
 

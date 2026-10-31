@@ -84,3 +84,47 @@ fn a_huge_ir_position_doesnt_overflow() {
     let diagnostics = compyla::lint_ir(&ir.to_string(), &options, &compyla::no_assets).unwrap();
     assert!(diagnostics.iter().any(|d| d.code == "formula_error"));
 }
+
+#[test]
+fn a_blocked_convert_reports_its_error_past_the_cap() {
+    // 1,100 warnings sort before the error, which the cap still keeps (§11.2).
+    let source = format!(
+        "# S\n\n{}| A |\n|---|\n| {} |\n",
+        "### h\n\n".repeat(1_100),
+        "x".repeat(32_800)
+    );
+    let options = compyla::Options {
+        format: Some(compyla::Format::Xlsx),
+        strict: false,
+    };
+    let result = compyla::convert(&source, &options, &compyla::no_assets).unwrap();
+    assert!(result.bytes.is_none());
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "xlsx_limit_exceeded")
+    );
+    assert_eq!(result.diagnostics.len(), 1001);
+    let lint = compyla::lint(&source, &options, &compyla::no_assets).unwrap();
+    assert!(lint.iter().any(|d| d.severity == compyla::Severity::Error));
+}
+
+#[test]
+fn many_excel_tables_convert() {
+    // Each Excel table is a package part: more than 65,535 parts need Zip64.
+    let source = format!(
+        "# S\n\n{}",
+        "::: table\n| A |\n|---|\n:::\n\n".repeat(70_000)
+    );
+    let options = compyla::Options {
+        format: Some(compyla::Format::Xlsx),
+        strict: false,
+    };
+    let start = Instant::now();
+    let result = compyla::convert(&source, &options, &compyla::no_assets).unwrap();
+    assert!(start.elapsed() < BOUND * 3, "took {:?}", start.elapsed());
+    let bytes = result.bytes.expect("converted");
+    let archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+    assert!(archive.len() > 70_000);
+}

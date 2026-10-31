@@ -1,0 +1,65 @@
+{
+  "diagnostics": [
+    {
+      "code": "formula_error",
+      "severity": "warning",
+      "line": 7
+    }
+  ],
+  "output": {
+    "sheets": [
+      {
+        "name": "a_x003A_b",
+        "cells": {
+          "A1": {
+            "value": "Name",
+            "type": "s"
+          },
+          "B1": {
+            "value": "Score",
+            "type": "s"
+          },
+          "A2": {
+            "value": "_x0041_",
+            "type": "s",
+            "numFmt": "@"
+          },
+          "B2": {
+            "value": 42,
+            "type": "n"
+          },
+          "A3": {
+            "value": "a_x0042_b",
+            "type": "s",
+            "numFmt": "@"
+          },
+          "B3": {
+            "value": "=SUM(",
+            "type": "s"
+          }
+        }
+      }
+    ],
+    "excelTables": [
+      {
+        "name": "people",
+        "ref": "A1:B3",
+        "style": "TableStyleMedium2"
+      }
+    ],
+    "package": {
+      "xpath": [
+        {
+          "part": "xl/worksheets/sheet1.xml",
+          "expr": "count(//x:hyperlink[@ref='A1'])",
+          "equals": 1
+        },
+        {
+          "part": "xl/sharedStrings.xml",
+          "expr": "count(//x:si[x:r/x:rPr/x:i])",
+          "equals": 1
+        }
+      ]
+    }
+  }
+}

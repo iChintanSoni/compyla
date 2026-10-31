@@ -11,12 +11,13 @@ const VERSION: u16 = 20;
 const DEFLATE: u16 = 8;
 const LEVEL: u8 = 6;
 
-/// Writes `entries` (name, data) as a zip archive.
+/// Writes `entries` (name, data) as a zip archive. More than 65,535 entries get Zip64's end
+/// records (APPNOTE 4.3.14), which every OOXML consumer reads.
 ///
 /// # Panics
 ///
-/// If the archive would need Zip64: more than 65,535 entries, or 4 GiB. Rendered packages are far
-/// smaller, since input is limited (markdown-spec.md §12.1).
+/// If an entry or the archive reaches 4 GiB. Input limits keep rendered packages far below that
+/// (markdown-spec.md §12.1).
 pub fn write(entries: &[(String, Vec<u8>)]) -> Vec<u8> {
     let mut out = Vec::new();
     let mut central = Vec::new();
@@ -55,10 +56,31 @@ pub fn write(entries: &[(String, Vec<u8>)]) -> Vec<u8> {
         central.extend(offset.to_le_bytes());
         central.extend(name.as_bytes());
     }
-    let count = u16::try_from(entries.len()).expect("over 65,535 zip entries");
     let central_offset = small(out.len());
     let central_size = small(central.len());
     out.extend(central);
+    let count = match u16::try_from(entries.len()) {
+        Ok(count) if count < u16::MAX => count,
+        // Zip64: the end record's counts say "see the Zip64 record".
+        _ => {
+            let record = out.len() as u64;
+            out.extend(0x0606_4b50u32.to_le_bytes());
+            out.extend(44u64.to_le_bytes()); // the record's size after this field
+            out.extend(45u16.to_le_bytes()); // version made by: 4.5, Zip64
+            out.extend(45u16.to_le_bytes()); // version needed
+            out.extend(0u32.to_le_bytes()); // this disk
+            out.extend(0u32.to_le_bytes()); // the central directory's disk
+            out.extend((entries.len() as u64).to_le_bytes());
+            out.extend((entries.len() as u64).to_le_bytes());
+            out.extend(u64::from(central_size).to_le_bytes());
+            out.extend(u64::from(central_offset).to_le_bytes());
+            out.extend(0x0706_4b50u32.to_le_bytes()); // the Zip64 end record's locator
+            out.extend(0u32.to_le_bytes());
+            out.extend(record.to_le_bytes());
+            out.extend(1u32.to_le_bytes()); // disks
+            u16::MAX
+        }
+    };
     out.extend(0x0605_4b50u32.to_le_bytes());
     out.extend(0u16.to_le_bytes()); // this disk
     out.extend(0u16.to_le_bytes()); // the central directory's disk
@@ -111,6 +133,17 @@ mod tests {
             file.read_to_end(&mut read).unwrap();
             assert_eq!(&read, data);
         }
+    }
+
+    #[test]
+    fn more_than_65535_entries_use_zip64() {
+        let entries: Vec<(String, Vec<u8>)> = (0..70_000)
+            .map(|i| (format!("t/{i}.xml"), b"<t/>".to_vec()))
+            .collect();
+        let archive = zip::ZipArchive::new(std::io::Cursor::new(write(&entries))).unwrap();
+        assert_eq!(archive.len(), 70_000);
+        let last = archive.name_for_index(69_999).unwrap().unwrap();
+        assert_eq!(last, "t/69999.xml");
     }
 
     #[test]
