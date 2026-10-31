@@ -1,0 +1,66 @@
+{
+  "diagnostics": [
+    {
+      "code": "mixed_column_type",
+      "severity": "warning",
+      "line": 3
+    }
+  ],
+  "output": {
+    "sheets": [
+      {
+        "name": "Values",
+        "cells": {
+          "B2": {
+            "value": 42,
+            "type": "n",
+            "numFmt": "General"
+          },
+          "B3": {
+            "value": 0.04,
+            "type": "n",
+            "numFmt": "0%"
+          },
+          "C2": {
+            "value": 46053,
+            "type": "n",
+            "numFmt": "yyyy-mm-dd"
+          },
+          "C3": {
+            "value": 46081,
+            "type": "n",
+            "numFmt": "yyyy-mm-dd"
+          },
+          "D2": {
+            "value": true,
+            "type": "b"
+          },
+          "D3": {
+            "value": false,
+            "type": "b"
+          },
+          "E2": {
+            "value": 0.095,
+            "type": "n",
+            "numFmt": "0.0%"
+          },
+          "E3": {
+            "value": 0.12,
+            "type": "n",
+            "numFmt": "0.0%"
+          },
+          "F2": {
+            "value": "007",
+            "type": "s",
+            "numFmt": "@"
+          },
+          "F3": {
+            "value": "012",
+            "type": "s",
+            "numFmt": "@"
+          }
+        }
+      }
+    ]
+  }
+}

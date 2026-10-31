@@ -27,7 +27,7 @@ pub use values::ColumnType;
 
 use super::{Input, Slugger, fragment_links};
 use crate::diagnostic::Sink;
-use crate::ir::{Document, Position};
+use crate::ir::{Document, Position, Run};
 
 /// The composed workbook.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,6 +57,54 @@ pub struct Range {
     /// is an error are written as text and are not listed.
     pub formulas: Vec<(String, String)>,
     pub excel_table: Option<ExcelTable>,
+    /// Every cell the range writes, in row-major order.
+    pub cells: Vec<Cell>,
+}
+
+/// A cell, resolved for writing (§9.2–§9.6): a renderer serializes it as it is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Cell {
+    /// 1-based.
+    pub row: u32,
+    /// 0-based: A is 0.
+    pub column: u32,
+    pub role: Role,
+    pub value: CellValue,
+    /// The number format code (§9.4, §9.5).
+    pub format: String,
+    pub link: Option<Link>,
+}
+
+/// What a cell is in its range, which decides its style (§9.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    Title,
+    Note,
+    Header,
+    /// A header cell of an Excel table, which the table's style formats (§9.6).
+    TableHeader,
+    Data,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CellValue {
+    /// No value: an empty header cell, written so the header row is styled whole.
+    Empty,
+    /// Rich text (§9.5): bold, italic and strike runs; `code` runs are plain.
+    Text(Vec<Run>),
+    /// An exact decimal: a percent already divided by 100, a date as its serial (§9.5).
+    Number(String),
+    Boolean(bool),
+    /// The written formula, without `=` (§9.3).
+    Formula(String),
+}
+
+/// A cell's hyperlink (§9.5): an external destination, or a fragment resolved to a sheet, whose
+/// cell A1 it links to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Link {
+    Url(String),
+    Sheet(String),
 }
 
 /// An Excel table registered with `::: table` (§9.6).
@@ -85,7 +133,7 @@ impl TableStyle {
     }
 }
 
-pub fn validate(input: &Input<'_>, out: &mut Sink) {
+pub fn validate(input: &Input<'_>, out: &mut Sink) -> Workbook {
     let title_line = input.sidecar.meta_lines.get("title").copied();
     let workbook = compose(input.document, title_line, out);
     // §9.5: fragment links resolve against the sheet names' slugs.
@@ -96,6 +144,7 @@ pub fn validate(input: &Input<'_>, out: &mut Sink) {
         .map(|sheet| slugger.slug(&sheet.name))
         .collect();
     fragment_links(input, &targets, "sheet name", out);
+    workbook
 }
 
 /// The compose summary (spec/conformance/compose.schema.json): sheets with their placed ranges,
@@ -204,6 +253,16 @@ mod tests {
             "# S\n\n::: anchor A3\n:::\n\n| A |\n|---|\n| 1 |\n\n| B |\n|---|\n| 1 |\n| 2 |\n";
         assert_eq!(placements(source), vec![(3, 0), (6, 0)]);
         assert_eq!(lint(source), diagnostics(&[("xlsx_range_overlap", 10)]));
+    }
+
+    #[test]
+    fn an_excel_table_without_data_rows_gets_an_empty_one() {
+        let source = "# S\n\n::: table\n| A | B |\n|---|---|\n:::\n\n| C |\n|---|\n| 1 |\n";
+        let ranges = &workbook(source).sheets[0].ranges;
+        assert_eq!((ranges[0].header_row, ranges[0].last_row), (1, 2));
+        // The next table stacks below the empty row, with the usual blank row between.
+        assert_eq!(ranges[1].header_row, 4);
+        assert_eq!(lint(source), vec![]);
     }
 
     #[test]

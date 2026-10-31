@@ -119,16 +119,26 @@ the oracle for them.
 
 Goal: output that is faithful to a real corporate template, and identical bytes on every run.
 
-- [ ] `compyla-ooxml`: template package model, deterministic writer, `inspect_template`
+- [x] `compyla-ooxml` writing: a deterministic zip writer (fixed timestamps and entry order,
+      pure-Rust DEFLATE), XML that text can't escape from, the package model, and document
+      properties from `meta` only (C44, §13)
+- [ ] `compyla-ooxml` templates: the package reader with §12.1 limits and §10.4 sanitization, and
+      `inspect_template`
 - [ ] `compyla-fonts`: lockfile, cache, measurement, subsetting (D14)
 - [ ] Compose stage with measured overflow diagnostics (D15)
 - [ ] pptx template-first, with a bundled house `.potx` (D12)
 - [ ] docx template-first, with a bundled house `.dotx`; headers, footers and page numbers come from the template
-- [ ] xlsx per markdown-spec.md §9: placement, typed values, parsed and allowlisted formulas (with
-      `_xlfn.` prefixes), Excel tables, sheet-name repairs, and theme tokens from a supplied template
+- [x] xlsx per markdown-spec.md §9 (`compyla-xlsx`): placement, typed values, parsed and allowlisted
+      formulas (with `_xlfn.` prefixes), Excel tables, sheet-name repairs, links and the house style
+      (C48). The renderer only serializes the workbook the compose stage resolved, cell by cell
+- [ ] xlsx theme tokens (fonts, header color) from a supplied docx or pptx template
+- [x] `convert` in the facade and the CLI (`compyla convert`), with blocking (§11.1) decided over
+      every diagnostic, including any the cap drops; formats without a renderer yet are
+      `renderer_unavailable`
 - [ ] pdf via Typst with a theme derived from the template (D13)
-- [ ] Render conformance suite passing for all four formats, including number formats (C46's
-      `general` columns and percent decimals) in the xlsx projection
+- [ ] Render conformance suite passing for all four formats. The Rust runner (`render_suite`) renders
+      each fixture twice for byte identity and checks it with `render_check.py`; xlsx passes
+      (render/003, 104–107, including C46's `general` columns and percent decimals)
 - [ ] `convert` locates render-stage diagnostics through the same `locate` renumbering as `lint`
 - [ ] Real-viewer verification in CI (test only, D4): OOXML schema validation + LibreOffice → PNG visual diffs
 

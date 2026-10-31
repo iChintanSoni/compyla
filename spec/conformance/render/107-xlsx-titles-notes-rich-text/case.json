@@ -1,0 +1,9 @@
+{
+  "description": "A range title and a note take their own rows above the header, merged across the table; a note's bold run stays rich text.",
+  "spec": [
+    "§9.2",
+    "§9.5"
+  ],
+  "oracle": "corrected",
+  "format": "xlsx"
+}

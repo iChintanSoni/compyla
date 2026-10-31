@@ -10,12 +10,12 @@ use super::directives::{self, Args, Columns};
 use super::formula::{self, Context};
 use super::grid::{self, MAX_COLUMNS, MAX_ROW};
 use super::names::{self, fold, utf16_len};
-use super::values::{self, ColumnType, Literal};
+use super::values::{self, ColumnType, Converted, Literal};
 use super::walk::{self, Attached, Walk};
-use super::{ExcelTable, Range, Sheet, Workbook, excerpt, line_of};
+use super::{Cell, CellValue, ExcelTable, Link, Range, Role, Sheet, Workbook, excerpt, line_of};
 use crate::diagnostic::{Diagnostic, Sink};
 use crate::ir::{Document, Run, Table, plain_text};
-use crate::validate::{at, row_line};
+use crate::validate::{Slugger, at, percent_decode, row_line};
 
 /// Excel's limits on a cell's text and a formula's length, in UTF-16 code units.
 const MAX_CELL_TEXT: usize = 32_767;
@@ -72,6 +72,12 @@ pub fn compose(document: &Document, title_line: Option<usize>, out: &mut Sink) -
         sheet_names.push(name);
     }
     let folded: Vec<String> = sheet_names.iter().map(|n| fold(n)).collect();
+    // §9.5: fragment links resolve against the repaired sheet names' slugs.
+    let mut slugger = Slugger::new();
+    let slugs: HashMap<String, String> = sheet_names
+        .iter()
+        .map(|name| (slugger.slug(name), name.clone()))
+        .collect();
 
     // Arguments are checked once per directive that took effect; a misplaced one is ignored.
     let args: Vec<Option<Args>> = walked
@@ -87,6 +93,7 @@ pub fn compose(document: &Document, title_line: Option<usize>, out: &mut Sink) -
         args: &args,
         table_names: &table_names,
         sheets: &folded,
+        slugs: &slugs,
         matched: HashMap::new(),
         repeated: HashSet::new(),
         out,
@@ -219,6 +226,8 @@ struct Composer<'w, 'o> {
     table_names: &'w HashMap<usize, String>,
     /// The workbook's sheet names, case-folded.
     sheets: &'w [String],
+    /// Sheet-name slug → sheet name, for fragment links.
+    slugs: &'w HashMap<String, String>,
     /// Per `columns` directive, which entries named a column of some table it applies to.
     matched: HashMap<usize, Vec<bool>>,
     /// `(directive, entry)` pairs already reported for naming a column an earlier entry named.
@@ -295,7 +304,8 @@ impl Composer<'_, '_> {
             .chain([table.header.len(), 1])
             .max()
             .unwrap_or(1) as u64;
-        let data_rows = table.rows.len() as u64;
+        // An Excel table needs a data row: one with none is placed with an empty one (§9.6).
+        let data_rows = (table.rows.len() as u64).max(u64::from(attached.excel.is_some()));
         let above = u64::from(attached.title.is_some()) + u64::from(attached.note.is_some());
         let height = above + 1 + data_rows;
 
@@ -375,15 +385,18 @@ impl Composer<'_, '_> {
         let note_row = attached
             .note
             .map(|_| top + u32::from(attached.title.is_some()));
+        let mut cells = Vec::new();
         if let (Some(title), Some(row)) = (attached.title, title_row) {
             self.text_cell(
                 &title.title,
                 line_of(title.position),
                 grid::address(left, row),
             );
+            cells.push(self.text(row, left, Role::Title, &title.title));
         }
         if let (Some(note), Some(row)) = (attached.note, note_row) {
             self.text_cell(&note.runs, line_of(note.position), grid::address(left, row));
+            cells.push(self.text(row, left, Role::Note, &note.runs));
         }
         let headers: Vec<String> = (0..columns)
             .map(|c| {
@@ -403,7 +416,8 @@ impl Composer<'_, '_> {
             Some((id, Some(Args::Columns(columns)))) => self.column_types(id, columns, &headers),
             _ => vec![None; columns],
         };
-        let (column_types, formulas) = self.cells(table, &typed, left, header_row, columns as u32);
+        let (column_types, formulas, data) =
+            self.cells(table, &typed, left, header_row, columns as u32);
 
         let excel_table = attached.excel.and_then(|id| {
             let Some(Args::Table(options)) = &args[id] else {
@@ -438,6 +452,23 @@ impl Composer<'_, '_> {
             })
         });
 
+        // The header row, whole: in an Excel table, its repaired headers as plain text, since
+        // they must equal the table's column names.
+        for c in 0..columns {
+            let column = left + c as u32;
+            let runs = table.header.get(c).map_or(&[][..], |cell| &cell.runs);
+            let mut cell = self.text(header_row, column, Role::Header, runs);
+            if let Some(excel) = &excel_table {
+                cell.role = Role::TableHeader;
+                cell.value = CellValue::Text(vec![Run::plain(excel.headers[c].clone())]);
+                cell.link = None;
+            } else if plain_text(runs).is_empty() {
+                cell.value = CellValue::Empty;
+            }
+            cells.push(cell);
+        }
+        cells.extend(data);
+
         Some(Range {
             title_row,
             note_row,
@@ -448,12 +479,38 @@ impl Composer<'_, '_> {
             column_types,
             formulas,
             excel_table,
+            cells,
         })
     }
 
+    /// A text cell of `role`, in the `General` format.
+    fn text(&self, row: u32, column: u32, role: Role, runs: &[Run]) -> Cell {
+        Cell {
+            row,
+            column,
+            role,
+            value: CellValue::Text(runs.to_vec()),
+            format: "General".into(),
+            link: self.link(runs),
+        }
+    }
+
+    /// The cell's hyperlink: its runs' first destination (§9.5), with a fragment resolved to a
+    /// sheet. An unresolved fragment gets no link (`link_anchor_unresolved`, from validation).
+    fn link(&self, runs: &[Run]) -> Option<Link> {
+        let url = runs.iter().find_map(|run| run.link.as_deref())?;
+        match url.strip_prefix('#') {
+            Some(fragment) => self
+                .slugs
+                .get(&percent_decode(fragment))
+                .map(|name| Link::Sheet(name.clone())),
+            None => Some(Link::Url(url.to_string())),
+        }
+    }
+
     /// The data cells (§9.3, §9.5): formulas checked and translated; literals tested against their
-    /// column's type, or collected for inference. Returns the column types and the translated
-    /// formulas keyed by placed address.
+    /// column's type, or collected for inference. Returns the column types, the translated formulas
+    /// keyed by placed address, and the cells resolved for writing.
     fn cells(
         &mut self,
         table: &Table,
@@ -461,7 +518,7 @@ impl Composer<'_, '_> {
         left: u32,
         header_row: u32,
         columns: u32,
-    ) -> (Vec<ColumnType>, Vec<(String, String)>) {
+    ) -> (Vec<ColumnType>, Vec<(String, String)>, Vec<Cell>) {
         let context = Context {
             first_column: left,
             header_row,
@@ -473,6 +530,8 @@ impl Composer<'_, '_> {
         // The decimals a percent format needs per column (§9.4).
         let mut decimals = vec![0u8; typed.len()];
         let mut formulas = Vec::new();
+        // The formulas written, by data cell, for the cells below.
+        let mut written: HashMap<(usize, usize), String> = HashMap::new();
         for (r, row) in table.rows.iter().enumerate() {
             let line = table.position.map(|p| row_line(p, r));
             for (c, cell) in row.iter().enumerate() {
@@ -491,6 +550,7 @@ impl Composer<'_, '_> {
                             if formula.past_grid.is_empty()
                                 && utf16_len(&formula.written) <= MAX_FORMULA
                             {
+                                written.insert((r, c), formula.written.clone());
                                 formulas.push((address, formula.written));
                             }
                         }
@@ -536,7 +596,7 @@ impl Composer<'_, '_> {
                 decimals[c] = decimals[c].max(values::percent_decimals(&text, literal));
             }
         }
-        let column_types = typed
+        let column_types: Vec<ColumnType> = typed
             .iter()
             .zip(literals)
             .enumerate()
@@ -569,7 +629,51 @@ impl Composer<'_, '_> {
                 kind => kind,
             })
             .collect();
-        (column_types, formulas)
+
+        let mut cells = Vec::new();
+        for (r, row) in table.rows.iter().enumerate() {
+            for (c, source) in row.iter().enumerate() {
+                let kind = &column_types[c];
+                let (value, format) = if source.raw.starts_with('=') {
+                    // A formula that can't be written is literal text (§9.3), as authored.
+                    let value = match written.remove(&(r, c)) {
+                        Some(formula) => CellValue::Formula(formula),
+                        None => CellValue::Text(vec![Run::plain(source.raw.clone())]),
+                    };
+                    (value, kind.number_format())
+                } else {
+                    let text = plain_text(&source.runs);
+                    if text.is_empty() {
+                        continue;
+                    }
+                    let literal = values::classify(&text);
+                    let text_value = || CellValue::Text(source.runs.clone());
+                    match kind {
+                        ColumnType::Text => (text_value(), kind.number_format()),
+                        ColumnType::General => {
+                            let value =
+                                values::convert(&text, literal).map_or_else(text_value, converted);
+                            (value, values::literal_format(&text, literal))
+                        }
+                        _ if kind.accepts(literal) => {
+                            let value =
+                                values::convert(&text, literal).map_or_else(text_value, converted);
+                            (value, kind.number_format())
+                        }
+                        _ => (text_value(), kind.number_format()),
+                    }
+                };
+                cells.push(Cell {
+                    row: header_row + 1 + r as u32,
+                    column: left + c as u32,
+                    role: Role::Data,
+                    value,
+                    format,
+                    link: self.link(&source.runs),
+                });
+            }
+        }
+        (column_types, formulas, cells)
     }
 
     fn formula_problems(&mut self, formula: &formula::Formula, line: Option<usize>, address: &str) {
@@ -619,25 +723,28 @@ impl Composer<'_, '_> {
 
     /// §9.5: a cell gets one hyperlink; further distinct links are ignored.
     fn links(&mut self, runs: &[Run], line: Option<usize>, address: &str) {
-        let mut links: Vec<&str> = Vec::new();
-        for link in runs.iter().filter_map(|r| r.link.as_deref()) {
-            if !links.contains(&link) {
-                links.push(link);
-            }
-        }
-        if links.len() > 1 {
+        let mut links = runs.iter().filter_map(|r| r.link.as_deref());
+        let Some(first) = links.next() else { return };
+        let distinct: HashSet<&str> = std::iter::once(first).chain(links).collect();
+        if distinct.len() > 1 {
             self.out.push(at(
                 Diagnostic::new(
                     "xlsx_ignored_content",
                     format!(
-                        "{address} has {} links; a cell keeps only its first (`{}`).",
-                        links.len(),
-                        links[0]
+                        "{address} has {} links; a cell keeps only its first (`{first}`).",
+                        distinct.len(),
                     ),
                 )
                 .hint("Put each link in its own cell."),
                 line,
             ));
         }
+    }
+}
+
+fn converted(value: Converted) -> CellValue {
+    match value {
+        Converted::Number(number) => CellValue::Number(number),
+        Converted::Boolean(boolean) => CellValue::Boolean(boolean),
     }
 }

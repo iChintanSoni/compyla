@@ -262,3 +262,92 @@ fn compose_suite() {
         failures.join("\n")
     );
 }
+
+/// The render suite (spec/conformance/README.md, "Render suite"). Each fixture this build can render
+/// is converted twice, and the bytes must be identical (markdown-spec.md §13). The diagnostics are
+/// matched as in the lint suite, and the output is checked by the reference extractor,
+/// `spec/tools/render_check.py`, run through `uv` with its pinned dependencies.
+#[test]
+fn render_suite() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let scratch = std::env::temp_dir().join(format!("compyla-render-{}", std::process::id()));
+    fs::create_dir_all(&scratch).unwrap();
+    let (mut rendered, mut pending, mut failures) = (0, Vec::new(), Vec::new());
+    for fixture in suite("render") {
+        let name = fixture.file_name().unwrap().to_string_lossy().to_string();
+        let case = read_json(&fixture.join("case.json"));
+        let format_name = case["format"].as_str().unwrap();
+        let format = compyla::Format::parse(format_name).unwrap();
+        if !compyla::renderer_available(format) {
+            pending.push(name);
+            continue;
+        }
+        let input = fs::read_to_string(fixture.join("input.md")).unwrap();
+        let expected = read_json(&fixture.join("expected.json"));
+        let options = compyla::Options {
+            format: Some(format),
+            strict: case["strict"].as_bool().unwrap_or(false),
+        };
+        let assets = assets_for(&fixture, &case);
+        let first = compyla::convert(&input, &options, &assets).unwrap();
+        let second = compyla::convert(&input, &options, &assets).unwrap();
+        if !diagnostics_match(&first.diagnostics, &expected["diagnostics"]) {
+            failures.push(format!(
+                "{name}: diagnostics [{}], want {}",
+                summary(&first.diagnostics),
+                expected["diagnostics"]
+            ));
+            continue;
+        }
+        let Some(bytes) = first.bytes else {
+            failures.push(format!("{name}: no output"));
+            continue;
+        };
+        if Some(&bytes) != second.bytes.as_ref() {
+            failures.push(format!("{name}: two renders differ"));
+        }
+        let output = scratch.join(format!("{name}.{format_name}"));
+        fs::write(&output, &bytes).unwrap();
+        let check = std::process::Command::new("uv")
+            .current_dir(&root)
+            .args([
+                "run",
+                "--no-project",
+                "--with",
+                "lxml==6.0.2",
+                "--with",
+                "pypdf==6.1.1",
+                "python",
+                "-I",
+                "spec/tools/render_check.py",
+                "check",
+                format_name,
+            ])
+            .arg(fixture.join("expected.json"))
+            .arg(&output)
+            .output()
+            .expect("the render suite needs uv (https://docs.astral.sh/uv/) on PATH");
+        if !check.status.success() {
+            failures.push(format!(
+                "{name}: {}{}",
+                String::from_utf8_lossy(&check.stdout),
+                String::from_utf8_lossy(&check.stderr)
+            ));
+        }
+        rendered += 1;
+    }
+    let _ = fs::remove_dir_all(&scratch);
+    eprintln!("render suite: {rendered} rendered; renderer pending for {pending:?}");
+    if cfg!(feature = "xlsx") {
+        assert!(
+            rendered >= 5,
+            "expected the xlsx render fixtures, rendered {rendered}"
+        );
+    }
+    assert!(
+        failures.is_empty(),
+        "{} render fixture failure(s):\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}

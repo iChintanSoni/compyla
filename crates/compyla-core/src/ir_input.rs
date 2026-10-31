@@ -5,7 +5,7 @@
 
 use serde_json::{Map, Value};
 
-use crate::diagnostic::{Diagnostic, Sink};
+use crate::diagnostic::{Blocking, Diagnostic, Sink};
 use crate::frontmatter;
 use crate::ir::{self, Block, Document, Position, Run, canonical_runs};
 use crate::parse::{
@@ -29,17 +29,33 @@ pub struct Refusal {
     pub message: String,
 }
 
+/// Loaded IR input.
+#[derive(Debug)]
+pub struct Loaded {
+    pub document: Document,
+    pub diagnostics: Vec<Diagnostic>,
+    /// Whether any load diagnostic, kept or not, blocks `convert` (§11.1).
+    pub blocking: Blocking,
+}
+
 /// Loads IR JSON: structure, version and invariants, then the limits and the text rules. When a
-/// limit is exceeded (§12.1), the diagnostics end with `limit_exceeded` and the document must not be
-/// processed further.
-pub fn load(json: &str) -> Result<(Document, Vec<Diagnostic>), Refusal> {
+/// limit is exceeded (§12.1), the diagnostics include `limit_exceeded` and the document must not
+/// be processed further.
+pub fn load(json: &str) -> Result<Loaded, Refusal> {
     if let Some(diagnostic) = input_too_large(json.len()) {
         let document = Document {
             ir_version: ir::IR_VERSION.to_string(),
             meta: Map::new(),
             body: Vec::new(),
         };
-        return Ok((document, vec![diagnostic]));
+        return Ok(Loaded {
+            document,
+            diagnostics: vec![diagnostic],
+            blocking: Blocking {
+                error: true,
+                promotable: false,
+            },
+        });
     }
     let value: Value =
         serde_json::from_str(json).map_err(|e| refuse("", format!("not valid JSON: {e}")))?;
@@ -55,7 +71,12 @@ pub fn load(json: &str) -> Result<(Document, Vec<Diagnostic>), Refusal> {
     let mut diagnostics = Sink::new();
     if let Some(diagnostic) = limits(&document.body, "/body", 0, &mut 0) {
         diagnostics.push(diagnostic);
-        return Ok((document, diagnostics.into_vec()));
+        let (diagnostics, blocking) = diagnostics.into_parts();
+        return Ok(Loaded {
+            document,
+            diagnostics,
+            blocking,
+        });
     }
     for (key, value) in document.meta.iter_mut() {
         clean_value(value, &format!("/meta/{}", escape(key)), &mut diagnostics);
@@ -70,7 +91,12 @@ pub fn load(json: &str) -> Result<(Document, Vec<Diagnostic>), Refusal> {
         &mut diagnostics,
     );
     text_rules(&mut document.body, "/body", &mut diagnostics);
-    Ok((document, diagnostics.into_vec()))
+    let (diagnostics, blocking) = diagnostics.into_parts();
+    Ok(Loaded {
+        document,
+        diagnostics,
+        blocking,
+    })
 }
 
 fn refuse(pointer: &str, message: String) -> Refusal {

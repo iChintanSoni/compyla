@@ -70,6 +70,7 @@ output. Every key under `output` is optional; only the keys a fixture lists are 
 | docx | `horizontalRules` | Empty body paragraphs with a bottom border |
 | pptx | `slides` | One entry per slide, in order: `layout` (the bound layout's name), `title` (title placeholder text, or null), `texts` (non-empty paragraph texts of every other shape and graphic frame, in order), `notes` (the notes body text, or null) |
 | xlsx | `sheets` | In order: `name`, and `cells` keyed by address, each with `value` (string, number or boolean), `type` (`s`, `n`, `b`), `formula` (without `=`) and `numFmt` (the format code) |
+| xlsx | `excelTables` | Excel tables in workbook order: `{ name, ref, style }` |
 | docx, pptx, xlsx | `properties` | `title` and `creator` from `docProps/core.xml` |
 | pdf | `pages`, `pageSize` | Page count; the first page's `[width, height]` in points |
 | pdf | `text` | The extracted text of all pages, whitespace-normalized |
@@ -96,8 +97,11 @@ output. Every key under `output` is optional; only the keys a fixture lists are 
 | `partsAbsent` | Regular expressions; no part name may match one in full (e.g. `word/vbaProject\.bin`) |
 | `xpath` | `{ part, expr, equals }`: an XPath 1.0 expression evaluated on a part must equal the value. Namespace prefixes: `w`, `a`, `p`, `r`, `x` (SpreadsheetML), `rel`, `cp`, `dc` |
 
-`spec/tools/render_check.py` is the reference extractor and matcher. Phase B and Phase C runners
-reimplement it in Rust and must agree with it on every render fixture.
+`spec/tools/render_check.py` is the reference extractor and matcher, and the one every implementation
+uses: a second extractor could only disagree with it. An implementation's runner renders each fixture
+twice, requires identical bytes (markdown-spec.md §13), matches the diagnostics as the lint suite
+does, and passes the output to `render_check.py check`. The Rust runner is `render_suite` in
+`crates/compyla/tests/conformance.rs`.
 
 ## The oracle
 

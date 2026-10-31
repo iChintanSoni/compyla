@@ -1,0 +1,32 @@
+{
+  "diagnostics": [],
+  "output": {
+    "sheets": [
+      {
+        "name": "Prices",
+        "cells": {
+          "B2": {
+            "value": 3.5,
+            "type": "n",
+            "numFmt": "\"€\"#,##0.00"
+          },
+          "C2": {
+            "value": 2,
+            "type": "n",
+            "numFmt": "#,##0.00"
+          },
+          "D2": {
+            "value": 0.075,
+            "type": "n",
+            "numFmt": "0.0%"
+          },
+          "E2": {
+            "value": "10",
+            "type": "s",
+            "numFmt": "@"
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,6 +1,6 @@
 [package]
 name = "compyla"
-description = "The Compyla facade: the parse and lint operations every host exposes (markdown-spec.md §10)."
+description = "The Compyla facade: the operations every host exposes (markdown-spec.md §10)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,11 +10,20 @@ publish.workspace = true
 
 [dependencies]
 compyla-core.workspace = true
+compyla-ooxml = { workspace = true, optional = true }
+compyla-xlsx = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 
+[features]
+default = ["xlsx"]
+# Renderers. A build without one reports `renderer_unavailable` (markdown-spec.md §10.6), as the
+# core-only WASM build does for every format.
+xlsx = ["dep:compyla-xlsx", "dep:compyla-ooxml"]
+
 [dev-dependencies]
 jsonschema = { version = "0.60", default-features = false }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 
 [lints]
 workspace = true

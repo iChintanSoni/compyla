@@ -8,7 +8,7 @@ use comrak::options::BrokenLinkReference;
 use comrak::{Arena, Options, ResolvedReference, parse_document};
 use serde_json::Map;
 
-use crate::diagnostic::{Diagnostic, Sink};
+use crate::diagnostic::{Blocking, Diagnostic, Sink};
 use crate::frontmatter;
 use crate::ir::{self, Align, Block, Cell, Document, Position, Run, canonical_runs, plain_text};
 use crate::prepass::{self, Item, Kind, PrePass};
@@ -153,6 +153,8 @@ const HTML_ELEMENTS: &[&str] = &[
 pub struct ParseOutput {
     pub document: Document,
     pub diagnostics: Vec<Diagnostic>,
+    /// Whether any parse diagnostic, kept or not, blocks `convert` (§11.1).
+    pub blocking: Blocking,
     pub sidecar: Sidecar,
 }
 
@@ -171,6 +173,10 @@ pub fn parse(source: &str) -> ParseOutput {
         return ParseOutput {
             document: empty(),
             diagnostics: vec![diagnostic],
+            blocking: Blocking {
+                error: true,
+                promotable: false,
+            },
             sidecar: Sidecar::default(),
         };
     }
@@ -198,6 +204,7 @@ pub fn parse(source: &str) -> ParseOutput {
         ..
     } = builder;
     document_in_code_fence(&body, &mut diagnostics);
+    let (diagnostics, blocking) = diagnostics.into_parts();
     let sidecar = Sidecar {
         meta_lines,
         links: link_sites,
@@ -208,7 +215,8 @@ pub fn parse(source: &str) -> ParseOutput {
             meta,
             body,
         },
-        diagnostics: diagnostics.into_vec(),
+        diagnostics,
+        blocking,
         sidecar,
     }
 }

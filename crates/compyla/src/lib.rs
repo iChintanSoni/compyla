@@ -2,6 +2,9 @@
 //! diagnostics shape and ordering of markdown-spec.md §11. Hosts call this crate, never
 //! `compyla-core` directly.
 
+use compyla_core::diagnostic::{Blocking, Sink};
+use compyla_core::validate::Composed;
+
 pub use compyla_core::diagnostic::{CodeInfo, Diagnostic, Severity, code_info};
 pub use compyla_core::ir;
 pub use compyla_core::{Asset, Format};
@@ -46,6 +49,17 @@ pub struct OperationError {
     pub pointer: Option<String>,
 }
 
+/// The result of `convert` (markdown-spec.md §10.1).
+#[derive(Debug, Clone)]
+pub struct ConvertResult {
+    /// The output file's bytes; absent when a diagnostic is an error after escalation (§11.1).
+    pub bytes: Option<Vec<u8>>,
+    /// The format rendered: the option's, or the frontmatter's (§10.2). Absent when a limit stopped
+    /// processing before the format was resolved.
+    pub format: Option<Format>,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
 /// `lint`: parse and validate diagnostics for markdown, in §11.2 order. `assets` is the host's asset
 /// resolver (§10.3); hosts without one pass [`no_assets`].
 pub fn lint(
@@ -53,21 +67,43 @@ pub fn lint(
     options: &Options,
     assets: &dyn Fn(&str) -> Asset,
 ) -> Result<Vec<Diagnostic>, OperationError> {
-    if let Some(diagnostic) = compyla_core::parse::input_too_large(source.len()) {
-        return Ok(finished(vec![diagnostic], options));
+    Ok(check(from_markdown(source), options, assets, false)?.diagnostics)
+}
+
+/// `lint` for IR input (§10.7). Its diagnostics carry IR paths, and lines only where the IR has
+/// positions.
+pub fn lint_ir(
+    json: &str,
+    options: &Options,
+    assets: &dyn Fn(&str) -> Asset,
+) -> Result<Vec<Diagnostic>, OperationError> {
+    Ok(check(from_ir(json)?, options, assets, false)?.diagnostics)
+}
+
+/// `convert`: markdown to the output format, with diagnostics from every stage.
+pub fn convert(
+    source: &str,
+    options: &Options,
+    assets: &dyn Fn(&str) -> Asset,
+) -> Result<ConvertResult, OperationError> {
+    render(check(from_markdown(source), options, assets, true)?)
+}
+
+/// `convert` for IR input (§10.7).
+pub fn convert_ir(
+    json: &str,
+    options: &Options,
+    assets: &dyn Fn(&str) -> Asset,
+) -> Result<ConvertResult, OperationError> {
+    render(check(from_ir(json)?, options, assets, true)?)
+}
+
+/// Whether this build can render `format` (`renderer_unavailable`, §10.6).
+pub fn renderer_available(format: Format) -> bool {
+    match format {
+        Format::Xlsx => cfg!(feature = "xlsx"),
+        Format::Docx | Format::Pdf | Format::Pptx => false,
     }
-    let compyla_core::ParseOutput {
-        document,
-        mut diagnostics,
-        sidecar,
-    } = compyla_core::parse(source);
-    let format = resolve_format(options, &document)?;
-    // A limit stops processing (§12.1).
-    if !diagnostics.iter().any(|d| d.code == "limit_exceeded") {
-        diagnostics.extend(validate(document, &sidecar, format, assets));
-    }
-    finish(&mut diagnostics, options.strict);
-    Ok(diagnostics)
 }
 
 /// The compose summary (spec/conformance/compose.schema.json) of a pptx or xlsx document: the
@@ -85,6 +121,16 @@ pub fn compose_summary(source: &str, format: Format) -> Option<serde_json::Value
 /// Loads IR JSON submitted in place of markdown (markdown-spec.md §10.7): structure, version and
 /// invariants are checked, then the text rules applied. Returns the IR and its diagnostics.
 pub fn load_ir(json: &str) -> Result<(ir::Document, Vec<Diagnostic>), OperationError> {
+    let loaded = load(json)?;
+    Ok((loaded.document, loaded.diagnostics))
+}
+
+/// The resolver of a host with none: in `lint`, every image exists without bytes (§10.3).
+pub fn no_assets(_src: &str) -> Asset {
+    Asset::Exists
+}
+
+fn load(json: &str) -> Result<compyla_core::ir_input::Loaded, OperationError> {
     compyla_core::ir_input::load(json).map_err(|r| OperationError {
         code: r.code,
         message: if r.pointer.is_empty() {
@@ -96,47 +142,144 @@ pub fn load_ir(json: &str) -> Result<(ir::Document, Vec<Diagnostic>), OperationE
     })
 }
 
-/// `lint` for IR input (§10.7). Its diagnostics carry IR paths, and lines only where the IR has
-/// positions.
-pub fn lint_ir(
-    json: &str,
-    options: &Options,
-    assets: &dyn Fn(&str) -> Asset,
-) -> Result<Vec<Diagnostic>, OperationError> {
-    let (document, mut diagnostics) = load_ir(json)?;
-    // A limit stops processing (§12.1).
-    if diagnostics.iter().any(|d| d.code == "limit_exceeded") {
-        return Ok(finished(diagnostics, options));
-    }
-    let format = resolve_format(options, &document)?;
-    let sidecar = compyla_core::Sidecar::default();
-    diagnostics.extend(validate(document, &sidecar, format, assets));
-    finish(&mut diagnostics, options.strict);
-    Ok(diagnostics)
+/// Input, parsed or loaded.
+struct Source {
+    document: ir::Document,
+    sidecar: compyla_core::Sidecar,
+    diagnostics: Vec<Diagnostic>,
+    blocking: Blocking,
 }
 
-/// The profile's diagnostics, each with the IR path of its node and its original position, if any
-/// (§10.7, §11.3).
-fn validate(
-    mut document: ir::Document,
-    sidecar: &compyla_core::Sidecar,
-    format: Format,
+fn from_markdown(source: &str) -> Source {
+    let compyla_core::ParseOutput {
+        document,
+        diagnostics,
+        blocking,
+        sidecar,
+    } = compyla_core::parse(source);
+    Source {
+        document,
+        sidecar,
+        diagnostics,
+        blocking,
+    }
+}
+
+fn from_ir(json: &str) -> Result<Source, OperationError> {
+    let loaded = load(json)?;
+    Ok(Source {
+        document: loaded.document,
+        sidecar: compyla_core::Sidecar::default(),
+        diagnostics: loaded.diagnostics,
+        blocking: loaded.blocking,
+    })
+}
+
+/// Input through validation.
+struct Checked {
+    /// Escalated, ordered and capped (§11).
+    diagnostics: Vec<Diagnostic>,
+    /// Whether any diagnostic, including any the cap dropped, is an error after escalation.
+    blocked: bool,
+    /// The composed model, its format and the document properties; absent when a limit stopped
+    /// processing.
+    composed: Option<(Composed, Format, Properties)>,
+}
+
+/// Document properties from `meta` only (C44): `title`, and `author` (a list joined with `, `).
+#[cfg_attr(not(feature = "xlsx"), allow(dead_code))]
+struct Properties {
+    title: Option<String>,
+    creator: Option<String>,
+}
+
+/// Parse or load output through validation. A limit stops processing (§12.1) before the format is
+/// even resolved. With `rendering`, a format this build can't render is `renderer_unavailable`.
+fn check(
+    source: Source,
+    options: &Options,
     assets: &dyn Fn(&str) -> Asset,
-) -> Vec<Diagnostic> {
-    let (locator, sidecar) = compyla_core::locate::renumber(&mut document, sidecar);
+    rendering: bool,
+) -> Result<Checked, OperationError> {
+    let Source {
+        mut document,
+        sidecar,
+        mut diagnostics,
+        blocking,
+    } = source;
+    if diagnostics.iter().any(|d| d.code == "limit_exceeded") {
+        finish(&mut diagnostics, options.strict);
+        return Ok(Checked {
+            diagnostics,
+            blocked: true,
+            composed: None,
+        });
+    }
+    let format = resolve_format(options, &document)?;
+    if rendering && !renderer_available(format) {
+        return Err(OperationError {
+            code: "renderer_unavailable",
+            message: format!("This build can't render {} yet.", format.name()),
+            pointer: None,
+        });
+    }
+    let properties = properties(&document.meta);
+    // Each diagnostic gets its node's IR path and original position (§10.7, §11.3).
+    let (locator, sidecar) = compyla_core::locate::renumber(&mut document, &sidecar);
     let input = compyla_core::validate::Input {
         document: &document,
         sidecar: &sidecar,
         assets,
     };
-    let mut out = compyla_core::diagnostic::Sink::located(locator);
-    compyla_core::validate::validate(&input, format, &mut out);
-    out.into_vec()
+    let mut out = Sink::located(locator);
+    let composed = compyla_core::validate::validate(&input, format, &mut out);
+    let (validated, validate_blocking) = out.into_parts();
+    diagnostics.extend(validated);
+    finish(&mut diagnostics, options.strict);
+    Ok(Checked {
+        diagnostics,
+        blocked: blocking.merge(validate_blocking).blocks(options.strict),
+        composed: Some((composed, format, properties)),
+    })
 }
 
-/// The resolver of a host with none: in `lint`, every image exists without bytes (§10.3).
-pub fn no_assets(_src: &str) -> Asset {
-    Asset::Exists
+fn render(checked: Checked) -> Result<ConvertResult, OperationError> {
+    let format = checked.composed.as_ref().map(|(_, format, _)| *format);
+    let bytes = match checked.composed {
+        _ if checked.blocked => None,
+        #[cfg(feature = "xlsx")]
+        Some((Composed::Xlsx(workbook), _, properties)) => {
+            let properties = compyla_ooxml::Properties {
+                title: properties.title,
+                creator: properties.creator,
+            };
+            Some(compyla_xlsx::render(&workbook, &properties))
+        }
+        _ => None,
+    };
+    Ok(ConvertResult {
+        bytes,
+        format,
+        diagnostics: checked.diagnostics,
+    })
+}
+
+fn properties(meta: &serde_json::Map<String, serde_json::Value>) -> Properties {
+    let text = |value: &serde_json::Value| match value {
+        serde_json::Value::String(text) => Some(text.clone()),
+        serde_json::Value::Array(items) => Some(
+            items
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .collect::<Vec<_>>()
+                .join(", "),
+        ),
+        _ => None,
+    };
+    Properties {
+        title: meta.get("title").and_then(text),
+        creator: meta.get("author").and_then(text),
+    }
 }
 
 /// §10.2: the option, then `meta.format`, else `format_missing`.
@@ -154,11 +297,6 @@ fn resolve_format(options: &Options, document: &ir::Document) -> Result<Format, 
             message: "No format was given, and the document's frontmatter has no `format`.".into(),
             pointer: None,
         })
-}
-
-fn finished(mut diagnostics: Vec<Diagnostic>, options: &Options) -> Vec<Diagnostic> {
-    finish(&mut diagnostics, options.strict);
-    diagnostics
 }
 
 /// Strict escalation (§11.1), order (§11.2) and the cap.

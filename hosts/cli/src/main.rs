@@ -10,15 +10,17 @@ use compyla::{Asset, Diagnostic, Format, Options, Severity};
 
 const USAGE: &str = "\
 usage: compyla parse <file.md>
-       compyla lint <file.md> [--format docx|pdf|pptx|xlsx] [--strict] [--json]
-       compyla lint --ir <file.json> [--format ...] [--strict] [--json]
+       compyla lint <file> [--ir] [--format docx|pdf|pptx|xlsx] [--strict] [--json]
+       compyla convert <file> [--ir] [--format ...] [--strict] [--json] [-o <output>]
 
-  parse   print the document's IR and parse diagnostics as JSON
-  lint    check the document for a format; the format defaults to the frontmatter's `format`
+  parse     print the document's IR and parse diagnostics as JSON
+  lint      check the document for a format; the format defaults to the frontmatter's `format`
+  convert   write the document in a format (xlsx in this build), next to the input by default
 
   --ir       the input is IR JSON (markdown-spec.md §10.7) instead of markdown
   --strict   escalate every non-advisory warning to an error
-  --json     print diagnostics as JSON instead of text";
+  --json     print diagnostics as JSON instead of text
+  -o         where convert writes its output";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -36,6 +38,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
     match command.as_str() {
         "parse" => parse(rest),
         "lint" => lint(rest),
+        "convert" => convert(rest),
         "--help" | "-h" | "help" => {
             println!("{USAGE}");
             Ok(ExitCode::SUCCESS)
@@ -61,11 +64,19 @@ fn parse(args: &[String]) -> Result<ExitCode, String> {
     Ok(exit_for(&result.diagnostics))
 }
 
-fn lint(args: &[String]) -> Result<ExitCode, String> {
+/// The arguments `lint` and `convert` share.
+struct Args {
+    file: PathBuf,
+    options: Options,
+    json: bool,
+    ir: bool,
+    output: Option<PathBuf>,
+}
+
+fn arguments(args: &[String], output_allowed: bool) -> Result<Args, String> {
     let mut file: Option<PathBuf> = None;
     let mut options = Options::default();
-    let mut json = false;
-    let mut ir = false;
+    let (mut json, mut ir, mut output) = (false, false, None);
     let mut args = args.iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -78,6 +89,9 @@ fn lint(args: &[String]) -> Result<ExitCode, String> {
                     format!("format_unknown: `{name}` isn't docx, pdf, pptx or xlsx")
                 })?);
             }
+            "-o" | "--output" if output_allowed => {
+                output = Some(PathBuf::from(args.next().ok_or("-o needs a path")?));
+            }
             flag if flag.starts_with('-') => {
                 return Err(format!("unknown option `{flag}`\n\n{USAGE}"));
             }
@@ -85,26 +99,80 @@ fn lint(args: &[String]) -> Result<ExitCode, String> {
             _ => return Err(USAGE.into()),
         }
     }
-    let file = file.ok_or(USAGE)?;
-    let source = read(&file)?;
-    let base = file.parent().map(Path::to_path_buf).unwrap_or_default();
+    Ok(Args {
+        file: file.ok_or(USAGE)?,
+        options,
+        json,
+        ir,
+        output,
+    })
+}
+
+fn lint(args: &[String]) -> Result<ExitCode, String> {
+    let args = arguments(args, false)?;
+    let source = read(&args.file)?;
+    let base = args
+        .file
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default();
     let assets = move |src: &str| resolve_asset(&base, src);
-    let result = if ir {
-        compyla::lint_ir(&source, &options, &assets)
+    let result = if args.ir {
+        compyla::lint_ir(&source, &args.options, &assets)
     } else {
-        compyla::lint(&source, &options, &assets)
+        compyla::lint(&source, &args.options, &assets)
     };
     let diagnostics = result.map_err(|e| format!("{}: {}", e.code, e.message))?;
+    report(&args, &diagnostics);
+    Ok(exit_for(&diagnostics))
+}
 
-    if json {
+fn convert(args: &[String]) -> Result<ExitCode, String> {
+    let args = arguments(args, true)?;
+    let source = read(&args.file)?;
+    let base = args
+        .file
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default();
+    let assets = move |src: &str| resolve_asset(&base, src);
+    let result = if args.ir {
+        compyla::convert_ir(&source, &args.options, &assets)
+    } else {
+        compyla::convert(&source, &args.options, &assets)
+    };
+    let result = result.map_err(|e| format!("{}: {}", e.code, e.message))?;
+    report(&args, &result.diagnostics);
+    let Some(bytes) = result.bytes else {
+        eprintln!(
+            "{}: not converted: an error blocks the output",
+            args.file.display()
+        );
+        return Ok(ExitCode::from(1));
+    };
+    let output = match (&args.output, result.format) {
+        (Some(path), _) => path.clone(),
+        (None, Some(format)) => args.file.with_extension(format.name()),
+        (None, None) => unreachable!("bytes are rendered only once the format is resolved"),
+    };
+    std::fs::write(&output, bytes).map_err(|e| format!("can't write {}: {e}", output.display()))?;
+    if !args.json {
+        eprintln!("wrote {}", output.display());
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn report(args: &Args, diagnostics: &[Diagnostic]) {
+    let file = &args.file;
+    if args.json {
         println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({ "diagnostics": diagnostics }))
                 .expect("diagnostics serialize")
         );
     } else {
-        for d in &diagnostics {
-            print_diagnostic(&file, d);
+        for d in diagnostics {
+            print_diagnostic(file, d);
         }
         let errors = diagnostics
             .iter()
@@ -116,7 +184,6 @@ fn lint(args: &[String]) -> Result<ExitCode, String> {
             file.display()
         );
     }
-    Ok(exit_for(&diagnostics))
 }
 
 /// Reads the input as UTF-8 (markdown-spec.md §1.1); invalid bytes are the `input_not_utf8` error.

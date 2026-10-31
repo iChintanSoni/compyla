@@ -1,0 +1,19 @@
+[package]
+name = "compyla-ooxml"
+description = "OOXML packages for Compyla's renderers: a deterministic zip writer, XML writing and the package model (markdown-spec.md §13)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+crc32fast.workspace = true
+miniz_oxide.workspace = true
+
+[dev-dependencies]
+zip = { version = "9", default-features = false, features = ["deflate"] }
+
+[lints]
+workspace = true

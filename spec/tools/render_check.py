@@ -234,7 +234,7 @@ def project_xlsx(package):
                 table = xml(package, target)
                 style = table.find("x:tableStyleInfo", NS)
                 tables.append({"name": table.get("name"), "ref": table.get("ref"), "style": style.get("name") if style is not None else None})
-    return {"sheets": sheets, "tables": tables, "properties": core_properties(package)}
+    return {"sheets": sheets, "excelTables": tables, "properties": core_properties(package)}
 
 
 # ---------------------------------------------------------------- pdf

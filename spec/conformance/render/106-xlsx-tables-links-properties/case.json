@@ -1,0 +1,11 @@
+{
+  "description": "An Excel table with filter buttons; a cell's external link and a fragment link to a sheet's A1; title and author properties from meta; formulas recalculated on open.",
+  "spec": [
+    "§9.5",
+    "§9.6",
+    "§13",
+    "C44"
+  ],
+  "oracle": "corrected",
+  "format": "xlsx"
+}

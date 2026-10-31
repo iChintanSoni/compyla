@@ -51,6 +51,101 @@ impl ColumnType {
     }
 }
 
+impl ColumnType {
+    /// The number format code (§9.4). A `general` column has no one format: each cell takes its
+    /// literal's ([`literal_format`]), and formula cells `General`.
+    pub fn number_format(&self) -> String {
+        match self {
+            ColumnType::Number { decimals: None } | ColumnType::Boolean | ColumnType::General => {
+                "General".into()
+            }
+            ColumnType::Number {
+                decimals: Some(decimals),
+            } => format!("#,##0{}", fraction(*decimals)),
+            ColumnType::Currency { code } => {
+                let symbol = match code.as_str() {
+                    "USD" => "$".to_string(),
+                    "EUR" => "€".into(),
+                    "GBP" => "£".into(),
+                    "JPY" => "¥".into(),
+                    "INR" => "₹".into(),
+                    other => format!("{other} "),
+                };
+                let decimals = if code == "JPY" { 0 } else { 2 };
+                format!("\"{symbol}\"#,##0{}", fraction(decimals))
+            }
+            ColumnType::Percent { decimals } => percent_format(decimals.unwrap_or(0)),
+            ColumnType::Date => "yyyy-mm-dd".into(),
+            ColumnType::Text => "@".into(),
+        }
+    }
+}
+
+fn fraction(decimals: u8) -> String {
+    if decimals == 0 {
+        String::new()
+    } else {
+        format!(".{}", "0".repeat(usize::from(decimals)))
+    }
+}
+
+fn percent_format(decimals: u8) -> String {
+    format!("0{}%", fraction(decimals))
+}
+
+/// The format a literal takes in a `general` column (§9.5): its own type's default.
+pub fn literal_format(text: &str, literal: Literal) -> String {
+    match literal {
+        Literal::Percent => percent_format(percent_decimals(text, literal)),
+        Literal::Date => "yyyy-mm-dd".into(),
+        Literal::Number | Literal::Boolean | Literal::Text => "General".into(),
+    }
+}
+
+/// A converted literal (§9.5): what a cell holds when its text passed a test its column accepts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Converted {
+    /// A number, as an exact decimal (a percent already divided by 100, a date as its serial).
+    Number(String),
+    Boolean(bool),
+}
+
+/// Converts `text`, which passed `literal`'s test (`None` for text).
+pub fn convert(text: &str, literal: Literal) -> Option<Converted> {
+    match literal {
+        Literal::Number => Some(Converted::Number(text.to_string())),
+        Literal::Percent => Some(Converted::Number(percent_value(text))),
+        Literal::Date => date_serial(text).map(|serial| Converted::Number(serial.to_string())),
+        Literal::Boolean => Some(Converted::Boolean(text.eq_ignore_ascii_case("true"))),
+        Literal::Text => None,
+    }
+}
+
+/// `14%` → `0.14`, exactly: the decimal point moves two places left on the digits as written.
+fn percent_value(text: &str) -> String {
+    let number = text.trim_end_matches('%');
+    let (negative, unsigned) = match number.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, number),
+    };
+    let (integer, fraction) = unsigned.split_once('.').unwrap_or((unsigned, ""));
+    let padded = format!("{integer:0>3}");
+    let (whole, moved) = padded.split_at(padded.len() - 2);
+    let whole = whole.trim_start_matches('0');
+    let digits = format!("{moved}{fraction}");
+    let digits = digits.trim_end_matches('0');
+    let mut out = String::new();
+    if negative && !(whole.is_empty() && digits.is_empty()) {
+        out.push('-');
+    }
+    out.push_str(if whole.is_empty() { "0" } else { whole });
+    if !digits.is_empty() {
+        out.push('.');
+        out.push_str(digits);
+    }
+    out
+}
+
 /// Which literal test a cell's plain text passes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Literal {
@@ -295,6 +390,48 @@ mod tests {
         assert_eq!(
             infer(&[Date, Number, Date]),
             (ColumnType::General, Some("dates and numbers".into()))
+        );
+    }
+
+    #[test]
+    fn percent_values_are_exact() {
+        for (text, value) in [
+            ("14%", "0.14"),
+            ("9.5%", "0.095"),
+            ("100%", "1"),
+            ("250%", "2.5"),
+            ("0%", "0"),
+            ("-0%", "0"),
+            ("-5%", "-0.05"),
+            ("1234.5%", "12.345"),
+            ("0.5%", "0.005"),
+            ("10.50%", "0.105"),
+        ] {
+            assert_eq!(percent_value(text), value, "{text}");
+        }
+    }
+
+    #[test]
+    fn number_formats() {
+        let format = |t: ColumnType| t.number_format();
+        assert_eq!(format(ColumnType::Number { decimals: None }), "General");
+        assert_eq!(format(ColumnType::Number { decimals: Some(2) }), "#,##0.00");
+        assert_eq!(format(ColumnType::Number { decimals: Some(0) }), "#,##0");
+        let currency = |code: &str| ColumnType::Currency { code: code.into() };
+        assert_eq!(format(currency("USD")), "\"$\"#,##0.00");
+        assert_eq!(format(currency("JPY")), "\"¥\"#,##0");
+        assert_eq!(format(currency("CHF")), "\"CHF \"#,##0.00");
+        assert_eq!(format(ColumnType::Percent { decimals: Some(1) }), "0.0%");
+        assert_eq!(format(ColumnType::Date), "yyyy-mm-dd");
+        assert_eq!(format(ColumnType::Text), "@");
+        assert_eq!(literal_format("9.5%", Literal::Percent), "0.0%");
+        assert_eq!(
+            convert("2026-01-01", Literal::Date),
+            Some(Converted::Number("46023".into()))
+        );
+        assert_eq!(
+            convert("TRUE", Literal::Boolean),
+            Some(Converted::Boolean(true))
         );
     }
 
