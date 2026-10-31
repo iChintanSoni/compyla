@@ -114,10 +114,11 @@ source files directly:
 **Re-founding on a Rust core** (architecture.md D10). A TypeScript prototype of the whole pipeline
 (the four renderers, SDK, CLI, server and web lint UI) is complete and lives in `packages/` as the
 reference implementation. Its renderers only partly apply a supplied template, which the new
-architecture fixes by writing into the template itself (D12). **Phase A is complete.** The spec, IR
-schema, diagnostics registry and conformance suite in [`spec/`](spec/README.md) are the source of truth,
-and the toolchain checks in [`spikes/`](spikes/README.md) passed. **Phase B**, the Rust core, is next.
-See the [roadmap](docs/roadmap.md).
+architecture fixes by writing into the template itself (D12). **Phases A and B are complete.** The
+spec, IR schema, diagnostics registry and conformance suite in [`spec/`](spec/README.md) are the source
+of truth, and the Rust core in `crates/` parses and lints markdown or IR for all four formats, passing
+the parse, lint and compose suites. **Phase C**, the template-first renderers, is next. See the
+[roadmap](docs/roadmap.md).
 
 ## Design Principles
 
