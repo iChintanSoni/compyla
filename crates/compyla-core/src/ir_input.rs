@@ -5,10 +5,17 @@
 
 use serde_json::{Map, Value};
 
-use crate::diagnostic::Diagnostic;
+use crate::diagnostic::{Diagnostic, Sink};
 use crate::frontmatter;
-use crate::ir::{Block, Document, Run, canonical_runs};
-use crate::parse::destination_allowed;
+use crate::ir::{self, Block, Document, Position, Run, canonical_runs};
+use crate::parse::{
+    MAX_DEPTH, MAX_ROW_CELLS, MAX_TABLE_CELLS, destination_allowed, input_too_large,
+};
+use crate::validate::row_line;
+
+/// The largest line or column IR input may give, so positions mean the same on 32- and 64-bit
+/// hosts (spec/ir.schema.json).
+const MAX_POSITION: u64 = u32::MAX as u64;
 
 /// The IR versions this implementation reads: `0.Z` for every `Z ≤ 1` (§10.7).
 const SUPPORTED_MAJOR: u64 = 0;
@@ -22,8 +29,18 @@ pub struct Refusal {
     pub message: String,
 }
 
-/// Loads IR JSON: structure, version and invariants, then the text rules.
+/// Loads IR JSON: structure, version and invariants, then the limits and the text rules. When a
+/// limit is exceeded (§12.1), the diagnostics end with `limit_exceeded` and the document must not be
+/// processed further.
 pub fn load(json: &str) -> Result<(Document, Vec<Diagnostic>), Refusal> {
+    if let Some(diagnostic) = input_too_large(json.len()) {
+        let document = Document {
+            ir_version: ir::IR_VERSION.to_string(),
+            meta: Map::new(),
+            body: Vec::new(),
+        };
+        return Ok((document, vec![diagnostic]));
+    }
     let value: Value =
         serde_json::from_str(json).map_err(|e| refuse("", format!("not valid JSON: {e}")))?;
     let root = value
@@ -35,7 +52,14 @@ pub fn load(json: &str) -> Result<(Document, Vec<Diagnostic>), Refusal> {
         serde_json::from_value(value).map_err(|e| refuse("", e.to_string()))?;
     invariants(&document.body, "/body")?;
 
-    let mut diagnostics = Vec::new();
+    let mut diagnostics = Sink::new();
+    if let Some(diagnostic) = limits(&document.body, "/body", 0, &mut 0) {
+        diagnostics.push(diagnostic);
+        return Ok((document, diagnostics.into_vec()));
+    }
+    for (key, value) in document.meta.iter_mut() {
+        clean_value(value, &format!("/meta/{}", escape(key)), &mut diagnostics);
+    }
     let locate = |key: &str, d: Diagnostic| Diagnostic {
         path: Some(format!("/meta/{}", escape(key))),
         ..d
@@ -46,7 +70,7 @@ pub fn load(json: &str) -> Result<(Document, Vec<Diagnostic>), Refusal> {
         &mut diagnostics,
     );
     text_rules(&mut document.body, "/body", &mut diagnostics);
-    Ok((document, diagnostics))
+    Ok((document, diagnostics.into_vec()))
 }
 
 fn refuse(pointer: &str, message: String) -> Refusal {
@@ -64,9 +88,17 @@ fn version(root: &Map<String, Value>) -> Result<(), Refusal> {
             "`irVersion` must be a string such as \"0.1\"".into(),
         ));
     };
+    // `0`, or digits without a leading zero: `+1` and `01` aren't version numbers.
+    let number = |part: &str| {
+        let canonical = part == "0"
+            || (!part.is_empty()
+                && !part.starts_with('0')
+                && part.bytes().all(|b| b.is_ascii_digit()));
+        canonical.then(|| part.parse::<u64>().ok()).flatten()
+    };
     let parsed = text
         .split_once('.')
-        .and_then(|(major, minor)| Some((major.parse::<u64>().ok()?, minor.parse::<u64>().ok()?)));
+        .and_then(|(major, minor)| Some((number(major)?, number(minor)?)));
     match parsed {
         Some((SUPPORTED_MAJOR, minor)) if minor <= SUPPORTED_MINOR => Ok(()),
         _ => Err(Refusal {
@@ -149,8 +181,8 @@ fn check_position(map: &Map<String, Value>, at: &str) -> Check {
     if let Some(position) = map.get("position") {
         let at = format!("{at}/position");
         let p = object(position, &at, &["line", "column"], &[])?;
-        integer(&p["line"], &format!("{at}/line"), 1, u64::MAX)?;
-        integer(&p["column"], &format!("{at}/column"), 1, u64::MAX)?;
+        integer(&p["line"], &format!("{at}/line"), 1, MAX_POSITION)?;
+        integer(&p["column"], &format!("{at}/column"), 1, MAX_POSITION)?;
     }
     Ok(())
 }
@@ -355,9 +387,84 @@ fn invariants(blocks: &[Block], at: &str) -> Check {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Text rules: §1.1 character replacement, §4.4 canonical runs, §4.5 link allowlist.
+// Limits (§12.1), counted as the parser counts them: a list and each of its items, a quote and a
+// directive body are one level of nesting each; table cells per row and per document.
 
-fn clean(text: &mut String, path: &str, diagnostics: &mut Vec<Diagnostic>) {
+fn limits(blocks: &[Block], at: &str, depth: usize, cells: &mut usize) -> Option<Diagnostic> {
+    for (i, block) in blocks.iter().enumerate() {
+        let at = format!("{at}/{i}");
+        let exceeded = |message: &str| Some(limit(message, &at, block.position()));
+        let deeper = "Nesting is deeper than 32 levels; the input was not processed further.";
+        let found = match block {
+            Block::Section(s) => limits(&s.children, &format!("{at}/children"), depth, cells),
+            Block::Quote(q) if depth < MAX_DEPTH => {
+                limits(&q.children, &format!("{at}/children"), depth + 1, cells)
+            }
+            Block::Directive(d) if depth < MAX_DEPTH => {
+                limits(&d.children, &format!("{at}/children"), depth + 1, cells)
+            }
+            Block::Quote(_) | Block::Directive(_) => exceeded(deeper),
+            Block::List(l) if depth < MAX_DEPTH => {
+                l.items.iter().enumerate().find_map(|(j, item)| {
+                    let item_at = format!("{at}/items/{j}");
+                    if depth + 1 < MAX_DEPTH {
+                        limits(
+                            &item.children,
+                            &format!("{item_at}/children"),
+                            depth + 2,
+                            cells,
+                        )
+                    } else {
+                        Some(limit(deeper, &item_at, item.position))
+                    }
+                })
+            }
+            Block::List(_) => exceeded(deeper),
+            Block::Table(t) => {
+                if std::iter::once(&t.header)
+                    .chain(&t.rows)
+                    .any(|row| row.len() > MAX_ROW_CELLS)
+                {
+                    exceeded(
+                        "A table row has more than 16,384 cells; the input was not processed further.",
+                    )
+                } else {
+                    *cells += t.header.len() + t.rows.iter().map(Vec::len).sum::<usize>();
+                    (*cells > MAX_TABLE_CELLS).then(|| {
+                        limit(
+                            "The document has more than 1,000,000 table cells; the input was not processed further.",
+                            &at,
+                            t.position,
+                        )
+                    })
+                }
+            }
+            _ => None,
+        };
+        if found.is_some() {
+            return found;
+        }
+    }
+    None
+}
+
+fn limit(message: &str, path: &str, position: Option<Position>) -> Diagnostic {
+    let diagnostic = Diagnostic {
+        path: Some(path.to_string()),
+        ..Diagnostic::new("limit_exceeded", message)
+    };
+    match position {
+        Some(p) => diagnostic.at(p.line, Some(p.column)),
+        None => diagnostic,
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Text rules: §1.1 character replacement (in every string), §4.4 canonical runs, §4.5 link
+// allowlist. A diagnostic carries its node's line when the node has a position (§10.7); a
+// replaced character's column isn't known, so it has none.
+
+fn clean(text: &mut String, path: &str, line: Option<usize>, diagnostics: &mut Sink) {
     if text.chars().any(forbidden) {
         *text = text
             .chars()
@@ -365,6 +472,7 @@ fn clean(text: &mut String, path: &str, diagnostics: &mut Vec<Diagnostic>) {
             .collect();
         diagnostics.push(Diagnostic {
             path: Some(path.to_string()),
+            line,
             ..Diagnostic::new(
                 "invalid_character",
                 "Characters XML forbids were replaced with U+FFFD.",
@@ -373,54 +481,88 @@ fn clean(text: &mut String, path: &str, diagnostics: &mut Vec<Diagnostic>) {
     }
 }
 
+/// Every string in a `meta` value, including inside arrays and objects.
+fn clean_value(value: &mut Value, path: &str, diagnostics: &mut Sink) {
+    match value {
+        Value::String(text) => clean(text, path, None, diagnostics),
+        Value::Array(items) => {
+            for (i, item) in items.iter_mut().enumerate() {
+                clean_value(item, &format!("{path}/{i}"), diagnostics);
+            }
+        }
+        Value::Object(map) => {
+            for (key, item) in map.iter_mut() {
+                clean_value(item, &format!("{path}/{}", escape(key)), diagnostics);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn forbidden(c: char) -> bool {
     matches!(c as u32, 0x0..=0x8 | 0xB | 0xC | 0xE..=0x1F | 0xFFFE | 0xFFFF)
 }
 
-fn runs(list: &mut Vec<Run>, at: &str, diagnostics: &mut Vec<Diagnostic>) {
+/// A link destination: cleaned, then removed unless the allowlist admits it.
+fn link(link: &mut Option<String>, path: &str, line: Option<usize>, diagnostics: &mut Sink) {
+    let Some(url) = link else { return };
+    clean(url, path, line, diagnostics);
+    if !destination_allowed(url) {
+        diagnostics.push(Diagnostic {
+            path: Some(path.to_string()),
+            line,
+            ..Diagnostic::new(
+                "link_scheme_blocked",
+                format!("Link destination `{url}` isn't allowed; the link was removed."),
+            )
+        });
+        *link = None;
+    }
+}
+
+fn runs(list: &mut Vec<Run>, at: &str, line: Option<usize>, diagnostics: &mut Sink) {
     for (i, run) in list.iter_mut().enumerate() {
-        clean(&mut run.text, &format!("{at}/{i}/text"), diagnostics);
-        if let Some(link) = &run.link
-            && !destination_allowed(link)
-        {
-            diagnostics.push(Diagnostic {
-                    path: Some(format!("{at}/{i}/link")),
-                    ..Diagnostic::new("link_scheme_blocked", format!("Link destination `{link}` isn't allowed; the link was removed and its text kept."))
-                });
-            run.link = None;
-        }
+        clean(&mut run.text, &format!("{at}/{i}/text"), line, diagnostics);
+        link(&mut run.link, &format!("{at}/{i}/link"), line, diagnostics);
     }
     *list = canonical_runs(std::mem::take(list));
 }
 
-fn text_rules(blocks: &mut [Block], at: &str, diagnostics: &mut Vec<Diagnostic>) {
+fn text_rules(blocks: &mut [Block], at: &str, diagnostics: &mut Sink) {
     for (i, block) in blocks.iter_mut().enumerate() {
         let at = format!("{at}/{i}");
+        let line = block.position().map(|p| p.line);
         match block {
             Block::Section(s) => {
-                runs(&mut s.title, &format!("{at}/title"), diagnostics);
+                runs(&mut s.title, &format!("{at}/title"), line, diagnostics);
                 text_rules(&mut s.children, &format!("{at}/children"), diagnostics);
             }
-            Block::Paragraph(p) => runs(&mut p.runs, &format!("{at}/runs"), diagnostics),
+            Block::Paragraph(p) => runs(&mut p.runs, &format!("{at}/runs"), line, diagnostics),
             Block::Table(t) => {
                 for (j, cell) in t.header.iter_mut().enumerate() {
-                    clean(&mut cell.raw, &format!("{at}/header/{j}/raw"), diagnostics);
+                    let cell_at = format!("{at}/header/{j}");
+                    clean(&mut cell.raw, &format!("{cell_at}/raw"), line, diagnostics);
                     runs(
                         &mut cell.runs,
-                        &format!("{at}/header/{j}/runs"),
+                        &format!("{cell_at}/runs"),
+                        line,
                         diagnostics,
                     );
                 }
                 for (r, row) in t.rows.iter_mut().enumerate() {
+                    let row_line = t.position.map(|p| row_line(p, r));
                     for (j, cell) in row.iter_mut().enumerate() {
+                        let cell_at = format!("{at}/rows/{r}/{j}");
                         clean(
                             &mut cell.raw,
-                            &format!("{at}/rows/{r}/{j}/raw"),
+                            &format!("{cell_at}/raw"),
+                            row_line,
                             diagnostics,
                         );
                         runs(
                             &mut cell.runs,
-                            &format!("{at}/rows/{r}/{j}/runs"),
+                            &format!("{cell_at}/runs"),
+                            row_line,
                             diagnostics,
                         );
                     }
@@ -436,26 +578,19 @@ fn text_rules(blocks: &mut [Block], at: &str, diagnostics: &mut Vec<Diagnostic>)
                 }
             }
             Block::Media(m) => {
-                clean(&mut m.alt, &format!("{at}/alt"), diagnostics);
-                if let Some(link) = &m.link
-                    && !destination_allowed(link)
-                {
-                    diagnostics.push(Diagnostic {
-                        path: Some(format!("{at}/link")),
-                        ..Diagnostic::new(
-                            "link_scheme_blocked",
-                            format!(
-                                "Link destination `{link}` isn't allowed; the link was removed."
-                            ),
-                        )
-                    });
-                    m.link = None;
+                clean(&mut m.src, &format!("{at}/src"), line, diagnostics);
+                clean(&mut m.alt, &format!("{at}/alt"), line, diagnostics);
+                link(&mut m.link, &format!("{at}/link"), line, diagnostics);
+            }
+            Block::Code(c) => {
+                clean(&mut c.value, &format!("{at}/value"), line, diagnostics);
+                if let Some(lang) = &mut c.lang {
+                    clean(lang, &format!("{at}/lang"), line, diagnostics);
                 }
             }
-            Block::Code(c) => clean(&mut c.value, &format!("{at}/value"), diagnostics),
             Block::Quote(q) => text_rules(&mut q.children, &format!("{at}/children"), diagnostics),
             Block::Directive(d) => {
-                clean(&mut d.args, &format!("{at}/args"), diagnostics);
+                clean(&mut d.args, &format!("{at}/args"), line, diagnostics);
                 text_rules(&mut d.children, &format!("{at}/children"), diagnostics);
             }
             Block::Break(_) => {}

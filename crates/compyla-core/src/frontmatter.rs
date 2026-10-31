@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use saphyr_parser::{Event, Parser, ScalarStyle};
 use serde_json::{Map, Number, Value};
 
-use crate::diagnostic::Diagnostic;
+use crate::diagnostic::{Diagnostic, Sink};
 
 /// The implemented spec version (markdown-spec.md §2, `spec`).
 pub const SPEC_VERSION: &str = "0.2";
@@ -31,7 +31,7 @@ pub fn range(lines: &[String]) -> Option<(usize, usize)> {
 pub fn parse(
     lines: &[String],
     (open, close): (usize, usize),
-    diagnostics: &mut Vec<Diagnostic>,
+    diagnostics: &mut Sink,
 ) -> (Map<String, Value>, HashMap<String, usize>) {
     let content = lines[open + 1..close].join("\n");
     let parsed = if content.len() > MAX_FRONTMATTER {
@@ -239,11 +239,11 @@ fn is_float(text: &str) -> bool {
 pub(crate) fn normalize(
     raw: Map<String, Value>,
     locate: &dyn Fn(&str, Diagnostic) -> Diagnostic,
-    diagnostics: &mut Vec<Diagnostic>,
+    diagnostics: &mut Sink,
 ) -> Map<String, Value> {
     let mut meta = Map::new();
     for (key, value) in raw {
-        let invalid = |diagnostics: &mut Vec<Diagnostic>, expected: &str| {
+        let invalid = |diagnostics: &mut Sink, expected: &str| {
             let d = Diagnostic::new(
                 "meta_value_invalid",
                 format!("Frontmatter `{key}` must be {expected}; it is ignored."),
@@ -352,9 +352,9 @@ mod tests {
             .lines()
             .map(String::from)
             .collect();
-        let mut diagnostics = Vec::new();
+        let mut diagnostics = Sink::new();
         let (meta, _) = parse(&lines, range(&lines).unwrap(), &mut diagnostics);
-        (meta, diagnostics)
+        (meta, diagnostics.into_vec())
     }
 
     #[test]

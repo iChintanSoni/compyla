@@ -1,0 +1,9 @@
+{
+  "description": "More than 32 levels of nesting is limit_exceeded at the first construct past the limit; nothing more is processed.",
+  "spec": [
+    "\u00a712.1",
+    "C47"
+  ],
+  "oracle": "corrected",
+  "format": "docx"
+}

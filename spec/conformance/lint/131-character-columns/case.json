@@ -1,0 +1,10 @@
+{
+  "description": "Columns count characters, not bytes, on lines with non-ASCII text.",
+  "spec": [
+    "§0.1",
+    "§11.3",
+    "C24"
+  ],
+  "oracle": "corrected",
+  "format": "docx"
+}

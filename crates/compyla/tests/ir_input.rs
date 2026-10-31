@@ -84,6 +84,12 @@ fn malformed_ir_is_refused_with_the_pointer_of_the_first_failure() {
             ),
             "/body/0/position/line",
         ),
+        (
+            doc(
+                json!([{ "type": "paragraph", "runs": [], "position": { "line": 4_294_967_296u64, "column": 1 } }]),
+            ),
+            "/body/0/position/line",
+        ),
         (doc(json!([{ "type": "chart" }])), "/body/0/type"),
     ];
     for (ir, pointer) in cases {
@@ -106,6 +112,9 @@ fn ir_versions_are_compatible_within_a_major_version() {
         ("0.2", false),
         ("1.0", false),
         ("x", false),
+        ("00.1", false),
+        ("+0.+1", false),
+        ("0.01", false),
     ] {
         let ir = json!({ "irVersion": version, "meta": {}, "body": [] }).to_string();
         match compyla::lint_ir(&ir, &options(), &compyla::no_assets) {
@@ -157,4 +166,80 @@ fn ir_input_gets_the_text_rules_with_paths() {
     };
     assert_eq!(p.runs.len(), 1, "runs are canonical: {:?}", p.runs);
     assert_eq!(p.runs[0].text, "a\u{FFFD}bcbad");
+}
+
+fn lint_ir(ir: &Value, format: compyla::Format) -> Vec<compyla::Diagnostic> {
+    let options = compyla::Options {
+        format: Some(format),
+        strict: false,
+    };
+    compyla::lint_ir(&ir.to_string(), &options, &compyla::no_assets).unwrap()
+}
+
+fn cell(text: &str) -> Value {
+    json!({ "runs": [{ "text": text }], "raw": text })
+}
+
+#[test]
+fn limits_hold_for_ir_input() {
+    // 33 nested quotes: the innermost is past the limit.
+    let mut deep = json!({ "type": "paragraph", "runs": [{ "text": "x" }] });
+    for _ in 0..33 {
+        deep = json!({ "type": "quote", "children": [deep] });
+    }
+    let wide = json!({
+        "type": "table",
+        "header": vec![cell("a"); 16_385],
+        "align": vec![Value::Null; 16_385],
+        "rows": [],
+        "position": { "line": 7, "column": 1 }
+    });
+    let mut nested_path = "/body/0".to_string();
+    for _ in 0..32 {
+        nested_path.push_str("/children/0");
+    }
+    for (body, path, line) in [
+        (json!([deep]), nested_path.as_str(), None),
+        (json!([wide]), "/body/0", Some(7)),
+    ] {
+        let diagnostics = lint_ir(&doc(body), compyla::Format::Xlsx);
+        let found: Vec<_> = diagnostics
+            .iter()
+            .map(|d| (d.code.as_str(), d.path.as_deref(), d.line))
+            .collect();
+        // Nothing is processed after the limit: no validate-stage diagnostics.
+        assert_eq!(found, vec![("limit_exceeded", Some(path), line)]);
+    }
+}
+
+#[test]
+fn text_rules_cover_every_string_and_keep_lines() {
+    let ir = json!({
+        "irVersion": "0.1",
+        "meta": { "title": "T\u{1}", "keywords": ["a\u{2}"] },
+        "body": [
+            { "type": "paragraph", "position": { "line": 5, "column": 1 }, "runs": [
+                { "text": "x", "link": "https://example.com/\u{3}" },
+                { "text": "y", "link": "javascript:alert(1)" }
+            ] },
+            { "type": "code", "lang": "rs\u{4}", "value": "" },
+            { "type": "media", "src": "a\u{5}.png", "alt": "" }
+        ]
+    });
+    let (document, diagnostics) = compyla::load_ir(&ir.to_string()).unwrap();
+    let found: Vec<_> = diagnostics
+        .iter()
+        .map(|d| (d.code.as_str(), d.path.as_deref(), d.line))
+        .collect();
+    for expected in [
+        ("invalid_character", Some("/meta/title"), None),
+        ("invalid_character", Some("/meta/keywords/0"), None),
+        ("invalid_character", Some("/body/0/runs/0/link"), Some(5)),
+        ("link_scheme_blocked", Some("/body/0/runs/1/link"), Some(5)),
+        ("invalid_character", Some("/body/1/lang"), None),
+        ("invalid_character", Some("/body/2/src"), None),
+    ] {
+        assert!(found.contains(&expected), "{expected:?} in {found:?}");
+    }
+    assert_eq!(document.meta["title"], "T\u{FFFD}");
 }

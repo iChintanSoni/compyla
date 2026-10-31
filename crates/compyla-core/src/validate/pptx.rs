@@ -14,10 +14,10 @@ use serde_json::{Value, json};
 use self::layout::{Layout, Measure, Misfit};
 use self::slides::{Item, Slide};
 use super::{Input, Slugger, at, for_each_block, fragment_links, options, title};
-use crate::diagnostic::Diagnostic;
+use crate::diagnostic::{Diagnostic, Sink};
 use crate::ir::{Block, Directive, Document, Position};
 
-pub fn validate(input: &Input<'_>, out: &mut Vec<Diagnostic>) {
+pub fn validate(input: &Input<'_>, out: &mut Sink) {
     let deck = slides::deck(&input.document.body);
     // `layout`, `notes` and `col` directives whose placement is settled here: used, or already
     // reported. The rest are nested where they can have no effect.
@@ -33,9 +33,25 @@ pub fn validate(input: &Input<'_>, out: &mut Vec<Diagnostic>) {
             ));
         }
     }
+    let overflow = deck.overflow;
     let composed = compose(deck.slides);
     for slide in &composed {
         slide_rules(slide, &mut settled, out);
+    }
+    if let Some(position) = overflow {
+        // §12.1: the rest of the document is not processed.
+        let mut diagnostic = Diagnostic::new(
+            "limit_exceeded",
+            format!(
+                "The deck has more than {} slides; the rest of the document was not processed.",
+                slides::MAX_SLIDES
+            ),
+        );
+        if let Some(p) = position {
+            diagnostic = diagnostic.at(p.line, Some(p.column));
+        }
+        out.push(diagnostic);
+        return;
     }
     nested_directives(&input.document.body, &settled, out);
     super::image_directives(&input.document.body, &image_options, out);
@@ -60,8 +76,8 @@ pub fn summary(document: &Document) -> Value {
     json!({ "format": "pptx", "slides": slides })
 }
 
-/// A content item's type in the summary. A misplaced `layout` is reached but not entered (§8.1),
-/// so it appears as `directive:layout`; entered directives appear only through their children.
+/// A content item's type in the summary. Entered directives, a misplaced `layout` among them
+/// (§8.1), appear only through their children; the leading `layout` is unwrapped (§8.2).
 fn content_type(item: &Item<'_>) -> String {
     match *item {
         Item::Heading(_) => "heading".into(),
@@ -164,11 +180,7 @@ fn compose(slides: Vec<Slide<'_>>) -> Vec<Composed<'_>> {
 
 /// A slide's own rules: its layout name, misplaced `col` markers, demoted headings and fit. A
 /// misplaced `layout` is entered by the slide walk (§8.1) and reported with the nested directives.
-fn slide_rules(
-    composed: &Composed<'_>,
-    settled: &mut HashSet<*const Directive>,
-    out: &mut Vec<Diagnostic>,
-) {
+fn slide_rules(composed: &Composed<'_>, settled: &mut HashSet<*const Directive>, out: &mut Sink) {
     let slide = &composed.slide;
     match &composed.request {
         Request::Missing(directive) => out.push(at(
@@ -259,11 +271,7 @@ fn slide_rules(
 /// `layout`, `notes` and `col` directives the slide walk never placed, where they can have no
 /// effect (§8.2–§8.4): a `layout` that isn't its slide's first block, and any of them inside list
 /// items, quotes or `notes` bodies.
-fn nested_directives(
-    body: &[Block],
-    settled: &HashSet<*const Directive>,
-    out: &mut Vec<Diagnostic>,
-) {
+fn nested_directives(body: &[Block], settled: &HashSet<*const Directive>, out: &mut Sink) {
     for_each_block(body, &mut |block| {
         let Block::Directive(directive) = block else {
             return;
@@ -290,7 +298,7 @@ fn nested_directives(
     });
 }
 
-fn image_options(directive: &Directive, out: &mut Vec<Diagnostic>) {
+fn image_options(directive: &Directive, out: &mut Sink) {
     let line = line(directive.position);
     let parsed = options(&directive.args);
     if let Some(key) = parsed.repeated {
@@ -331,7 +339,7 @@ fn image_options(directive: &Directive, out: &mut Vec<Diagnostic>) {
 }
 
 /// §8.7: fragment links resolve to slide titles' slugs, assigned in slide order (§4.5).
-fn anchors(input: &Input<'_>, slides: &[Composed<'_>], out: &mut Vec<Diagnostic>) {
+fn anchors(input: &Input<'_>, slides: &[Composed<'_>], out: &mut Sink) {
     let mut slugger = Slugger::new();
     let targets: Vec<String> = slides
         .iter()
@@ -366,8 +374,10 @@ mod tests {
             sidecar: &parsed.sidecar,
             assets: &|_| Asset::Exists,
         };
+        let mut out = crate::diagnostic::Sink::new();
+        validate(&input, Format::Pptx, &mut out);
         let mut diagnostics = parsed.diagnostics.clone();
-        diagnostics.extend(validate(&input, Format::Pptx));
+        diagnostics.extend(out.into_vec());
         crate::diagnostic::sort(&mut diagnostics);
         diagnostics.into_iter().map(|d| (d.code, d.line)).collect()
     }

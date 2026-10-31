@@ -8,15 +8,27 @@ use comrak::options::BrokenLinkReference;
 use comrak::{Arena, Options, ResolvedReference, parse_document};
 use serde_json::Map;
 
-use crate::diagnostic::Diagnostic;
+use crate::diagnostic::{Diagnostic, Sink};
 use crate::frontmatter;
 use crate::ir::{self, Align, Block, Cell, Document, Position, Run, canonical_runs, plain_text};
 use crate::prepass::{self, Item, Kind, PrePass};
 
 /// markdown-spec.md §12.1 defaults.
-const MAX_INPUT_BYTES: usize = 10 * 1024 * 1024;
-const MAX_DEPTH: usize = 32;
-const MAX_TABLE_CELLS: usize = 1_000_000;
+// The limits of markdown-spec.md §12.1, shared with IR input.
+pub(crate) const MAX_INPUT_BYTES: usize = 10 * 1024 * 1024;
+pub(crate) const MAX_DEPTH: usize = 32;
+pub(crate) const MAX_TABLE_CELLS: usize = 1_000_000;
+pub(crate) const MAX_ROW_CELLS: usize = 16_384;
+
+/// `limit_exceeded` for input larger than [`MAX_INPUT_BYTES`], which isn't processed at all.
+pub fn input_too_large(len: usize) -> Option<Diagnostic> {
+    (len > MAX_INPUT_BYTES).then(|| {
+        Diagnostic::new(
+            "limit_exceeded",
+            "The input is larger than 10 MiB; it was not processed.",
+        )
+    })
+}
 
 const HTML_ELEMENTS: &[&str] = &[
     "a",
@@ -155,18 +167,14 @@ pub struct Sidecar {
 
 /// The `parse` operation's core (markdown-spec.md §10.1): markdown to IR and parse diagnostics.
 pub fn parse(source: &str) -> ParseOutput {
-    let mut diagnostics = Vec::new();
-    if source.len() > MAX_INPUT_BYTES {
-        diagnostics.push(Diagnostic::new(
-            "limit_exceeded",
-            "The input is larger than 10 MiB; it was not processed.",
-        ));
+    if let Some(diagnostic) = input_too_large(source.len()) {
         return ParseOutput {
             document: empty(),
-            diagnostics,
+            diagnostics: vec![diagnostic],
             sidecar: Sidecar::default(),
         };
     }
+    let mut diagnostics = Sink::new();
     let pre = prepass::run(source, &mut diagnostics);
     let (meta, meta_lines) = pre
         .frontmatter
@@ -181,6 +189,7 @@ pub fn parse(source: &str) -> ParseOutput {
         cells: 0,
         diagnostics,
         link_sites: Vec::new(),
+        char_starts: Default::default(),
     };
     let body = builder.container(None);
     let Builder {
@@ -199,7 +208,7 @@ pub fn parse(source: &str) -> ParseOutput {
             meta,
             body,
         },
-        diagnostics,
+        diagnostics: diagnostics.into_vec(),
         sidecar,
     }
 }
@@ -219,7 +228,9 @@ fn options<'c>(callback: Option<Arc<dyn comrak::options::BrokenLinkCallback + 'c
     options.extension.strikethrough = true;
     options.extension.autolink = true;
     options.extension.footnotes = true;
-    options.parse.sourcepos_chars = true;
+    // Byte columns: comrak's character columns rescan the line for every node, which is quadratic
+    // on a long line. `Builder::position` converts them (§0.1).
+    options.parse.sourcepos_chars = false;
     options.parse.broken_link_callback = callback;
     options
 }
@@ -313,8 +324,11 @@ struct Builder<'p> {
     offset: usize,
     depth: usize,
     cells: usize,
-    diagnostics: Vec<Diagnostic>,
+    diagnostics: Sink,
     link_sites: Vec<(String, Position)>,
+    /// For non-ASCII lines, the byte offset of each character, to turn comrak's byte columns into
+    /// character columns in O(log n).
+    char_starts: std::cell::RefCell<HashMap<usize, Vec<usize>>>,
 }
 
 /// §4.2: headings open sections governing what follows, up to a heading of the same or higher level.
@@ -422,7 +436,23 @@ impl Builder<'_> {
 
     fn position(&self, node: &AstNode<'_>) -> Position {
         let pos = node.data.borrow().sourcepos.start;
-        Position::new(pos.line + self.offset, pos.column)
+        let line = pos.line + self.offset;
+        Position::new(line, self.char_column(line, pos.column))
+    }
+
+    /// The 1-based character column of 1-based byte column `byte` on absolute line `line`.
+    fn char_column(&self, line: usize, byte: usize) -> usize {
+        let Some(text) = self.pre.lines.get(line.wrapping_sub(1)) else {
+            return byte;
+        };
+        if text.is_ascii() {
+            return byte;
+        }
+        let mut cache = self.char_starts.borrow_mut();
+        let starts = cache
+            .entry(line)
+            .or_insert_with(|| text.char_indices().map(|(i, _)| i).collect());
+        starts.partition_point(|&start| start < byte.saturating_sub(1)) + 1
     }
 
     fn unsupported(&mut self, position: Position, what: &str) {
@@ -437,10 +467,11 @@ impl Builder<'_> {
 
     /// The destination of a link node: the document-wide one at its position (§4.5), else comrak's.
     fn destination(&self, node: &AstNode<'_>, local: &str) -> String {
-        let position = self.position(node);
+        // Keyed by comrak's own (byte) position, as `global_links` records it.
+        let pos = node.data.borrow().sourcepos.start;
         self.links
             .by_position
-            .get(&(position.line, position.column))
+            .get(&(pos.line + self.offset, pos.column))
             .cloned()
             .unwrap_or_else(|| local.to_string())
     }
@@ -742,7 +773,14 @@ impl Builder<'_> {
         let rows: Vec<_> = node.children().collect();
         let cells_of = |builder: &mut Self, row: &'a AstNode<'a>, line_index: usize| -> Vec<Cell> {
             let line = &builder.pre.lines[first - 1 + line_index];
-            let source: String = line.chars().skip(start.column - 1).collect();
+            // `start.column` is a byte column; container prefixes before a table are ASCII.
+            let source: String = match line.get(start.column - 1..) {
+                Some(rest) => rest.to_string(),
+                None => line
+                    .chars()
+                    .skip(builder.char_column(first + line_index, start.column) - 1)
+                    .collect(),
+            };
             let raws = split_cells(&source);
             let parsed: Vec<_> = row.children().collect();
             raws.into_iter()
@@ -765,6 +803,19 @@ impl Builder<'_> {
         let mut body = Vec::new();
         for (index, row) in rows.iter().enumerate().skip(1) {
             body.push(cells_of(self, row, index + 1));
+        }
+        if std::iter::once(&header)
+            .chain(&body)
+            .any(|row| row.len() > MAX_ROW_CELLS)
+        {
+            self.diagnostics.push(
+                Diagnostic::new(
+                    "limit_exceeded",
+                    "A table row has more than 16,384 cells; the table was not processed.",
+                )
+                .at(position.line, Some(position.column)),
+            );
+            return None;
         }
         self.cells += header.len() + body.iter().map(Vec::len).sum::<usize>();
         if self.cells > MAX_TABLE_CELLS {
@@ -910,7 +961,7 @@ fn split_cells(row: &str) -> Vec<String> {
 }
 
 /// §4.9 `document_in_code_fence`: the whole body is one fenced markdown code block.
-fn document_in_code_fence(body: &[Block], diagnostics: &mut Vec<Diagnostic>) {
+fn document_in_code_fence(body: &[Block], diagnostics: &mut Sink) {
     if let [Block::Code(code)] = body
         && matches!(code.lang.as_deref(), Some("markdown" | "md"))
         && let Some(position) = code.position

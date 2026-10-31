@@ -99,6 +99,7 @@ prototype.
 | C44 | Document properties come only from `meta`: a title or author it lacks is not written (§5) | The rendering library's defaults (`PptxGenJS Presentation`, `Unknown`) | render/103 |
 | C45 | pptx: a misplaced `layout` is ignored and entered like any annotation; an unresolved or missing layout name is selected as if absent, title-slide rule included; Quote holds only a quote or text (§8.1, §8.3, §8.6) | A misplaced `layout` was an opaque block; Quote accepted any one block | compose/111, compose/002, lint/128 |
 | C46 | xlsx: a column whose cells match different tests, or that has no literal values, is `general`: each cell keeps its own type. Percent formats default to just enough decimals. Currency codes are any three letters. A sheet qualifies both cells of a range. Booleans in formulas are written in uppercase. An overridden empty annotation is misplaced. Column parameters follow §1.6's unknown/invalid split. A misplaced directive's arguments aren't checked (§1.5, §9.3–§9.6) | Numbers mixed with percents became percents (`42` → 4200%); mixed and formula-only columns were text; `9.5%` showed as 10%; an overridden annotation vanished silently | compose/103, compose/105, compose/112, lint/129, lint/130 |
+| C47 | Limits (§12.1) hold for every input: IR input is counted as markdown is, and cells per row and slides are enforced. A limit stops processing, so no validate-stage diagnostic follows one. IR positions are at most 2³²−1, and IR text rules cover every string. Nested annotations of the same name: the innermost applies (§9.4, §10.7, §12.1) | Unenforced for IR input, rows and slides: hostile input crashed, hung or placed cells past XFD | lint/132, lint/133, lint/134, lint/135 |
 
 0.2 also corrects 0.1's *text* in one place where the prototype was right: `---` in xlsx is ignored
 without a diagnostic (§5).
@@ -889,6 +890,8 @@ All three are **annotations** (§1.5):
   next one in the same sheet. Each further wrapped table produces `directive_misplaced` at the
   directive's line.
 - An annotation never crosses a sheet boundary: an H1 inside or after it ends its effect.
+- When annotations of the same name are nested, only the innermost applies to the tables inside
+  it. An enclosing one that applies to no table produces `directive_misplaced`. *(C47)*
 - Wrapping is the canonical form:
 
 ```markdown
@@ -1022,7 +1025,7 @@ messages are placed addresses (§9.2). *(C15)*
 | `mixed_column_type` | warning, advisory | §9.5. Reported at the table's line |
 | `table_header_invalid` | warning | §9.6 |
 | `xlsx_range_overlap` | warning | §9.2 |
-| `xlsx_limit_exceeded` | error | Stacking past row 1,048,576 or translation past the grid (§9.2, §9.3); text longer than 32,767 UTF-16 code units in a cell (data cells, range titles and notes); a formula longer than 8,192 UTF-16 code units |
+| `xlsx_limit_exceeded` | error | Stacking past row 1,048,576 or translation past the grid (§9.2, §9.3); text longer than 32,767 UTF-16 code units in a cell (data cells, range titles and notes); a formula longer than 8,192 UTF-16 code units as written in the cell or after translation |
 | `xlsx_empty_workbook` | warning, advisory | §9.1 |
 | `xlsx_ignored_content` | warning | §9.1, §9.4, §9.5 |
 | `link_anchor_unresolved` | warning | A fragment link matches no sheet name's slug |
@@ -1148,13 +1151,16 @@ Operation errors have stable codes, registered under `operationErrors` in `spec/
 - a section's child sections have greater levels than it
 - `start` appears only on ordered lists
 
-`position` is optional on every node. Diagnostics about a node without a position carry its `path`
-(§11.3) and no `line`. IR input goes through the same text rules as parsed text: §1.1's character
-replacement, §4.4's canonical runs, §4.5's link allowlist, and §2's normalization of known `meta`
-keys.
+`position` is optional on every node; a line or column is at most 4,294,967,295. Diagnostics about a
+node carry its `path` (§11.3), and its line when it has a position; a node without a position gives
+no `line`. IR input goes through the same text rules as parsed text: §1.1's character replacement
+in every string (`meta` values, run text and links, cell `raw`, media `src`, `alt` and `link`, code
+`value` and `lang`, directive `args`), §4.4's canonical runs, §4.5's link allowlist, and §2's
+normalization of known `meta` keys. The limits of §12.1 apply as they do to markdown. *(C47)*
 
 An implementation supporting IR `X.Y` accepts `X.Z` for every `Z ≤ Y` and rejects anything else with
-`ir_version_unsupported`. Adding an optional field bumps the minor version.
+`ir_version_unsupported`. Each part of a version is `0` or digits without a leading zero (`0.1`,
+never `00.1` or `+0.1`). Adding an optional field bumps the minor version.
 
 ### 10.8 Host conventions
 
@@ -1234,13 +1240,15 @@ them.
 
 Every implementation MUST accept input up to these defaults. Hosts MAY configure other values, and
 every host uses the same defaults. Input beyond the effective limit produces `limit_exceeded` (error)
-at the first offending construct and is not processed further. The implementation MUST NOT crash,
-hang or exhaust memory on any input.
+at the first offending construct and is not processed further: no validate-stage diagnostic follows
+it. The limits hold for IR input (§10.7) exactly as for markdown. The implementation MUST NOT crash,
+hang or exhaust memory on any input, and its time and memory SHOULD grow linearly with the input; in
+particular, it needs to keep only the diagnostics it may report (§11.2). *(C47)*
 
 | Limit | Default |
 |-------|---------|
 | Input size | 10 MiB of UTF-8 |
-| Nesting depth (blockquotes, lists and directives combined) | 32 |
+| Nesting depth: one level for each blockquote, list, list item and directive body enclosing a node | 32 |
 | Table cells per document; cells per row | 1,000,000; 16,384 |
 | Slides; sheets | 10,000; 1,000 |
 | Image size, encoded / decoded | 50 MiB / 100 megapixels |

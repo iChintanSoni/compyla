@@ -26,7 +26,7 @@ pub use compose::compose;
 pub use values::ColumnType;
 
 use super::{Input, Slugger, fragment_links};
-use crate::diagnostic::Diagnostic;
+use crate::diagnostic::Sink;
 use crate::ir::{Document, Position};
 
 /// The composed workbook.
@@ -85,10 +85,9 @@ impl TableStyle {
     }
 }
 
-pub fn validate(input: &Input<'_>, out: &mut Vec<Diagnostic>) {
+pub fn validate(input: &Input<'_>, out: &mut Sink) {
     let title_line = input.sidecar.meta_lines.get("title").copied();
-    let (workbook, diagnostics) = compose(input.document, title_line);
-    out.extend(diagnostics);
+    let workbook = compose(input.document, title_line, out);
     // §9.5: fragment links resolve against the sheet names' slugs.
     let mut slugger = Slugger::new();
     let targets: Vec<String> = workbook
@@ -102,7 +101,7 @@ pub fn validate(input: &Input<'_>, out: &mut Vec<Diagnostic>) {
 /// The compose summary (spec/conformance/compose.schema.json): sheets with their placed ranges,
 /// column types and translated formulas.
 pub fn summary(document: &Document) -> Value {
-    let (workbook, _) = compose(document, None);
+    let workbook = compose(document, None, &mut Sink::new());
     let sheets: Vec<Value> = workbook
         .sheets
         .iter()
@@ -160,13 +159,19 @@ mod tests {
             sidecar: &parsed.sidecar,
             assets: &|_| Asset::Exists,
         };
-        let mut out = crate::validate::validate(&input, Format::Xlsx);
+        let mut sink = Sink::new();
+        crate::validate::validate(&input, Format::Xlsx, &mut sink);
+        let mut out = sink.into_vec();
         crate::diagnostic::sort(&mut out);
         out.into_iter().map(|d| (d.code, d.line)).collect()
     }
 
     fn workbook(source: &str) -> Workbook {
-        compose(&crate::parse::parse(source).document, None).0
+        compose(
+            &crate::parse::parse(source).document,
+            None,
+            &mut Sink::new(),
+        )
     }
 
     fn diagnostics(pairs: &[(&str, usize)]) -> Vec<(String, Option<usize>)> {
@@ -306,7 +311,8 @@ mod tests {
                 position: None,
             })],
         };
-        let (workbook, diagnostics) = compose(&document, None);
+        let mut diagnostics = Sink::new();
+        let workbook = compose(&document, None, &mut diagnostics);
         let ranges = &workbook.sheets[0].ranges;
         assert_eq!(ranges.len(), 100_000);
         assert_eq!(

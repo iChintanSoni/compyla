@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::excerpt;
 use super::grid::CellRef;
-use crate::diagnostic::Diagnostic;
+use crate::diagnostic::{Diagnostic, Sink};
 use crate::validate::at;
 
 /// Excel's sheet-name limit, in UTF-16 code units.
@@ -18,7 +18,7 @@ pub fn sheet_name(
     position: usize,
     earlier: &HashSet<String>,
     line: Option<usize>,
-    out: &mut Vec<Diagnostic>,
+    out: &mut Sink,
 ) -> String {
     let original = raw.replace('\n', " ").trim().to_string();
     let mut name = original.replace(SHEET_NAME_FORBIDDEN, "-");
@@ -175,6 +175,19 @@ fn fold_char(c: char) -> char {
         'µ' => 'μ',
         '\u{345}' | '\u{1FBE}' => 'ι',
         'ẛ' => 'ṡ',
+        // Cyrillic variant letters, which are their own lowercase.
+        '\u{1C80}' => 'в',
+        '\u{1C81}' => 'д',
+        '\u{1C82}' => 'о',
+        '\u{1C83}' => 'с',
+        '\u{1C84}' | '\u{1C85}' => 'т',
+        '\u{1C86}' => 'ъ',
+        '\u{1C87}' => 'ѣ',
+        '\u{1C88}' => 'ꙋ',
+        // Status S since Unicode 15.1.
+        '\u{1FD3}' => '\u{390}',
+        '\u{1FE3}' => '\u{3B0}',
+        '\u{FB05}' => '\u{FB06}',
         // No simple folding: İ (only a full one), and uppercase Cherokee, which lowercase Cherokee
         // folds to.
         '\u{130}' | '\u{13A0}'..='\u{13F5}' => c,
@@ -212,9 +225,9 @@ mod tests {
 
     fn repair(raw: &str, earlier: &[&str]) -> (String, Vec<String>) {
         let taken: HashSet<String> = earlier.iter().map(|s| fold(s)).collect();
-        let mut out = Vec::new();
+        let mut out = Sink::new();
         let name = sheet_name(raw, earlier.len() + 1, &taken, Some(1), &mut out);
-        (name, out.into_iter().map(|d| d.code).collect())
+        (name, out.iter().map(|d| d.code.clone()).collect())
     }
 
     #[test]
@@ -274,6 +287,9 @@ mod tests {
         assert_eq!(fold("ẞ"), "ß");
         assert_eq!(fold("İ"), "İ");
         assert_eq!(fold("ꭰ"), "Ꭰ");
+        assert_eq!(fold("\u{1C80}"), fold("В"));
+        assert_eq!(fold("\u{1C88}"), fold("Ꙋ"));
+        assert_eq!(fold("\u{FB05}"), fold("\u{FB06}"));
         assert_eq!(fold("Ꭰ"), "Ꭰ");
         assert_eq!(fold("K"), "k");
     }

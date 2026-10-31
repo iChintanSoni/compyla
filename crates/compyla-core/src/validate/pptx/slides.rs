@@ -1,6 +1,6 @@
 //! Slide segmentation and slide structure (markdown-spec.md §8.1, §8.2).
 
-use crate::ir::{Block, Directive, Section};
+use crate::ir::{Block, Directive, Position, Section};
 use crate::validate::{DirectiveKind, directive};
 
 /// A node the slide walk reaches (§8.1). A section contributes its heading, then its children;
@@ -43,7 +43,24 @@ impl Slide<'_> {
     fn is_empty(&self) -> bool {
         self.title.is_none() && self.content.is_empty() && !self.has_notes()
     }
+
+    /// The position of the slide's first node: its title, else its first content item, else its
+    /// first notes.
+    fn first_position(&self) -> Option<Position> {
+        let item = |item: &Item<'_>| match *item {
+            Item::Heading(section) => section.position,
+            Item::Block(block) => block.position(),
+            Item::Col(d) | Item::Layout(d) | Item::Notes(d) => d.position,
+        };
+        self.title
+            .and_then(|title| title.position)
+            .or_else(|| self.content.first().and_then(item))
+            .or_else(|| self.notes.first().and_then(|notes| notes.position))
+    }
 }
+
+/// The most slides a deck may have (markdown-spec.md §12.1).
+pub const MAX_SLIDES: usize = 10_000;
 
 /// A document segmented into slides.
 pub struct Deck<'a> {
@@ -51,18 +68,27 @@ pub struct Deck<'a> {
     /// Slides with no title, no content and no notes, which are omitted (§8.1). Only their
     /// directives matter: a leading `layout` on one has no effect.
     pub omitted: Vec<Slide<'a>>,
+    /// Set when the document has more than [`MAX_SLIDES`] slides: the position of the first node
+    /// of the first slide past the limit. `slides` then holds only the slides within it.
+    pub overflow: Option<Option<Position>>,
 }
 
 /// Segments the body into slides in document order (§8.1) and structures each one (§8.2).
 pub fn deck(body: &[Block]) -> Deck<'_> {
     let mut walk = Walk::new(true);
     walk.blocks(body);
-    let (slides, omitted) = walk
+    let (mut slides, omitted): (Vec<_>, Vec<_>) = walk
         .finish()
         .into_iter()
         .map(structure)
         .partition(|slide| !slide.is_empty());
-    Deck { slides, omitted }
+    let overflow = slides.get(MAX_SLIDES).map(Slide::first_position);
+    slides.truncate(MAX_SLIDES);
+    Deck {
+        slides,
+        omitted,
+        overflow,
+    }
 }
 
 /// The walk of §8.1. With `split`, every `break` reached ends the current slide; without it (inside
@@ -71,6 +97,11 @@ struct Walk<'a> {
     split: bool,
     done: Vec<Vec<Item<'a>>>,
     current: Vec<Item<'a>>,
+    /// Whether a `layout` reached now would be the slide's leading one (§8.3): nothing but notes
+    /// and the title heading precede it. Kept as items are pushed, so checking it is O(1).
+    leads: bool,
+    /// Whether the current slide has its title heading yet.
+    titled: bool,
 }
 
 impl<'a> Walk<'a> {
@@ -79,21 +110,18 @@ impl<'a> Walk<'a> {
             split,
             done: Vec::new(),
             current: Vec::new(),
+            leads: true,
+            titled: false,
         }
     }
 
-    /// Whether a `layout` reached now would be the slide's leading one: nothing but notes and the
-    /// title heading precede it (§8.3).
-    fn leads(&self) -> bool {
-        let mut title = false;
-        for item in &self.current {
-            match item {
-                Item::Notes(_) => {}
-                Item::Heading(_) if !title => title = true,
-                _ => return false,
-            }
+    fn push(&mut self, item: Item<'a>) {
+        match item {
+            Item::Notes(_) => {}
+            Item::Heading(_) if !self.titled => self.titled = true,
+            _ => self.leads = false,
         }
-        true
+        self.current.push(item);
     }
 
     fn finish(mut self) -> Vec<Vec<Item<'a>>> {
@@ -105,29 +133,30 @@ impl<'a> Walk<'a> {
         for block in blocks {
             match block {
                 Block::Section(section) => {
-                    self.current.push(Item::Heading(section));
+                    self.push(Item::Heading(section));
                     self.blocks(&section.children);
                 }
                 Block::Break(_) => {
                     if self.split {
                         self.done.push(std::mem::take(&mut self.current));
+                        (self.leads, self.titled) = (true, false);
                     }
                 }
                 Block::Directive(d) => self.directive(d),
                 // List items and quotes aren't entered: a `break` inside them has no effect.
-                _ => self.current.push(Item::Block(block)),
+                _ => self.push(Item::Block(block)),
             }
         }
     }
 
     fn directive(&mut self, d: &'a Directive) {
         match d.name.as_str() {
-            "col" => self.current.push(Item::Col(d)),
-            "layout" if self.split && self.leads() => self.current.push(Item::Layout(d)),
+            "col" => self.push(Item::Col(d)),
+            "layout" if self.split && self.leads => self.push(Item::Layout(d)),
             // A `layout` that isn't leading is misplaced and so ignored (§1.5): its children count
             // in its place, like any ignored annotation's (§8.1, §8.6).
             "layout" => self.blocks(&d.children),
-            "notes" => self.current.push(Item::Notes(d)),
+            "notes" => self.push(Item::Notes(d)),
             name => match directive(name) {
                 None | Some((DirectiveKind::Annotation, _)) => self.blocks(&d.children),
                 Some((DirectiveKind::Marker | DirectiveKind::Container, _)) => {}

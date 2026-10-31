@@ -1,0 +1,9 @@
+{
+  "description": "A table row with more than 16,384 cells is limit_exceeded at the table.",
+  "spec": [
+    "\u00a712.1",
+    "C47"
+  ],
+  "oracle": "corrected",
+  "format": "xlsx"
+}

@@ -7,7 +7,7 @@ pub mod xlsx;
 
 use std::collections::{HashMap, HashSet};
 
-use crate::diagnostic::Diagnostic;
+use crate::diagnostic::{Diagnostic, Sink};
 use crate::ir::{Block, Directive, Document, Position, plain_text};
 use crate::parse::Sidecar;
 
@@ -57,23 +57,21 @@ pub struct Input<'a> {
 }
 
 /// The profile's diagnostics, at the positions of the nodes involved. Callers that report them
-/// renumber the document first and locate them after (`crate::locate`, §10.7, §11.3).
-pub fn validate(input: &Input<'_>, format: Format) -> Vec<Diagnostic> {
-    let mut out = Vec::new();
-    directives(&input.document.body, format, &mut out);
-    ragged_tables(&input.document.body, &mut out);
+/// renumber the document first and collect into a located sink (`crate::locate`, §10.7, §11.3).
+pub fn validate(input: &Input<'_>, format: Format, out: &mut Sink) {
+    directives(&input.document.body, format, out);
+    ragged_tables(&input.document.body, out);
     match format {
         Format::Docx | Format::Pdf => {
-            images(input, &mut out);
-            flow::validate(input, format, &mut out);
+            images(input, out);
+            flow::validate(input, format, out);
         }
         Format::Pptx => {
-            images(input, &mut out);
-            pptx::validate(input, &mut out);
+            images(input, out);
+            pptx::validate(input, out);
         }
-        Format::Xlsx => xlsx::validate(input, &mut out),
+        Format::Xlsx => xlsx::validate(input, out),
     }
-    out
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -108,7 +106,7 @@ pub fn uses(name: &str, format: Format) -> bool {
 
 /// `unknown_directive` everywhere, and `unknown_directive_option` for arguments to a directive that
 /// takes none (§1.5, §1.6).
-fn directives(blocks: &[Block], format: Format, out: &mut Vec<Diagnostic>) {
+fn directives(blocks: &[Block], format: Format, out: &mut Sink) {
     for_each_block(blocks, &mut |block| {
         let Block::Directive(d) = block else { return };
         let line = d.position.map(|p| p.line);
@@ -135,13 +133,14 @@ pub struct Options {
 
 pub fn options(args: &str) -> Options {
     let mut entries: Vec<(String, Option<String>)> = Vec::new();
+    let mut keys = HashSet::new();
     let mut repeated = None;
     for token in args.split([',', ' ', '\t']).filter(|t| !t.is_empty()) {
         let (key, value) = match token.split_once('=') {
             Some((k, v)) => (k.to_ascii_lowercase(), Some(v.to_string())),
             None => (token.to_ascii_lowercase(), None),
         };
-        if entries.iter().any(|(k, _)| *k == key) {
+        if !keys.insert(key.clone()) {
             repeated.get_or_insert(key.clone());
         }
         entries.push((key, value));
@@ -160,7 +159,7 @@ pub fn at(diagnostic: Diagnostic, line: Option<usize>) -> Diagnostic {
 // Shared rules.
 
 /// §5: ragged rows are repaired, with a warning at each row's line.
-fn ragged_tables(blocks: &[Block], out: &mut Vec<Diagnostic>) {
+fn ragged_tables(blocks: &[Block], out: &mut Sink) {
     for_each_block(blocks, &mut |block| {
         let Block::Table(table) = block else { return };
         for (index, row) in table.rows.iter().enumerate() {
@@ -181,11 +180,12 @@ fn ragged_tables(blocks: &[Block], out: &mut Vec<Diagnostic>) {
 
 /// The source line of a table's data row `index` (0-based): header, delimiter, then one line per row.
 pub fn row_line(table: Position, index: usize) -> usize {
-    table.line + 2 + index
+    // IR input may carry any line, so this can't overflow (§10.7).
+    table.line.saturating_add(2).saturating_add(index)
 }
 
 /// §4.7, §5: every media source must resolve, and its bytes must be PNG, JPEG or GIF.
-fn images(input: &Input<'_>, out: &mut Vec<Diagnostic>) {
+fn images(input: &Input<'_>, out: &mut Sink) {
     for_each_block(&input.document.body, &mut |block| {
         let Block::Media(media) = block else { return };
         let line = media.position.map(|p| p.line);
@@ -279,13 +279,17 @@ fn base64(text: &str) -> Option<Vec<u8>> {
 /// Slugs (§4.5): lowercase; keep letters, marks, numbers, `_`, `-` and spaces; spaces to `-`;
 /// duplicates numbered in document order.
 pub struct Slugger {
-    used: HashMap<String, usize>,
+    used: HashSet<String>,
+    /// The last suffix tried for each base, so repeated headings take linear time: every lower
+    /// suffix is already used.
+    suffixes: HashMap<String, usize>,
 }
 
 impl Slugger {
     pub fn new() -> Self {
         Self {
-            used: HashMap::new(),
+            used: HashSet::new(),
+            suffixes: HashMap::new(),
         }
     }
 
@@ -297,12 +301,17 @@ impl Slugger {
             .map(|c| if c == ' ' { '-' } else { c })
             .collect();
         let mut slug = base.clone();
-        let mut n = 0;
-        while self.used.contains_key(&slug) {
-            n += 1;
-            slug = format!("{base}-{n}");
+        if self.used.contains(&slug) {
+            let n = self.suffixes.entry(base.clone()).or_insert(0);
+            loop {
+                *n += 1;
+                slug = format!("{base}-{n}");
+                if !self.used.contains(&slug) {
+                    break;
+                }
+            }
         }
-        self.used.insert(slug.clone(), 0);
+        self.used.insert(slug.clone());
         slug
     }
 }
@@ -319,12 +328,7 @@ fn is_mark(c: char) -> bool {
 }
 
 /// Fragment links that match no target produce `link_anchor_unresolved` (§4.5).
-pub fn fragment_links(
-    input: &Input<'_>,
-    targets: &[String],
-    what: &str,
-    out: &mut Vec<Diagnostic>,
-) {
+pub fn fragment_links(input: &Input<'_>, targets: &[String], what: &str, out: &mut Sink) {
     let targets: HashSet<&str> = targets.iter().map(String::as_str).collect();
     for (url, position) in &input.sidecar.links {
         let Some(fragment) = url.strip_prefix('#') else {
@@ -388,8 +392,8 @@ pub fn for_each_block(blocks: &[Block], visit: &mut dyn FnMut(&Block)) {
 /// `check_options` validates the profile's own options (§1.6).
 pub fn image_directives(
     blocks: &[Block],
-    check_options: &dyn Fn(&Directive, &mut Vec<Diagnostic>),
-    out: &mut Vec<Diagnostic>,
+    check_options: &dyn Fn(&Directive, &mut Sink),
+    out: &mut Sink,
 ) {
     for (index, block) in blocks.iter().enumerate() {
         if let Block::Directive(d) = block

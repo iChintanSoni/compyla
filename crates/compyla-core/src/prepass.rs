@@ -5,7 +5,7 @@
 //! separately, so no markdown block can cross a directive (§1.3 rule 7). This is the design checked
 //! by toolchain check 1 (spikes/README.md).
 
-use crate::diagnostic::Diagnostic;
+use crate::diagnostic::{Diagnostic, Sink};
 use crate::frontmatter;
 
 const MARKERS: &[&str] = &["toc", "pagebreak", "col"];
@@ -94,7 +94,7 @@ impl PrePass {
 }
 
 /// §1.1: line splitting, BOM removal and replacement of characters XML forbids.
-fn normalize_input(source: &str, diagnostics: &mut Vec<Diagnostic>) -> Vec<String> {
+fn normalize_input(source: &str, diagnostics: &mut Sink) -> Vec<String> {
     let source = source.strip_prefix('\u{FEFF}').unwrap_or(source);
     let normalized = source.replace("\r\n", "\n").replace('\r', "\n");
     let mut lines = Vec::new();
@@ -192,7 +192,7 @@ fn is_closer(line: &str) -> bool {
     colons >= 3 && line[colons..].trim_matches([' ', '\t']).is_empty()
 }
 
-pub fn run(source: &str, diagnostics: &mut Vec<Diagnostic>) -> PrePass {
+pub fn run(source: &str, diagnostics: &mut Sink) -> PrePass {
     let lines = normalize_input(source, diagnostics);
     let n = lines.len();
     let mut kinds = vec![Kind::Normal; n];

@@ -8,7 +8,7 @@ use super::grid::{CellRef, column_index};
 use super::names::{fold, valid_table_name};
 use super::values::ColumnType;
 use super::{TableStyle, excerpt, line_of};
-use crate::diagnostic::Diagnostic;
+use crate::diagnostic::{Diagnostic, Sink};
 use crate::ir::Directive;
 use crate::validate::{at, options};
 
@@ -89,7 +89,7 @@ impl Columns {
     }
 }
 
-pub fn parse(directive: &Directive, out: &mut Vec<Diagnostic>) -> Args {
+pub fn parse(directive: &Directive, out: &mut Sink) -> Args {
     match directive.name.as_str() {
         "anchor" => Args::Anchor(anchor(directive, out)),
         "table" => Args::Table(table(directive, out)),
@@ -97,7 +97,7 @@ pub fn parse(directive: &Directive, out: &mut Vec<Diagnostic>) -> Args {
     }
 }
 
-fn anchor(directive: &Directive, out: &mut Vec<Diagnostic>) -> Option<CellRef> {
+fn anchor(directive: &Directive, out: &mut Sink) -> Option<CellRef> {
     let line = line_of(directive.position);
     let args = directive.args.trim();
     if args.is_empty() {
@@ -128,7 +128,7 @@ fn anchor(directive: &Directive, out: &mut Vec<Diagnostic>) -> Option<CellRef> {
     cell
 }
 
-fn table(directive: &Directive, out: &mut Vec<Diagnostic>) -> TableOptions {
+fn table(directive: &Directive, out: &mut Sink) -> TableOptions {
     let line = line_of(directive.position);
     let mut push = |code: &str, message: String, hint: &str| {
         out.push(at(Diagnostic::new(code, message).hint(hint), line));
@@ -146,12 +146,11 @@ fn table(directive: &Directive, out: &mut Vec<Diagnostic>) -> TableOptions {
         style: TableStyle::Striped,
         autofilter: false,
     };
-    let mut seen: Vec<&str> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
     for (key, value) in &parsed.entries {
-        if seen.contains(&key.as_str()) {
+        if !seen.insert(key.as_str()) {
             continue;
         }
-        seen.push(key);
         match (key.as_str(), value.as_deref()) {
             ("name", Some(name)) if valid_table_name(name) => result.name = Some(name.to_string()),
             ("name", value) => push(
@@ -194,7 +193,7 @@ fn table(directive: &Directive, out: &mut Vec<Diagnostic>) -> TableOptions {
     result
 }
 
-fn columns(directive: &Directive, out: &mut Vec<Diagnostic>) -> Columns {
+fn columns(directive: &Directive, out: &mut Sink) -> Columns {
     let line = line_of(directive.position);
     let mut push = |code: &str, message: String, hint: &str| {
         out.push(at(Diagnostic::new(code, message).hint(hint), line));
@@ -367,7 +366,7 @@ mod tests {
 
     #[test]
     fn columns_entries() {
-        let mut out = Vec::new();
+        let mut out = Sink::new();
         let entries = columns(
             &directive(
                 "columns",
@@ -396,7 +395,7 @@ mod tests {
 
     #[test]
     fn columns_problems() {
-        let mut out = Vec::new();
+        let mut out = Sink::new();
         let entries = columns(
             &directive(
                 "columns",
@@ -429,7 +428,7 @@ mod tests {
                 ColumnType::Date,
             ]
         );
-        let mut out = Vec::new();
+        let mut out = Sink::new();
         assert!(
             columns(&directive("columns", ""), &mut out)
                 .entries
@@ -440,7 +439,7 @@ mod tests {
 
     #[test]
     fn columns_resolution() {
-        let parsed = |args: &str| columns(&directive("columns", args), &mut Vec::new());
+        let parsed = |args: &str| columns(&directive("columns", args), &mut Sink::new());
         let headers: Vec<String> = ["Region", "B", "Growth"].map(String::from).to_vec();
         let resolved = parsed("growth:percent, b:number, A:text").resolve(&headers);
         assert_eq!(
@@ -471,7 +470,7 @@ mod tests {
 
     #[test]
     fn table_options() {
-        let mut out = Vec::new();
+        let mut out = Sink::new();
         let options = table(
             &directive("table", "name=sales_q3, style=Plain, AutoFilter"),
             &mut out,
@@ -481,7 +480,7 @@ mod tests {
         assert_eq!(options.style, TableStyle::Plain);
         assert!(options.autofilter);
 
-        let mut out = Vec::new();
+        let mut out = Sink::new();
         let options = table(
             &directive("table", "name=A1 style=fancy sorted autofilter=yes style"),
             &mut out,
@@ -503,7 +502,7 @@ mod tests {
 
     #[test]
     fn anchors() {
-        let mut out = Vec::new();
+        let mut out = Sink::new();
         assert_eq!(
             anchor(&directive("anchor", "$c$5"), &mut out).map(|c| (c.column, c.row)),
             Some((2, 5))
