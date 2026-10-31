@@ -8,7 +8,7 @@ pub mod xlsx;
 use std::collections::HashMap;
 
 use crate::diagnostic::Diagnostic;
-use crate::ir::{Block, Document, Position, plain_text};
+use crate::ir::{Block, Directive, Document, Position, plain_text};
 use crate::parse::Sidecar;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -371,6 +371,51 @@ pub fn for_each_block(blocks: &[Block], visit: &mut dyn FnMut(&Block)) {
             Block::List(l) => {
                 for item in &l.items {
                     for_each_block(&item.children, visit);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// `::: image` placement (§1.5, §6.1, §8.4): it applies to the images it wraps or, when empty, to the
+/// immediately following media block; with no image to apply to it is `directive_misplaced`.
+/// `check_options` validates the profile's own options (§1.6).
+pub fn image_directives(
+    blocks: &[Block],
+    check_options: &dyn Fn(&Directive, &mut Vec<Diagnostic>),
+    out: &mut Vec<Diagnostic>,
+) {
+    for (index, block) in blocks.iter().enumerate() {
+        if let Block::Directive(d) = block
+            && d.name == "image"
+        {
+            check_options(d, out);
+            let applies = if d.children.is_empty() {
+                matches!(blocks.get(index + 1), Some(Block::Media(_)))
+            } else {
+                let mut found = false;
+                for_each_block(&d.children, &mut |b| found |= matches!(b, Block::Media(_)));
+                found
+            };
+            if !applies {
+                out.push(at(
+                    Diagnostic::new(
+                        "directive_misplaced",
+                        "`::: image` has no image to apply to; it is ignored.",
+                    )
+                    .hint("Wrap the image in the directive, or put the image directly after it."),
+                    d.position.map(|p| p.line),
+                ));
+            }
+        }
+        match block {
+            Block::Section(s) => image_directives(&s.children, check_options, out),
+            Block::Quote(q) => image_directives(&q.children, check_options, out),
+            Block::Directive(d) => image_directives(&d.children, check_options, out),
+            Block::List(l) => {
+                for item in &l.items {
+                    image_directives(&item.children, check_options, out);
                 }
             }
             _ => {}

@@ -1,0 +1,9 @@
+{
+  "description": "An unresolved layout name is selected as if absent: the first slide of a deck is still the title slide.",
+  "spec": [
+    "\u00a78.3",
+    "C45"
+  ],
+  "oracle": "prototype",
+  "format": "pptx"
+}

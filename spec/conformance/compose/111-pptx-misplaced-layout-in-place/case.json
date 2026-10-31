@@ -1,0 +1,11 @@
+{
+  "description": "A layout that isn't leading is ignored: its children count in place, so the slide infers from them.",
+  "spec": [
+    "\u00a71.5",
+    "\u00a78.1",
+    "\u00a78.6",
+    "C45"
+  ],
+  "oracle": "corrected",
+  "format": "pptx"
+}

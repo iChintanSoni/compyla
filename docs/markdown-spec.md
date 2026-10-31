@@ -97,6 +97,7 @@ prototype.
 | C42 | `heading_skip` compares headings within one heading tree (§6.3) | A heading in a directive body was compared with the outer section | lint/126 |
 | C43 | An indented code block's position is the first character of its content (§4.1) | Column 1 of its line | parse/125 |
 | C44 | Document properties come only from `meta`: a title or author it lacks is not written (§5) | The rendering library's defaults (`PptxGenJS Presentation`, `Unknown`) | render/103 |
+| C45 | pptx: a misplaced `layout` is ignored and entered like any annotation; an unresolved or missing layout name is selected as if absent, title-slide rule included; Quote holds only a quote or text (§8.1, §8.3, §8.6) | A misplaced `layout` was an opaque block; Quote accepted any one block | compose/111, compose/002, lint/128 |
 
 0.2 also corrects 0.1's *text* in one place where the prototype was right: `---` in xlsx is ignored
 without a diagnostic (§5).
@@ -245,7 +246,8 @@ its cases.
 | `table` | Options: `name=…`, `style=striped\|plain`, and the flag `autofilter` (§9.4) |
 
 **Options** are separated by commas and/or whitespace. Each is `key=value` or a bare flag. Keys and
-flags are case-insensitive. A value runs to the next separator, and there is no quoting in 0.2.
+flags are case-insensitive, and so are enumerated values (`fit=Cover`). A value runs to the next
+separator, and there is no quoting in 0.2.
 Options for another profile are ignored quietly, for the same reason as §1.5 (`fit=` in docx).
 
 These produce `unknown_directive_option` (warning), and the option is ignored, so its default applies:
@@ -610,10 +612,11 @@ Plus every code in §6.3.
 ### 8.1 Slide segmentation *(C9, C26)*
 
 Slides are formed by walking the body **in document order**, entering every section (its heading,
-then its children) and the bodies of annotations other than `layout`, and of unknown directives
-(§1.5). Every `break` reached this
-way ends the current slide and starts a new one, however deeply it is nested under headings. List
-items, quotes and `notes` bodies are not entered, so a `break` inside them has no effect. A slide with
+then its children) and the bodies of annotations other than the slide's leading `layout`, and of
+unknown directives (§1.5). A `layout` that isn't leading is misplaced and so ignored (§1.5): it is
+entered like any annotation. Every `break` reached this way ends the current slide and starts a new
+one, however deeply it is nested under headings. List items, quotes, `notes` bodies and the leading
+`layout`'s body are not entered, so a `break` inside them has no effect. A slide with
 no title, no content and no notes is **omitted**: consecutive breaks, or a break at the start or end,
 don't make empty slides.
 
@@ -626,7 +629,8 @@ don't make empty slides.
 - `notes` directives among the content's top-level blocks are removed from the content. Their
   children, concatenated in order, become the speaker notes. Paragraphs, lists and headings keep their
   text formatting. Tables, media and code are rendered as plain text (table rows tab-separated, media
-  as their alt text). A `notes` directive anywhere else produces `directive_misplaced`.
+  as their alt text). An empty `notes` directive contributes nothing. A `notes` directive anywhere
+  else produces `directive_misplaced`.
 
 ### 8.3 Layout selection *(C38)*
 
@@ -636,7 +640,9 @@ Priority order:
    string, trimmed, with internal whitespace collapsed to single spaces. If the directive has children,
    those are the content. If it has none (empty, one-line or unclosed), the blocks after it are the
    content. *(C8)* A `layout` directive anywhere else produces `directive_misplaced`. A name that
-   doesn't resolve (§8.5) produces `unknown_layout` (warning), and the layout is inferred instead.
+   doesn't resolve (§8.5) produces `unknown_layout` (warning), and a missing name
+   `invalid_directive_args`. Either way, the layout is then selected **as if there were no layout
+   directive** (rules 2 and 3), with the directive's children (if any) still as the content.
 2. **Title slide**: the first slide of a deck with more than one slide (after omission, §8.1) is
    `Title Slide`, **if its content fits Title Slide** (§8.6). Otherwise it is inferred.
 3. **Inferred** from the content, first match wins:
@@ -689,8 +695,8 @@ produces `unknown_layout`. Slide size, footers, dates and slide numbers follow t
 Content is measured in **blocks**:
 - Consecutive paragraphs, lists and demoted headings form one **text block**.
 - Every other node (table, media, code, quote) is one block.
-- The children of annotations other than `layout` (used, like `::: image fit=…`, or ignored) and of
-  unknown directives count in their place. A wrapped image is therefore a media block. Markers other
+- The children of annotations other than the leading `layout` (used, like `::: image fit=…`, or
+  ignored, including a misplaced `layout`) and of unknown directives count in their place. A wrapped image is therefore a media block. Markers other
   than `col` count nothing. A `col` marker ends the current text block and separates columns.
 
 | House layout | Content slots | Fits when |
@@ -703,7 +709,7 @@ Content is measured in **blocks**:
 | Comparison | left heading (text), left (any), right heading (text), right (any) | With `col` markers: at most two columns, each an optional text block followed by at most one block (the text block fills the column's heading). Without: as Two Content |
 | Content with Caption | content (any), caption (text) | At most one non-text block and at most one text block |
 | Picture with Caption | picture (media), caption (text) | At most one media block and at most one text block, in either order |
-| Quote | quote (quote or text) | At most one block |
+| Quote | quote (quote or text) | At most one block, which is a quote or a text block |
 
 A template layout outside the house set provides one slot per content placeholder (types `body`,
 `obj`, `pic`, `tbl`, `chart`, `media`, in placeholder order), each holding one block.
@@ -724,7 +730,7 @@ larger than its placeholder produces `content_overflow` (warning, render stage).
 | `heading_too_deep` | warning, advisory | A demoted heading of level 4 or deeper (likely a docx-oriented document) |
 | `image_unresolved` / `image_unsupported` | warning | §4.7, §5 *(C18)* |
 | `table_not_rectangular` | warning | §5 |
-| `link_anchor_unresolved` | warning | A fragment link matches no **slide title**'s slug. Matches become links to that slide |
+| `link_anchor_unresolved` | warning | A fragment link matches no **slide title**'s slug. Matches become links to that slide. Slide-title slugs are numbered over the slide titles alone (§4.5 step 4) |
 | `invalid_directive_args` / `unknown_directive_option` | warning | §1.6 |
 | `unknown_directive` / `directive_misplaced` | warning | §1.5, §8.2–§8.4 |
 | `content_overflow` | warning | Render stage, §8.6 |

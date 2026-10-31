@@ -161,7 +161,7 @@ pub enum Kind {
     Table,
     Media,
     Quote,
-    /// A code block, or a misplaced `layout` directive (its body isn't entered, §8.1).
+    /// A code block.
     Other,
 }
 
@@ -262,7 +262,8 @@ impl Fill {
         match layout {
             Layout::SectionHeader | Layout::TitleOnly | Layout::Blank => false,
             Layout::TitleSlide => text && first(&mut self.text),
-            Layout::TitleAndContent | Layout::Quote => self.count == 1,
+            Layout::TitleAndContent => self.count == 1,
+            Layout::Quote => self.count == 1 && matches!(block.kind, Kind::Quote | Kind::Text),
             Layout::ContentWithCaption if text => first(&mut self.text),
             Layout::ContentWithCaption => first(&mut self.other),
             Layout::PictureWithCaption => match block.kind {
