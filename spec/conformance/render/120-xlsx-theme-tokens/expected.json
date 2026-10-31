@@ -1,0 +1,86 @@
+{
+  "diagnostics": [],
+  "output": {
+    "sheets": [
+      {
+        "name": "Sales",
+        "cells": {
+          "A1": {
+            "value": "Quarterly revenue",
+            "type": "s",
+            "numFmt": "General"
+          },
+          "B4": {
+            "value": 120000,
+            "type": "n",
+            "numFmt": "General"
+          }
+        }
+      }
+    ],
+    "excelTables": [
+      {
+        "name": "people",
+        "ref": "A6:B7",
+        "style": "TableStyleMedium1"
+      }
+    ],
+    "package": {
+      "partsPresent": [
+        "xl/theme/theme1.xml"
+      ],
+      "xpath": [
+        {
+          "part": "xl/theme/theme1.xml",
+          "expr": "string(//a:fontScheme/a:majorFont/a:latin/@typeface)",
+          "equals": "Georgia"
+        },
+        {
+          "part": "xl/theme/theme1.xml",
+          "expr": "string(//a:fontScheme/a:minorFont/a:latin/@typeface)",
+          "equals": "Verdana"
+        },
+        {
+          "part": "xl/theme/theme1.xml",
+          "expr": "string(//a:clrScheme/a:accent1/a:srgbClr/@val)",
+          "equals": "C55A11"
+        },
+        {
+          "part": "xl/theme/theme1.xml",
+          "expr": "string(//a:clrScheme/a:dk1/a:srgbClr/@val)",
+          "equals": "000000"
+        },
+        {
+          "part": "xl/theme/theme1.xml",
+          "expr": "count(//*[local-name()='blip'] | //@*[local-name()='embed'])",
+          "equals": 0
+        },
+        {
+          "part": "xl/styles.xml",
+          "expr": "string(//x:fonts/x:font[1]/x:scheme/@val)",
+          "equals": "minor"
+        },
+        {
+          "part": "xl/styles.xml",
+          "expr": "count(//x:font[x:b][x:name/@val='Georgia'][x:scheme/@val='major'])",
+          "equals": 1
+        },
+        {
+          "part": "xl/styles.xml",
+          "expr": "string(//x:fill/x:patternFill/x:fgColor[@theme='4']/@tint)",
+          "equals": "0.79998168889431442"
+        },
+        {
+          "part": "xl/styles.xml",
+          "expr": "count(//x:font[x:u][x:color/@theme='10'])",
+          "equals": 1
+        },
+        {
+          "part": "xl/_rels/workbook.xml.rels",
+          "expr": "count(//rel:Relationship[@Target='theme/theme1.xml'])",
+          "equals": 1
+        }
+      ]
+    }
+  }
+}

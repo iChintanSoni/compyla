@@ -51,10 +51,10 @@ def package_rels(main):
     return rels(("rId1", "officeDocument", main, False))
 
 
-def theme(major, minor, odd=False):
+def theme(major, minor, odd=False, accent1="2F5BEA"):
     colors = {"dk1": '<a:sysClr val="windowText" lastClr="000000"/>', "lt1": '<a:sysClr val="window" lastClr="FFFFFF"/>',
               "dk2": '<a:srgbClr val="1f2a44"/>', "lt2": '<a:srgbClr val="E8ECF3"/>',
-              **{f"accent{i}": f'<a:srgbClr val="{c}"/>' for i, c in enumerate(["2F5BEA", "00A88F", "F2A900", "D64545", "7A4FD1", "4A5568"], 1)},
+              **{f"accent{i}": f'<a:srgbClr val="{c}"/>' for i, c in enumerate([accent1, "00A88F", "F2A900", "D64545", "7A4FD1", "4A5568"], 1)},
               "hlink": '<a:srgbClr val="0563C1"/>', "folHlink": '<a:srgbClr val="954F72"/>'}
     scheme = "".join(f"<a:{k}>{v}</a:{k}>" for k, v in colors.items())
     if odd:  # a slot outside the theme's twelve, which a report must not echo
@@ -89,7 +89,8 @@ def layout(name, kind, *shapes):
             f'<p:cSld name="{name}">{tree(*shapes)}</p:cSld></p:sldLayout>')
 
 
-def pptx(path, main_type="presentation", extra=(), repeat_ids=1, odd=False):
+def pptx(path, main_type="presentation", extra=(), repeat_ids=1, odd=False,
+         fonts=("Brand Display", "Brand Sans"), accent1="2F5BEA"):
     layouts = [
         ("Title Slide", "title", placeholder(2, "Title 1", "ctrTitle"),
          placeholder(3, "Subtitle 2", "notAType" if odd else "subTitle", 1)),
@@ -127,7 +128,7 @@ def pptx(path, main_type="presentation", extra=(), repeat_ids=1, odd=False):
         *[(f"ppt/slideLayouts/slideLayout{i + 1}.xml", layout(*spec)) for i, spec in enumerate(layouts)],
         *[(f"ppt/slideLayouts/_rels/slideLayout{i + 1}.xml.rels", rels(("rId1", "slideMaster", "../slideMasters/slideMaster1.xml", False)))
           for i in range(len(layouts))],
-        ("ppt/theme/theme1.xml", theme("Brand Display", "Brand Sans", odd)),
+        ("ppt/theme/theme1.xml", theme(*fonts, odd, accent1)),
         ("ppt/fonts/font1.fntdata", b"\x00" * 64),
         *extra,
     ]
@@ -250,6 +251,10 @@ def main():
     xltx(ROOT / "lint/142-xlsx-workbook-template/brand.xltx")
     docx(ROOT / "lint/143-docx-template-without-theme/brand.docx", styles=False, theme_part=False,
          document_body="", main_type="document")
+    # Theme tokens for a workbook (§9.2): fonts any viewer has, and an accent white text doesn't read
+    # on, so a striped table takes its dark header instead.
+    pptx(ROOT / "render/120-xlsx-theme-tokens/orange.potx", main_type="template",
+         fonts=("Georgia", "Verdana"), accent1="C55A11")
 
 
 if __name__ == "__main__":

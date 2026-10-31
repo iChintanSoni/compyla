@@ -1,0 +1,12 @@
+{
+  "description": "A workbook takes a pptx template's theme tokens (§9.2), the template named in the frontmatter: its colors and fonts become the workbook's theme; cells use its body font and range titles its heading font; the house header fill is its first accent, lighter 80%; links take its hyperlink color. White doesn't read on this accent, so the striped Excel table takes the dark header style (§9.6).",
+  "spec": [
+    "§9.2",
+    "§9.5",
+    "§9.6",
+    "§10.4",
+    "C57"
+  ],
+  "oracle": "none",
+  "format": "xlsx"
+}

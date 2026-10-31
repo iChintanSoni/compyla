@@ -149,14 +149,16 @@ Goal: output that is faithful to a real corporate template, and identical bytes 
       (C48), with Excel's per-sheet hyperlink and per-workbook number-format limits, and cell paths on
       cell diagnostics (C54). The renderer only serializes the workbook the compose stage resolved,
       cell by cell
-- [ ] xlsx theme tokens (fonts, header color) from a supplied docx or pptx template
+- [x] xlsx theme tokens from a supplied docx or pptx template: the template's colors and fonts as
+      the workbook's theme, cells and titles in its fonts, header fill and links in its colors, and a
+      readable table header whatever its accent (§9.2, C57)
 - [x] `convert` in the facade and the CLI (`compyla convert`), with blocking (§11.1) decided over
       every diagnostic, including any the cap drops; formats without a renderer yet are
       `renderer_unavailable`
 - [ ] pdf via Typst with a theme derived from the template (D13)
 - [ ] Render conformance suite passing for all four formats. The Rust runner (`render_suite`) renders
       each fixture twice for byte identity and checks it with `render_check.py`; xlsx and pptx pass
-      (render/002, 003, 103–119), docx and pdf are pending
+      (render/002, 003, 103–120), docx and pdf are pending
 - [ ] `convert` locates render-stage diagnostics through the same `locate` renumbering as `lint`
 - [ ] Real-viewer verification in CI (test only, D4): OOXML schema validation + LibreOffice → PNG visual diffs.
       Done by hand on 2026-10-31 in PowerPoint and Excel for Mac: every pptx and xlsx render fixture

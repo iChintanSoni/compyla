@@ -11,6 +11,7 @@ use std::collections::{BTreeMap, HashMap};
 use compyla_core::ir::Run;
 use compyla_core::validate::xlsx::{Cell, CellValue, Link, Role, Workbook, builtin_format};
 use compyla_ooxml::package::{self, HYPERLINK, Package, Properties, Relationships};
+use compyla_ooxml::theme::Theme;
 use compyla_ooxml::xml::Writer;
 
 const MAIN: &str = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
@@ -24,15 +25,24 @@ const STYLES_TYPE: &str = "application/vnd.openxmlformats-officedocument.spreads
 const STRINGS_TYPE: &str =
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml";
 const TABLE_TYPE: &str = "application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml";
+const THEME_TYPE: &str = "application/vnd.openxmlformats-officedocument.theme+xml";
 
 /// The header row's fill in the house style (§9.2).
 const HEADER_FILL: &str = "FFE8ECF3";
 /// The color of a hyperlink's text outside an Excel table.
 const LINK_COLOR: &str = "FF0563C1";
+/// With a theme (§9.2): its hyperlink color, and its first accent at 80% lighter for the header
+/// fill (Excel's "Accent 1, Lighter 80%").
+const THEME_LINK: &str = "10";
+const THEME_ACCENT1: &str = "4";
+const LIGHTER_80: &str = "0.79998168889431442";
 
 /// Renders `workbook` as xlsx bytes, with the document properties from `meta` (C44).
-pub fn render(workbook: &Workbook, properties: &Properties) -> Vec<u8> {
-    let mut styles = Styles::default();
+pub fn render(workbook: &Workbook, properties: &Properties, theme: Option<&Theme>) -> Vec<u8> {
+    let mut styles = Styles {
+        theme: theme.cloned(),
+        ..Styles::default()
+    };
     let mut strings = Strings::default();
     let mut package = Package::new();
     package::add_package_parts(&mut package, "xl/workbook.xml", properties);
@@ -65,7 +75,7 @@ pub fn render(workbook: &Workbook, properties: &Properties) -> Vec<u8> {
                     address(range.first_column, range.header_row),
                     address(last_column, range.last_row)
                 );
-                let xml = table_xml(table_number, excel, &reference);
+                let xml = table_xml(table_number, excel, &reference, theme);
                 table_parts.push((
                     format!("xl/tables/table{table_number}.xml"),
                     TABLE_TYPE,
@@ -90,6 +100,14 @@ pub fn render(workbook: &Workbook, properties: &Properties) -> Vec<u8> {
         "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings",
         "sharedStrings.xml",
     );
+    // A template's theme tokens (§9.2), as the workbook's own theme.
+    if let Some(theme) = theme {
+        workbook_rels.add(
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme",
+            "theme/theme1.xml",
+        );
+        package.add("xl/theme/theme1.xml", THEME_TYPE, theme.to_xml());
+    }
 
     package.add(
         "xl/workbook.xml",
@@ -98,7 +116,7 @@ pub fn render(workbook: &Workbook, properties: &Properties) -> Vec<u8> {
     );
     package.add_relationships("xl/workbook.xml", &workbook_rels);
     package.add("xl/styles.xml", STYLES_TYPE, styles.to_xml());
-    package.add("xl/sharedStrings.xml", STRINGS_TYPE, strings.to_xml());
+    package.add("xl/sharedStrings.xml", STRINGS_TYPE, strings.to_xml(theme));
     for (name, content_type, data) in sheet_parts {
         package.add(name, content_type, data);
     }
@@ -210,7 +228,7 @@ fn worksheet(
             xml.open("row", &[("r", &row.to_string())]);
             current_row = Some(row);
         }
-        let key = StyleKey::of(cell, in_table);
+        let key = StyleKey::of(cell, in_table, styles.theme.is_some());
         let style = styles.index(&key);
         let reference = address(column, row);
         let style = style.to_string();
@@ -341,7 +359,18 @@ fn table_xml(
     number: usize,
     excel: &compyla_core::validate::xlsx::ExcelTable,
     reference: &str,
+    theme: Option<&Theme>,
 ) -> Vec<u8> {
+    use compyla_core::validate::xlsx::TableStyle;
+    use compyla_ooxml::theme::{ACCENT1, LT1, READABLE};
+    // A striped table's header is the theme's light color on its first accent: where that is
+    // hard to read, its dark color is the header instead (§9.6).
+    let style = match (excel.style, theme) {
+        (TableStyle::Striped, Some(theme)) if theme.contrast(LT1, ACCENT1) < READABLE => {
+            "TableStyleMedium1"
+        }
+        (style, _) => style.excel_name(),
+    };
     let mut xml = Writer::new();
     let id = number.to_string();
     xml.open(
@@ -372,7 +401,7 @@ fn table_xml(
     xml.empty(
         "tableStyleInfo",
         &[
-            ("name", excel.style.excel_name()),
+            ("name", style),
             ("showFirstColumn", "0"),
             ("showLastColumn", "0"),
             ("showRowStripes", "1"),
@@ -405,6 +434,8 @@ struct Font {
     italic: bool,
     strike: bool,
     link: LinkMark,
+    /// The theme's heading font, for a range title (§9.2); only with a theme.
+    heading: bool,
 }
 
 /// How a hyperlink's text is marked (§9.5): underlined in the link color, or, in an Excel table,
@@ -427,8 +458,9 @@ struct StyleKey {
 impl StyleKey {
     /// The house style (§9.2): a bold title, an italic note, and a bold header row on a light fill,
     /// except in an Excel table, whose style formats its header. `in_table`: the cell is in an
-    /// Excel table's range.
-    fn of(cell: &Cell, in_table: bool) -> StyleKey {
+    /// Excel table's range; `themed`: the workbook has a template's theme, whose heading font range
+    /// titles take.
+    fn of(cell: &Cell, in_table: bool, themed: bool) -> StyleKey {
         let house_header = cell.role == Role::Header;
         let wrap = matches!(&cell.value, CellValue::Text(runs) if runs.iter().any(|r| r.text.contains('\n')));
         StyleKey {
@@ -442,6 +474,7 @@ impl StyleKey {
                     (Some(_), false) => LinkMark::Colored,
                     (Some(_), true) => LinkMark::Underlined,
                 },
+                heading: themed && cell.role == Role::Title,
             },
             header_fill: house_header,
             wrap,
@@ -450,6 +483,8 @@ impl StyleKey {
 }
 
 struct Styles {
+    /// A template's theme tokens (§9.2), which fonts and fills refer to.
+    theme: Option<Theme>,
     keys: Vec<StyleKey>,
     by_key: HashMap<StyleKey, usize>,
     fonts: Vec<Font>,
@@ -467,11 +502,13 @@ impl Default for Styles {
                 italic: false,
                 strike: false,
                 link: LinkMark::None,
+                heading: false,
             },
             header_fill: false,
             wrap: false,
         };
         let mut styles = Styles {
+            theme: None,
             keys: Vec::new(),
             by_key: HashMap::new(),
             fonts: Vec::new(),
@@ -540,10 +577,14 @@ impl Styles {
             }
             xml.empty("sz", &[("val", "11")]);
             if font.link == LinkMark::Colored {
-                xml.empty("color", &[("rgb", LINK_COLOR)]);
+                xml.empty("color", &link_color(self.theme.as_ref()));
             }
-            xml.empty("name", &[("val", "Calibri")]);
+            let (name, scheme) = font_name(self.theme.as_ref(), font.heading);
+            xml.empty("name", &[("val", name)]);
             xml.empty("family", &[("val", "2")]);
+            if let Some(scheme) = scheme {
+                xml.empty("scheme", &[("val", scheme)]);
+            }
             xml.close("font");
         }
         xml.close("fonts");
@@ -555,7 +596,10 @@ impl Styles {
         }
         xml.open("fill", &[]);
         xml.open("patternFill", &[("patternType", "solid")]);
-        xml.empty("fgColor", &[("rgb", HEADER_FILL)]);
+        match self.theme {
+            Some(_) => xml.empty("fgColor", &[("theme", THEME_ACCENT1), ("tint", LIGHTER_80)]),
+            None => xml.empty("fgColor", &[("rgb", HEADER_FILL)]),
+        }
         xml.empty("bgColor", &[("indexed", "64")]);
         xml.close("patternFill");
         xml.close("fill");
@@ -620,13 +664,32 @@ impl Styles {
     }
 }
 
+/// A link's color: the theme's hyperlink color where it reads on the light color, else the house
+/// one.
+fn link_color(theme: Option<&Theme>) -> Vec<(&'static str, &'static str)> {
+    use compyla_ooxml::theme::{HLINK, LT1, READABLE};
+    match theme {
+        Some(theme) if theme.contrast(HLINK, LT1) >= READABLE => vec![("theme", THEME_LINK)],
+        _ => vec![("rgb", LINK_COLOR)],
+    }
+}
+
+/// A font's typeface and theme scheme: the theme's heading or body font, else Calibri.
+fn font_name(theme: Option<&Theme>, heading: bool) -> (&str, Option<&'static str>) {
+    match theme {
+        Some(theme) if heading => (&theme.major.latin, Some("major")),
+        Some(theme) => (&theme.minor.latin, Some("minor")),
+        None => ("Calibri", None),
+    }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Shared strings: one entry per distinct text. Rich text keeps bold, italic and strike (§9.5); since
 // a run's properties replace the cell's font, every run of a rich string carries the cell's font
 // too (a bold title, an italic note, a link's underline and color).
 
-/// A run as written: its text, then bold, italic, strike and link styling.
-type RichRun = (String, bool, bool, bool, LinkMark);
+/// A run as written: its text, then bold, italic, strike, link styling and the heading font.
+type RichRun = (String, bool, bool, bool, LinkMark, bool);
 
 #[derive(Default)]
 struct Strings {
@@ -648,15 +711,23 @@ impl Strings {
                     run.italic || cell.italic,
                     run.strike || cell.strike,
                     cell.link,
+                    cell.heading,
                 )
             } else {
-                (false, false, false, LinkMark::None)
+                (false, false, false, LinkMark::None, false)
             };
             match rich.last_mut() {
-                Some(last) if (last.1, last.2, last.3, last.4) == marks => {
+                Some(last) if (last.1, last.2, last.3, last.4, last.5) == marks => {
                     last.0.push_str(&run.text);
                 }
-                _ => rich.push((run.text.clone(), marks.0, marks.1, marks.2, marks.3)),
+                _ => rich.push((
+                    run.text.clone(),
+                    marks.0,
+                    marks.1,
+                    marks.2,
+                    marks.3,
+                    marks.4,
+                )),
             }
         }
         if let Some(&index) = self.by_text.get(&rich) {
@@ -667,7 +738,7 @@ impl Strings {
         self.items.len() - 1
     }
 
-    fn to_xml(&self) -> Vec<u8> {
+    fn to_xml(&self, theme: Option<&Theme>) -> Vec<u8> {
         let mut xml = Writer::new();
         let (count, unique) = (self.references.to_string(), self.items.len().to_string());
         xml.open(
@@ -678,15 +749,16 @@ impl Strings {
             xml.open("si", &[]);
             if item
                 .iter()
-                .all(|&(_, b, i, s, l)| !(b || i || s || l != LinkMark::None))
+                .all(|&(_, b, i, s, l, _)| !(b || i || s || l != LinkMark::None))
             {
                 let text: String = item.iter().map(|(t, ..)| t.as_str()).collect();
                 text_element(&mut xml, &text);
             } else {
-                for (text, bold, italic, strike, link) in item {
+                for (text, bold, italic, strike, link, heading) in item {
+                    let (name, scheme) = font_name(theme, *heading);
                     xml.open("r", &[]);
                     xml.open("rPr", &[]);
-                    xml.empty("rFont", &[("val", "Calibri")]);
+                    xml.empty("rFont", &[("val", name)]);
                     if *bold {
                         xml.empty("b", &[]);
                     }
@@ -697,11 +769,14 @@ impl Strings {
                         xml.empty("strike", &[]);
                     }
                     if *link == LinkMark::Colored {
-                        xml.empty("color", &[("rgb", LINK_COLOR)]);
+                        xml.empty("color", &link_color(theme));
                     }
                     xml.empty("sz", &[("val", "11")]);
                     if *link != LinkMark::None {
                         xml.empty("u", &[]);
+                    }
+                    if let Some(scheme) = scheme {
+                        xml.empty("scheme", &[("val", scheme)]);
                     }
                     xml.close("rPr");
                     text_element(&mut xml, text);

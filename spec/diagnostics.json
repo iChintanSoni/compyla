@@ -668,7 +668,7 @@
       "since": "0.1",
       "status": "active",
       "spec": "§9.7, §10.4",
-      "summary": "A template was supplied for an xlsx document and isn't used: an .xlsx/.xltx one never is, and a docx or pptx one's theme tokens aren't applied yet."
+      "summary": "An .xlsx/.xltx template was supplied for an xlsx document; it isn't used (a workbook takes theme tokens from a docx or pptx template)."
     },
     {
       "code": "content_overflow",

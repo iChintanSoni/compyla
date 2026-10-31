@@ -74,7 +74,7 @@ pub fn warnings(template: &Template) -> Result<Vec<Diagnostic>, Invalid> {
 }
 
 /// The template's theme: the main part's, or a pptx's first slide master's.
-fn theme(template: &Template) -> Result<Option<Element>, Invalid> {
+pub(crate) fn theme(template: &Template) -> Result<Option<Element>, Invalid> {
     let part = match template.related(&template.main, "theme")? {
         Some(part) => Some(part),
         None => match masters(template)?.first() {
@@ -166,22 +166,12 @@ fn theme_json(theme: &Element, fonts: &mut Fonts) -> Value {
     }
     let mut colors = Map::new();
     if let Some(scheme) = elements.and_then(|e| e.child(MAIN_A, "clrScheme")) {
-        const SLOTS: [&str; 12] = [
-            "dk1", "lt1", "dk2", "lt2", "accent1", "accent2", "accent3", "accent4", "accent5",
-            "accent6", "hlink", "folHlink",
-        ];
         for slot in &scheme.children {
-            if slot.namespace != MAIN_A || !SLOTS.contains(&slot.name.as_str()) {
+            if slot.namespace != MAIN_A || !crate::theme::SLOTS.contains(&slot.name.as_str()) {
                 continue;
             }
-            let color = slot
-                .child(MAIN_A, "srgbClr")
-                .and_then(|c| c.attr("val"))
-                .or_else(|| slot.child(MAIN_A, "sysClr").and_then(|c| c.attr("lastClr")));
-            if let Some(color) =
-                color.filter(|c| c.len() == 6 && c.bytes().all(|b| b.is_ascii_hexdigit()))
-            {
-                colors.insert(slot.name.clone(), color.to_ascii_uppercase().into());
+            if let Some(color) = crate::theme::color(slot) {
+                colors.insert(slot.name.clone(), color.into());
             }
         }
     }

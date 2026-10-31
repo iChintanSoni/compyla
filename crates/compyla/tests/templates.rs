@@ -124,20 +124,56 @@ fn aliases_wait_for_a_template_that_was_asked_for() {
 }
 
 #[test]
-fn a_workbook_says_its_template_isnt_used() {
-    // A pptx template's theme tokens aren't applied to workbooks yet; a docx one without styles
-    // doesn't earn `no_styles_xml`, which matters to docx only.
+fn a_workbook_takes_a_templates_theme() {
+    let source = "# S\n\n## Title\n\n| A |\n|---|\n| 1 |\n\n::: table\n| B |\n|---|\n| 2 |\n:::\n";
+    let xlsx = |template: &[u8]| compyla::Options {
+        format: Some(compyla::Format::Xlsx),
+        template: Some(template.to_vec()),
+        ..Default::default()
+    };
+    // A pptx template's theme becomes the workbook's: its fonts and colors (§9.2).
+    let result = compyla::convert(source, &xlsx(BRAND), &compyla::no_assets).unwrap();
+    assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+    let parts: std::collections::HashMap<String, Vec<u8>> =
+        compyla_ooxml::read::entries(&result.bytes.unwrap())
+            .unwrap()
+            .into_iter()
+            .collect();
+    let theme = String::from_utf8(parts["xl/theme/theme1.xml"].clone()).unwrap();
+    assert!(
+        theme.contains(r#"<a:accent1><a:srgbClr val="2F5BEA"/></a:accent1>"#),
+        "{theme}"
+    );
+    assert!(
+        theme.contains(r#"<a:minorFont><a:latin typeface="Brand Sans"/>"#),
+        "{theme}"
+    );
+    let styles = String::from_utf8(parts["xl/styles.xml"].clone()).unwrap();
+    assert!(
+        styles.contains(r#"<name val="Brand Sans"/><family val="2"/><scheme val="minor"/>"#),
+        "{styles}"
+    );
+    assert!(
+        styles.contains(
+            r#"<b/><sz val="11"/><name val="Brand Display"/><family val="2"/><scheme val="major"/>"#
+        ),
+        "{styles}"
+    );
+    // White reads on this accent: the striped table keeps its accent header.
+    let table = String::from_utf8(parts["xl/tables/table1.xml"].clone()).unwrap();
+    assert!(table.contains(r#"name="TableStyleMedium2""#), "{table}");
+
+    // A docx template without a theme leaves the house style, and says so; `no_styles_xml` is for
+    // docx documents only.
     let docx =
         include_bytes!("../../../spec/conformance/lint/143-docx-template-without-theme/brand.docx");
-    for template in [BRAND, &docx[..]] {
-        let options = compyla::Options {
-            format: Some(compyla::Format::Xlsx),
-            template: Some(template.to_vec()),
-            ..Default::default()
-        };
-        assert_eq!(
-            codes("# S\n\n| A |\n|---|\n| 1 |\n", &options),
-            ["xlsx_template_unsupported"]
-        );
-    }
+    let result = compyla::convert(source, &xlsx(docx), &compyla::no_assets).unwrap();
+    let codes: Vec<&str> = result.diagnostics.iter().map(|d| d.code.as_str()).collect();
+    assert_eq!(codes, ["no_theme"]);
+    let parts: Vec<String> = compyla_ooxml::read::entries(&result.bytes.unwrap())
+        .unwrap()
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+    assert!(!parts.iter().any(|p| p.contains("theme")), "{parts:?}");
 }
