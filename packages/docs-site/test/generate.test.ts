@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { generateSite } from "../src/generate.js";
 import { PAGES } from "../src/nav.js";
 
-describe("generateSite", () => {
+// Each test regenerates the whole site from docs/*.md, including the ~80 KB markdown spec, which
+// takes several seconds on a CI runner: well past vitest's 5 s default.
+describe("generateSite", { timeout: 30_000 }, () => {
   it("produces one output file per page at latest/{slug}/index.html", async () => {
     const { files } = await generateSite();
     for (const page of PAGES) {
