@@ -388,9 +388,12 @@ fn suffix(kind: &str) -> &str {
     kind.rsplit('/').next().unwrap_or_default()
 }
 
+/// Whether `name` is read as XML: by its name or content type, or by what it holds, since a layout
+/// is parsed as one whatever it is called. A part that doesn't decode as UTF-8 or UTF-16, or
+/// doesn't start with `<`, is data.
 fn is_xml(template: &Template, name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
-    lower.ends_with(".xml")
+    let declared = lower.ends_with(".xml")
         || lower.ends_with(".vml")
         || template.content_type(name).is_some_and(|t| {
             t.to_ascii_lowercase()
@@ -399,6 +402,13 @@ fn is_xml(template: &Template, name: &str) -> bool {
                 .unwrap_or("")
                 .trim()
                 .ends_with("xml")
+        });
+    declared
+        || template.part(name).is_some_and(|data| {
+            dom::utf8(data).is_ok_and(|text| {
+                std::str::from_utf8(&text).is_ok()
+                    && text.iter().find(|b| !b.is_ascii_whitespace()) == Some(&b'<')
+            })
         })
 }
 
@@ -1374,5 +1384,35 @@ mod tests {
     fn a_kept_part_that_isnt_well_formed_is_invalid() {
         let template = template(b"<p:sldLayout><a>quality control</b>", &[MASTER]);
         assert!(part(&template, LAYOUT).is_err());
+    }
+
+    #[test]
+    fn a_part_is_read_as_xml_by_what_it_holds() {
+        // A layout named and typed as binary data still holds an action.
+        let xml = layout(
+            &shape(
+                2,
+                r#"<a:hlinkClick r:id="" action="ppaction://macro?name=Evil"/>"#,
+            ),
+            "",
+        );
+        let mut template = template(xml.as_bytes(), &[MASTER]);
+        let bin = "ppt/slideLayouts/slideLayout1.bin";
+        template = {
+            let entries: Vec<(String, Vec<u8>)> = crate::read::entries(&crate::zip::write(
+                &[
+                    ("[Content_Types].xml".to_string(), br#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="bin" ContentType="application/vnd.openxmlformats-officedocument.presentationml.printerSettings"/><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/></Types>"#.to_vec()),
+                    ("_rels/.rels".to_string(), template.part("_rels/.rels").unwrap().to_vec()),
+                    ("ppt/presentation.xml".to_string(), template.part("ppt/presentation.xml").unwrap().to_vec()),
+                    (bin.to_string(), xml.clone().into_bytes()),
+                    ("ppt/slideLayouts/_rels/slideLayout1.bin.rels".to_string(), template.part("ppt/slideLayouts/_rels/slideLayout1.xml.rels").unwrap().to_vec()),
+                ],
+            ))
+            .unwrap();
+            Template::read(&crate::zip::write(&entries)).unwrap()
+        };
+        let part = part(&template, bin).unwrap();
+        assert_eq!(part.removed.len(), 1);
+        assert!(!text(&part.xml).contains("macro"));
     }
 }

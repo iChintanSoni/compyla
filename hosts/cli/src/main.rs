@@ -33,9 +33,21 @@ fn main() -> ExitCode {
     match run(&args) {
         Ok(code) => code,
         Err(message) => {
-            eprintln!("compyla: {}", printable(&message));
+            eprintln!("compyla: {}", error_text(&message));
             ExitCode::from(2)
         }
+    }
+}
+
+/// An error as printed: the usage text is the CLI's own and keeps its lines; whatever comes before
+/// it can quote an argument, a path or the input, and is escaped.
+fn error_text(message: &str) -> String {
+    match message.strip_suffix(USAGE) {
+        Some(before) => match before.trim_end_matches('\n') {
+            "" => USAGE.to_string(),
+            before => format!("{}\n\n{USAGE}", printable(before)),
+        },
+        None => printable(message),
     }
 }
 
@@ -341,6 +353,17 @@ mod tests {
             "{text}"
         );
         assert!(text.starts_with(r"a\u{1b}]0;title\u{7}"));
+    }
+
+    #[test]
+    fn usage_keeps_its_lines_and_what_it_follows_is_escaped() {
+        assert_eq!(error_text(USAGE), USAGE);
+        let unknown = error_text(&format!("unknown command `a\u{1b}[2J\nb`\n\n{USAGE}"));
+        assert_eq!(
+            unknown,
+            format!("unknown command `a\\u{{1b}}[2J\\u{{a}}b`\n\n{USAGE}")
+        );
+        assert_eq!(error_text("can't read x\u{9b}"), "can't read x\\u{9b}");
     }
 
     #[test]

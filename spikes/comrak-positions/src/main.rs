@@ -674,12 +674,17 @@ fn destination_allowed(url: &str) -> bool {
     let formatting = |c: char| {
         matches!(c, '\u{061C}' | '\u{200B}'..='\u{200F}' | '\u{2028}'..='\u{202E}' | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}')
     };
+    let hidden = |url: &str| url.starts_with(|c: char| c.is_whitespace() || formatting(c));
     let url = read(url);
-    if url.chars().any(char::is_control) || url.starts_with(|c: char| c.is_whitespace() || formatting(c)) {
+    if url.chars().any(char::is_control) || hidden(&url) {
         return false;
     }
     let path = url.split(['?', '#']).next().unwrap_or_default();
-    let decoded: String = read(&percent_decoded(path)).chars().filter(|c| !c.is_control()).collect();
+    let decoded = read(&percent_decoded(path));
+    if hidden(&decoded) {
+        return false;
+    }
+    let decoded: String = decoded.chars().filter(|c| !c.is_control()).collect();
     allowed(&url) && allowed(&decoded)
 }
 

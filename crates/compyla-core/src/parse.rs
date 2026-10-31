@@ -932,17 +932,19 @@ pub fn destination_allowed(url: &str) -> bool {
             .filter(|c| !matches!(c, '\t' | '\n' | '\r'))
             .collect()
     };
+    let hidden = |url: &str| {
+        url.starts_with(|c: char| c.is_whitespace() || crate::diagnostic::is_formatting(c))
+    };
     let url = read(url);
-    if url.chars().any(|c| c.is_control())
-        || url.starts_with(|c: char| c.is_whitespace() || crate::diagnostic::is_formatting(c))
-    {
+    if url.chars().any(|c| c.is_control()) || hidden(&url) {
         return false;
     }
     let path = url.split(['?', '#']).next().unwrap_or_default();
-    let decoded: String = read(&crate::validate::percent_decode(path))
-        .chars()
-        .filter(|c| !c.is_control())
-        .collect();
+    let decoded = read(&crate::validate::percent_decode(path));
+    if hidden(&decoded) {
+        return false;
+    }
+    let decoded: String = decoded.chars().filter(|c| !c.is_control()).collect();
     allowed(&url) && allowed(&decoded)
 }
 
