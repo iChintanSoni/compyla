@@ -230,6 +230,7 @@ mod tests {
             document: &parsed.document,
             sidecar: &parsed.sidecar,
             assets: &|_| Asset::Exists,
+            template: None,
         };
         let mut sink = Sink::new();
         crate::validate::validate(&input, Format::Xlsx, &mut sink);

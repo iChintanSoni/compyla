@@ -1,0 +1,10 @@
+{
+  "description": "A template without a theme part is no_theme, and a docx one without a styles part no_styles_xml; both warnings, wherever the template is used (§10.4).",
+  "spec": [
+    "§10.4",
+    "C56"
+  ],
+  "oracle": "none",
+  "format": "docx",
+  "template": "brand.docx"
+}

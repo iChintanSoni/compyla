@@ -1,0 +1,11 @@
+{
+  "description": "A deck rendered into a supplied template, named by `template` in the frontmatter (§8.5, §10.4): its own layout by name, a house layout bound by type to its localized layout, and one it lacks bound to its Title and Content layout, whose second column shares the one content placeholder instead of overlapping it. The template's masters, layouts, theme and embedded fonts are kept.",
+  "spec": [
+    "§8.5",
+    "§8.8",
+    "§10.4",
+    "C56"
+  ],
+  "oracle": "none",
+  "format": "pptx"
+}

@@ -241,6 +241,16 @@ def main():
     docx(inspect / "114-docx-large-body/template.docx", main_type="document", document_body=body,
          extra=[("word/media/padding.bin", "application/octet-stream", bytes(padding))])
 
+    # Supplied templates for lint and convert (§8.5, §10.4): a localized layout, bound by name or
+    # by type, and house layouts the template lacks; then templates of the wrong kind, and one
+    # without a theme or styles.
+    pptx(ROOT / "lint/139-pptx-template-binding/brand.potx", main_type="template")
+    pptx(ROOT / "render/119-pptx-supplied-template/brand.potx", main_type="template")
+    docx(ROOT / "lint/141-pptx-template-of-another-kind/brand.dotx")
+    xltx(ROOT / "lint/142-xlsx-workbook-template/brand.xltx")
+    docx(ROOT / "lint/143-docx-template-without-theme/brand.docx", styles=False, theme_part=False,
+         document_body="", main_type="document")
+
 
 if __name__ == "__main__":
     main()

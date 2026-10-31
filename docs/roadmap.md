@@ -138,10 +138,11 @@ Goal: output that is faithful to a real corporate template, and identical bytes 
       their layout's geometry, text, tables, images (`contain`/`cover`, upright by EXIF
       orientation), links to slides, speaker notes, content and titles a layout has no placeholder
       for, and the template's unreachable parts and show settings removed (§8.8, C51–C53)
-- [ ] pptx with a supplied template: the `template` option and resolver (§10.2, §10.3), layout
-      binding by alias, name and type with `layout_not_in_template` (§8.5), and a notes master for
-      templates without one. A layout bound by fallback can have fewer content placeholders than
-      the house layout's slots: those slots' content must not be drawn over another slot
+- [x] pptx with a supplied template: the `template` option and resolver (§10.2, §10.3; the CLI's
+      `--template`, `--layout-alias` and `meta.template` against the input's directory), layout
+      binding by alias, name and type with `layout_not_in_template` (§8.5), the template's own
+      layouts, and slots past a bound layout's placeholders sharing its last (C56)
+- [ ] A notes master for supplied templates without one: their speaker notes are dropped today
 - [ ] docx template-first, with a bundled house `.dotx`; headers, footers and page numbers come from the template
 - [x] xlsx per markdown-spec.md §9 (`compyla-xlsx`): placement, typed values, parsed and allowlisted
       formulas (with `_xlfn.` prefixes), Excel tables, sheet-name repairs, links and the house style

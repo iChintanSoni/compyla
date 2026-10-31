@@ -101,6 +101,27 @@ fn assets_for(fixture: &Path, case: &Value) -> impl Fn(&str) -> compyla::Asset {
     }
 }
 
+/// The case's options: format, strictness, and the `template` option, a file in the fixture.
+fn options_for(fixture: &Path, case: &Value) -> compyla::Options {
+    compyla::Options {
+        format: case["format"].as_str().and_then(compyla::Format::parse),
+        strict: case["strict"].as_bool().unwrap_or(false),
+        template: case["template"]
+            .as_str()
+            .map(|file| fs::read(fixture.join(file)).unwrap()),
+        layout_aliases: Vec::new(),
+    }
+}
+
+/// A template resolver for `meta.template`: the fixture's own files, by name.
+fn templates_for(fixture: &Path) -> impl Fn(&str) -> Option<Vec<u8>> {
+    let dir = fixture.to_path_buf();
+    move |reference: &str| {
+        let plain = !reference.contains(['/', '\\']) && reference != ".." && reference != ".";
+        plain.then(|| fs::read(dir.join(reference)).ok()).flatten()
+    }
+}
+
 #[test]
 fn lint_suite() {
     let fixtures = suite("lint");
@@ -115,11 +136,13 @@ fn lint_suite() {
         let case = read_json(&fixture.join("case.json"));
         let input = fs::read_to_string(fixture.join("input.md")).unwrap();
         let expected = read_json(&fixture.join("expected.json"));
-        let options = compyla::Options {
-            format: compyla::Format::parse(case["format"].as_str().unwrap()),
-            strict: case["strict"].as_bool().unwrap_or(false),
+        let options = options_for(&fixture, &case);
+        let (assets, templates) = (assets_for(&fixture, &case), templates_for(&fixture));
+        let resolvers = compyla::Resolvers {
+            assets: &assets,
+            templates: Some(&templates),
         };
-        let diagnostics = compyla::lint(&input, &options, &assets_for(&fixture, &case)).unwrap();
+        let diagnostics = compyla::lint(&input, &options, resolvers).unwrap();
         if !diagnostics_match(&diagnostics, &expected["diagnostics"]) {
             failures.push(format!(
                 "{name}: got [{}], want {}",
@@ -181,21 +204,22 @@ fn lint_ir_agrees_with_lint() {
         let name = fixture.file_name().unwrap().to_string_lossy().to_string();
         let case = read_json(&fixture.join("case.json"));
         let input = fs::read_to_string(fixture.join("input.md")).unwrap();
-        let options = compyla::Options {
-            format: compyla::Format::parse(case["format"].as_str().unwrap()),
-            strict: case["strict"].as_bool().unwrap_or(false),
+        let options = options_for(&fixture, &case);
+        let (assets, templates) = (assets_for(&fixture, &case), templates_for(&fixture));
+        let resolvers = compyla::Resolvers {
+            assets: &assets,
+            templates: Some(&templates),
         };
-        let assets = assets_for(&fixture, &case);
         let mut ir = serde_json::to_value(compyla::parse(&input).ir).unwrap();
         strip_positions(&mut ir);
 
-        let linted = compyla::lint(&input, &options, &assets).unwrap();
+        let linted = compyla::lint(&input, &options, resolvers).unwrap();
         // A limit stops processing, and the parsed IR lacks what the limit cut: not the same input.
         if linted.iter().any(|d| d.code == "limit_exceeded") {
             continue;
         }
         let from_markdown = profile(linted);
-        let from_ir = profile(compyla::lint_ir(&ir.to_string(), &options, &assets).unwrap());
+        let from_ir = profile(compyla::lint_ir(&ir.to_string(), &options, resolvers).unwrap());
         let codes = |diagnostics: &[compyla::Diagnostic]| {
             let mut codes: Vec<String> = diagnostics.iter().map(|d| d.code.clone()).collect();
             codes.sort();
@@ -288,13 +312,14 @@ fn render_suite() {
         }
         let input = fs::read_to_string(fixture.join("input.md")).unwrap();
         let expected = read_json(&fixture.join("expected.json"));
-        let options = compyla::Options {
-            format: Some(format),
-            strict: case["strict"].as_bool().unwrap_or(false),
+        let options = options_for(&fixture, &case);
+        let (assets, templates) = (assets_for(&fixture, &case), templates_for(&fixture));
+        let resolvers = compyla::Resolvers {
+            assets: &assets,
+            templates: Some(&templates),
         };
-        let assets = assets_for(&fixture, &case);
-        let first = compyla::convert(&input, &options, &assets).unwrap();
-        let second = compyla::convert(&input, &options, &assets).unwrap();
+        let first = compyla::convert(&input, &options, resolvers).unwrap();
+        let second = compyla::convert(&input, &options, resolvers).unwrap();
         if !diagnostics_match(&first.diagnostics, &expected["diagnostics"]) {
             failures.push(format!(
                 "{name}: diagnostics [{}], want {}",

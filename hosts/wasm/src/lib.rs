@@ -27,7 +27,11 @@ pub fn lint(source: &str, format: &str, strict: bool) -> String {
             }
         }
     };
-    let options = compyla::Options { format, strict };
+    let options = compyla::Options {
+        format,
+        strict,
+        ..Default::default()
+    };
     match compyla::lint(source, &options, &compyla::no_assets) {
         Ok(diagnostics) => serde_json::json!({ "diagnostics": diagnostics }).to_string(),
         Err(e) => error(e.code, &e.message),
@@ -51,7 +55,11 @@ pub fn lint_ir(json: &str, format: &str, strict: bool) -> String {
     };
     match compyla::lint_ir(
         json,
-        &compyla::Options { format, strict },
+        &compyla::Options {
+            format,
+            strict,
+            ..Default::default()
+        },
         &compyla::no_assets,
     ) {
         Ok(diagnostics) => serde_json::json!({ "diagnostics": diagnostics }).to_string(),

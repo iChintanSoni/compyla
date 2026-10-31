@@ -1,0 +1,10 @@
+{
+  "diagnostics": [
+    {
+      "code": "template_unresolved",
+      "severity": "error",
+      "line": 3,
+      "path": "/meta/template"
+    }
+  ]
+}

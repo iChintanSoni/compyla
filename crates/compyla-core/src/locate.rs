@@ -271,6 +271,7 @@ mod tests {
             document: &document,
             sidecar: &sidecar,
             assets: &no_assets,
+            template: None,
         };
         let mut out = crate::diagnostic::Sink::located(locator);
         validate(&input, format, &mut out);

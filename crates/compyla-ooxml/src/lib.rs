@@ -4,6 +4,7 @@
 
 pub mod dom;
 pub mod inspect;
+pub mod layouts;
 pub mod package;
 pub mod read;
 pub mod template;

@@ -54,6 +54,9 @@ pub struct Input<'a> {
     pub document: &'a Document,
     pub sidecar: &'a Sidecar,
     pub assets: &'a dyn Fn(&str) -> Asset,
+    /// A supplied pptx template's layouts, for layout binding (§8.5); `None` with the house
+    /// template.
+    pub template: Option<&'a pptx::layout::TemplateLayouts>,
 }
 
 /// What a profile composed (architecture.md D15): the model its renderer writes.
@@ -162,6 +165,55 @@ pub fn at(diagnostic: Diagnostic, line: Option<usize>) -> Diagnostic {
     match line {
         Some(line) => diagnostic.at_line(line),
         None => diagnostic,
+    }
+}
+
+/// Unicode simple case folding, for comparing names case-insensitively. Per character: the
+/// single-character lowercase mapping, plus the folds that differ from it (CaseFolding.txt, status
+/// C and S).
+pub fn fold(text: &str) -> String {
+    text.chars().map(fold_char).collect()
+}
+
+fn fold_char(c: char) -> char {
+    match c {
+        'ς' => 'σ',
+        'ϐ' => 'β',
+        'ϑ' => 'θ',
+        'ϕ' => 'φ',
+        'ϖ' => 'π',
+        'ϰ' => 'κ',
+        'ϱ' => 'ρ',
+        'ϵ' => 'ε',
+        'ſ' => 's',
+        'µ' => 'μ',
+        '\u{345}' | '\u{1FBE}' => 'ι',
+        'ẛ' => 'ṡ',
+        // Cyrillic variant letters, which are their own lowercase.
+        '\u{1C80}' => 'в',
+        '\u{1C81}' => 'д',
+        '\u{1C82}' => 'о',
+        '\u{1C83}' => 'с',
+        '\u{1C84}' | '\u{1C85}' => 'т',
+        '\u{1C86}' => 'ъ',
+        '\u{1C87}' => 'ѣ',
+        '\u{1C88}' => 'ꙋ',
+        // Status S since Unicode 15.1.
+        '\u{1FD3}' => '\u{390}',
+        '\u{1FE3}' => '\u{3B0}',
+        '\u{FB05}' => '\u{FB06}',
+        // No simple folding: İ (only a full one), and uppercase Cherokee, which lowercase Cherokee
+        // folds to.
+        '\u{130}' | '\u{13A0}'..='\u{13F5}' => c,
+        '\u{13F8}'..='\u{13FD}' => char::from_u32(c as u32 - 8).unwrap_or(c),
+        '\u{AB70}'..='\u{ABBF}' => char::from_u32(c as u32 - 0xAB70 + 0x13A0).unwrap_or(c),
+        _ => {
+            let mut lower = c.to_lowercase();
+            match (lower.next(), lower.next()) {
+                (Some(l), None) => l,
+                _ => c,
+            }
+        }
     }
 }
 

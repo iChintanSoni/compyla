@@ -38,6 +38,33 @@ pub fn parse(source: &str) -> ParseResult {
 pub struct Options {
     pub format: Option<Format>,
     pub strict: bool,
+    /// A template package; otherwise `meta.template` through the template resolver, else the
+    /// house template.
+    pub template: Option<Vec<u8>>,
+    /// pptx layout names → the supplied template's layout each binds to (§8.5).
+    pub layout_aliases: Vec<(String, String)>,
+}
+
+/// The host's resolvers (markdown-spec.md §10.3). An asset resolver alone converts into one.
+#[derive(Clone, Copy)]
+pub struct Resolvers<'a> {
+    /// Image sources; hosts without one use [`no_assets`].
+    pub assets: &'a dyn Fn(&str) -> Asset,
+    /// `meta.template` references; `None` when the host has no template resolver.
+    pub templates: Option<&'a TemplateResolver<'a>>,
+}
+
+/// A template resolver (§10.3): a `meta.template` reference's package bytes, or `None` when not
+/// found.
+pub type TemplateResolver<'a> = dyn Fn(&str) -> Option<Vec<u8>> + 'a;
+
+impl<'a, F: Fn(&str) -> Asset> From<&'a F> for Resolvers<'a> {
+    fn from(assets: &'a F) -> Self {
+        Resolvers {
+            assets,
+            templates: None,
+        }
+    }
 }
 
 /// A failure of the call itself, not of the document (markdown-spec.md §10.6).
@@ -62,45 +89,55 @@ pub struct ConvertResult {
 
 /// `lint`: parse and validate diagnostics for markdown, in §11.2 order. `assets` is the host's asset
 /// resolver (§10.3); hosts without one pass [`no_assets`].
-pub fn lint(
+pub fn lint<'a>(
     source: &str,
     options: &Options,
-    assets: &dyn Fn(&str) -> Asset,
+    resolvers: impl Into<Resolvers<'a>>,
 ) -> Result<Vec<Diagnostic>, OperationError> {
-    Ok(check(from_markdown(source), options, assets, false)?.diagnostics)
+    Ok(check(from_markdown(source), options, resolvers.into(), false)?.diagnostics)
 }
 
 /// `lint` for IR input (§10.7). Its diagnostics carry IR paths, and lines only where the IR has
 /// positions.
-pub fn lint_ir(
+pub fn lint_ir<'a>(
     json: &str,
     options: &Options,
-    assets: &dyn Fn(&str) -> Asset,
+    resolvers: impl Into<Resolvers<'a>>,
 ) -> Result<Vec<Diagnostic>, OperationError> {
-    Ok(check(from_ir(json)?, options, assets, false)?.diagnostics)
+    Ok(check(from_ir(json)?, options, resolvers.into(), false)?.diagnostics)
 }
 
 /// `convert`: markdown to the output format, with diagnostics from every stage.
-pub fn convert(
+pub fn convert<'a>(
     source: &str,
     options: &Options,
-    assets: &dyn Fn(&str) -> Asset,
+    resolvers: impl Into<Resolvers<'a>>,
 ) -> Result<ConvertResult, OperationError> {
-    let assets = converting(assets);
+    let resolvers = resolvers.into();
+    let assets = converting(resolvers.assets);
+    let resolvers = Resolvers {
+        assets: &assets,
+        ..resolvers
+    };
     render(
-        check(from_markdown(source), options, &assets, true)?,
+        check(from_markdown(source), options, resolvers, true)?,
         &assets,
     )
 }
 
 /// `convert` for IR input (§10.7).
-pub fn convert_ir(
+pub fn convert_ir<'a>(
     json: &str,
     options: &Options,
-    assets: &dyn Fn(&str) -> Asset,
+    resolvers: impl Into<Resolvers<'a>>,
 ) -> Result<ConvertResult, OperationError> {
-    let assets = converting(assets);
-    render(check(from_ir(json)?, options, &assets, true)?, &assets)
+    let resolvers = resolvers.into();
+    let assets = converting(resolvers.assets);
+    let resolvers = Resolvers {
+        assets: &assets,
+        ..resolvers
+    };
+    render(check(from_ir(json)?, options, resolvers, true)?, &assets)
 }
 
 /// The asset resolver as `convert` sees it (§10.3): an image that exists without bytes can't be
@@ -210,6 +247,9 @@ struct Checked {
     /// The composed model, its format and the document properties; absent when a limit stopped
     /// processing.
     composed: Option<(Composed, Format, Properties)>,
+    /// The supplied template, when one applies (§10.4); otherwise the house template is used.
+    #[cfg_attr(not(feature = "pptx"), allow(dead_code))]
+    template: Option<compyla_ooxml::template::Template>,
 }
 
 /// Document properties from `meta` only (C44): `title`, `author` (a list joined with `, `) and
@@ -226,7 +266,7 @@ struct Properties {
 fn check(
     source: Source,
     options: &Options,
-    assets: &dyn Fn(&str) -> Asset,
+    resolvers: Resolvers<'_>,
     rendering: bool,
 ) -> Result<Checked, OperationError> {
     let Source {
@@ -241,6 +281,7 @@ fn check(
             diagnostics,
             blocked: true,
             composed: None,
+            template: None,
         });
     }
     let format = resolve_format(options, &document)?;
@@ -254,12 +295,23 @@ fn check(
     let properties = properties(&document.meta);
     // Each diagnostic gets its node's IR path and original position (§10.7, §11.3).
     let (locator, sidecar) = compyla_core::locate::renumber(&mut document, &sidecar);
+    let mut out = Sink::located(locator);
+    let template = template(options, &document, &sidecar, resolvers, format, &mut out)?;
+    let layouts = match (&template, format) {
+        (Some(template), Format::Pptx) => Some(template_layouts(template, options)?),
+        _ if !options.layout_aliases.is_empty() => {
+            return Err(option_invalid(
+                "`layoutAliases` names a supplied pptx template's layouts, and there is none.",
+            ));
+        }
+        _ => None,
+    };
     let input = compyla_core::validate::Input {
         document: &document,
         sidecar: &sidecar,
-        assets,
+        assets: resolvers.assets,
+        template: layouts.as_ref(),
     };
-    let mut out = Sink::located(locator);
     let composed = compyla_core::validate::validate(&input, format, &mut out);
     let (validated, validate_blocking) = out.into_parts();
     diagnostics.extend(validated);
@@ -268,7 +320,149 @@ fn check(
         diagnostics,
         blocked: blocking.merge(validate_blocking).blocks(options.strict),
         composed: Some((composed, format, properties)),
+        // Only pptx renders into a supplied template so far; xlsx theme tokens are to come.
+        template: template.filter(|_| format == Format::Pptx),
     })
+}
+
+/// The template this call uses (§10.2–§10.4): the `template` option, else `meta.template` through
+/// the template resolver, else none (the house template). One that can't be resolved or read, or
+/// whose kind doesn't suit `format`, is an error and never silently the house style.
+fn template(
+    options: &Options,
+    document: &ir::Document,
+    sidecar: &compyla_core::Sidecar,
+    resolvers: Resolvers<'_>,
+    format: Format,
+    out: &mut Sink,
+) -> Result<Option<compyla_ooxml::template::Template>, OperationError> {
+    use compyla_ooxml::template::Kind;
+    let bytes = match (&options.template, document.meta.get("template")) {
+        (Some(bytes), _) => bytes.clone(),
+        (None, None) => return Ok(None),
+        (None, Some(reference)) => {
+            let resolved = reference
+                .as_str()
+                .zip(resolvers.templates)
+                .and_then(|(reference, resolve)| resolve(reference));
+            match resolved {
+                Some(bytes) => bytes,
+                None => {
+                    let mut diagnostic = Diagnostic::new(
+                        "template_unresolved",
+                        format!(
+                            "The template `{}` can't be found; nothing is rendered without it.",
+                            reference
+                                .as_str()
+                                .map_or_else(|| reference.to_string(), str::to_string)
+                        ),
+                    )
+                    .hint("Check the `template` path, or supply the template with the call.");
+                    if let Some(&line) = sidecar.meta_lines.get("template") {
+                        diagnostic = diagnostic.at_line(line);
+                    }
+                    out.push(diagnostic);
+                    return Ok(None);
+                }
+            }
+        }
+    };
+    let template = match compyla_ooxml::template::Template::read(&bytes) {
+        Ok(template) => template,
+        Err(why) => {
+            out.push(
+                Diagnostic::new("template_invalid", format!("The template {}.", why.0))
+                    .hint("Use a .docx, .dotx, .pptx or .potx file saved by Office, without macros or a password."),
+            );
+            return Ok(None);
+        }
+    };
+    // §10.4: the kinds each format accepts.
+    let accepted = match format {
+        Format::Docx => template.kind == Kind::Docx,
+        Format::Pdf => matches!(template.kind, Kind::Docx | Kind::Pptx),
+        Format::Pptx => template.kind == Kind::Pptx,
+        Format::Xlsx if template.kind == Kind::Xlsx => {
+            out.push(
+                Diagnostic::new(
+                    "xlsx_template_unsupported",
+                    "A workbook template isn't used; an xlsx document takes theme tokens from a docx or pptx template.",
+                )
+                .hint("Supply a .docx, .dotx, .pptx or .potx template, or none."),
+            );
+            return Ok(None);
+        }
+        Format::Xlsx => true,
+    };
+    if !accepted {
+        out.push(
+            Diagnostic::new(
+                "template_invalid",
+                format!(
+                    "The template is a {} package, which a {} document can't use.",
+                    template.kind.name(),
+                    format.name()
+                ),
+            )
+            .hint(match format {
+                Format::Docx => "Use a .docx or .dotx template.",
+                Format::Pdf => "Use a .docx, .dotx, .pptx or .potx template.",
+                _ => "Use a .pptx or .potx template.",
+            }),
+        );
+        return Ok(None);
+    }
+    match compyla_ooxml::inspect::warnings(&template) {
+        Ok(warnings) => out.extend(warnings),
+        Err(why) => {
+            out.push(Diagnostic::new(
+                "template_invalid",
+                format!("The template {}.", why.0),
+            ));
+            return Ok(None);
+        }
+    }
+    Ok(Some(template))
+}
+
+/// A pptx template's layouts as the core binds them (§8.5), with `layoutAliases` resolved to them.
+fn template_layouts(
+    template: &compyla_ooxml::template::Template,
+    options: &Options,
+) -> Result<compyla_core::validate::pptx::layout::TemplateLayouts, OperationError> {
+    use compyla_core::validate::pptx::layout::{TemplateLayout, TemplateLayouts};
+    let fold = compyla_core::validate::fold;
+    // An unreadable layout list leaves binding to the house set; rendering reports the template.
+    let layouts: Vec<TemplateLayout> = compyla_ooxml::layouts::read(template)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|layout| TemplateLayout {
+            content: layout.content().len(),
+            name: layout.name,
+            kind: layout.kind,
+        })
+        .collect();
+    let mut aliases = Vec::new();
+    for (name, target) in &options.layout_aliases {
+        let wanted = fold(target);
+        match layouts.iter().position(|l| fold(&l.name) == wanted) {
+            Some(index) => aliases.push((name.clone(), index)),
+            None => {
+                return Err(option_invalid(&format!(
+                    "`layoutAliases` maps `{name}` to `{target}`, which isn't a layout of the template."
+                )));
+            }
+        }
+    }
+    Ok(TemplateLayouts { layouts, aliases })
+}
+
+fn option_invalid(message: &str) -> OperationError {
+    OperationError {
+        code: "option_invalid",
+        message: message.into(),
+        pointer: None,
+    }
 }
 
 #[cfg_attr(not(feature = "pptx"), allow(unused_variables))]
@@ -302,8 +496,8 @@ fn render(
                 Asset::Bytes(bytes) => Some(bytes),
                 _ => None,
             };
-            let rendered =
-                compyla_pptx::render(&deck, &compyla_pptx::house(), &properties, &images);
+            let template = checked.template.unwrap_or_else(compyla_pptx::house);
+            let rendered = compyla_pptx::render(&deck, &template, &properties, &images);
             match rendered {
                 Ok(bytes) => Some(bytes),
                 // A failure while rendering is the error diagnostic `render_failed` (§11.1).

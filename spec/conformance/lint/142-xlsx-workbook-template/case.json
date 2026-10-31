@@ -1,0 +1,10 @@
+{
+  "description": "A workbook template isn't used for xlsx: xlsx_template_unsupported (§10.4).",
+  "spec": [
+    "§10.4",
+    "C56"
+  ],
+  "oracle": "none",
+  "format": "xlsx",
+  "template": "brand.xltx"
+}

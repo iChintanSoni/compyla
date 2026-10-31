@@ -1,0 +1,18 @@
+{
+  "diagnostics": [
+    {
+      "code": "layout_not_in_template",
+      "severity": "warning"
+    },
+    {
+      "code": "layout_not_in_template",
+      "severity": "warning"
+    },
+    {
+      "code": "unknown_layout",
+      "severity": "warning",
+      "line": 40,
+      "path": "/body/0/children/4/children/0"
+    }
+  ]
+}

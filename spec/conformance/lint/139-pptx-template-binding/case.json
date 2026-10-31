@@ -1,0 +1,12 @@
+{
+  "description": "With a supplied template (§8.5): its own layout name is valid (`Titel und Inhalt`, one slot per content placeholder); a house layout it lacks by name and by type binds to its Title and Content layout, with layout_not_in_template once per layout; the valid names in unknown_layout include the template's.",
+  "spec": [
+    "§8.5",
+    "§8.6",
+    "§10.2",
+    "C56"
+  ],
+  "oracle": "none",
+  "format": "pptx",
+  "template": "brand.potx"
+}
