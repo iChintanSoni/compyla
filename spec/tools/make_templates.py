@@ -39,9 +39,12 @@ def content_types(overrides, defaults=()):
     return f'{DECL}<Types xmlns="{CT}">{"".join(items)}</Types>'
 
 
+EXTERNAL = ' TargetMode="External"'
+
+
 def rels(*items):
     body = "".join(
-        f'<Relationship Id="{i}" Type="{OFFICE}/{t}" Target="{target}"{" TargetMode=\"External\"" if ext else ""}/>'
+        f'<Relationship Id="{i}" Type="{OFFICE}/{t}" Target="{target}"{EXTERNAL if ext else ""}/>'
         for i, t, target, ext in items
     )
     return f'{DECL}<Relationships xmlns="{RELS}">{body}</Relationships>'
