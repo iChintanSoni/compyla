@@ -107,7 +107,7 @@ pub fn utf8(bytes: &[u8]) -> Result<std::borrow::Cow<'_, [u8]>, Error> {
             .map_err(|_| Error::Malformed("isn't valid UTF-16".into()))?;
         Ok(std::borrow::Cow::Owned(text.into_bytes()))
     };
-    match bytes {
+    let text = match bytes {
         [0x00, 0x00, 0xFE, 0xFF, ..] | [0xFF, 0xFE, 0x00, 0x00, ..] => Err(Error::Malformed(
             "is UTF-32, which OOXML parts never are".into(),
         )),
@@ -117,7 +117,13 @@ pub fn utf8(bytes: &[u8]) -> Result<std::borrow::Cow<'_, [u8]>, Error> {
         [b'<', 0x00, b'?', 0x00, ..] => utf16(bytes, true),
         [0x00, b'<', 0x00, b'?', ..] => utf16(bytes, false),
         _ => Ok(std::borrow::Cow::Borrowed(bytes)),
+    }?;
+    // One byte order mark is the encoding's; a second is text before the root element, which a
+    // lenient reader would skip and this one won't (§10.4).
+    if text.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        return Err(Error::Malformed("has more than one byte order mark".into()));
     }
+    Ok(text)
 }
 
 /// A part as UTF-8 for writing back (§10.4 allows UTF-16 parts): transcoded, with its declaration
@@ -261,7 +267,7 @@ fn walk(bytes: &[u8], capture: &dyn Fn(&OpenPath) -> bool) -> Result<Vec<Element
                     && !text
                         .xml10_content()
                         .chars()
-                        .all(|c| c.is_ascii_whitespace()) =>
+                        .all(|c| matches!(c, ' ' | '\t' | '\r' | '\n')) =>
             {
                 return Err(Error::Malformed("has text outside its root element".into()));
             }
@@ -370,8 +376,11 @@ mod tests {
             &b"x<a/>"[..],
             b"\x00<a/>",
             b"<a/>x",
+            b"<a/>\x0C",
             b"<![CDATA[x]]><a/>",
             b"&#65;<a/>",
+            b"\xEF\xBB\xBF\xEF\xBB\xBF<a/>",
+            b"\xFF\xFE\xFF\xFE<\x00a\x00/\x00>\x00",
         ] {
             assert!(
                 matches!(parse(part), Err(Error::Malformed(_))),
