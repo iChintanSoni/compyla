@@ -7,8 +7,8 @@ and nothing downstream starts until the phase it depends on meets its exit.
 ```
 Phase 0  TypeScript prototype            done; now the reference/oracle
 Phase A  Foundation: spec & contracts    done
-Phase B  Rust core (parse + lint)        current
-Phase C  Template-first renderers
+Phase B  Rust core (parse + lint)        done
+Phase C  Template-first renderers        current
 Phase D  Hosts & first public release
 Phase E  Developer growth
 Phase F  Teams
@@ -81,7 +81,7 @@ reading the prototype.
 
 Exit criterion (met): all Phase A items checked. No toolchain check failed, so D10 and D13 stand.
 
-## Phase B — Rust core (current)
+## Phase B — Rust core (done)
 
 Goal: `parse` and `lint` in Rust, passing the parse, lint and compose suites. The compose suite is
 included because validation runs on the composed model (D15): pptx slide fit and xlsx placement are
@@ -93,14 +93,20 @@ part of linting.
 - [x] `compyla-core` parser → IR; the parse suite passes (44/44). Uses the toolchain-check design:
       directive segments, a document-wide link map, and frontmatter parsed from `saphyr-parser`
       events (chosen because `serde_yaml` is deprecated and `serde_yml` is unmaintained)
-- [ ] Validator and profiles; the lint and compose suites pass. docx/pdf and the shared rules are
-      done; pptx and xlsx are in progress
+- [x] Validator and profiles for docx/pdf, pptx and xlsx; the lint and compose suites pass. lint and
+      the compose summary share one composed model per format, so they can't disagree, and Phase C
+      renders from the same model. The spec ambiguities found while implementing are settled in
+      markdown-spec.md C45 (pptx) and C46 (xlsx)
 - [x] IR out, with the Rust types proven to agree with the spec on the whole fixture corpus: every
       expected IR round-trips through the Rust types unchanged, and every produced IR and diagnostic
       validates against `spec/ir.schema.json` / `spec/diagnostic.schema.json`. (This replaces
       "schemars output equals the spec schema", which would be brittle without proving more.)
-- [ ] IR input for `lint` (§10.7): schema and invariant checks (`ir_invalid`,
-      `ir_version_unsupported`), the text rules, and diagnostics that carry the IR `path` (§11.3)
+- [x] IR input for `lint` (§10.7): schema and invariant checks (`ir_invalid`,
+      `ir_version_unsupported`), the text rules, and diagnostics that carry the IR `path` (§11.3).
+      Paths come from `compyla_core::locate`, which renumbers the document so that each diagnostic's
+      position names its node; markdown diagnostics get paths too. Every lint fixture's IR, with
+      positions stripped, produces the same validate-stage diagnostics as its markdown, and every
+      path resolves
 - [x] `compyla` facade: `parse` and `lint` (D8), with format resolution, strict escalation,
       ordering and the diagnostics cap (§10.2, §11)
 - [x] First hosts: the `compyla` CLI (`parse`, `lint`; exit codes per §10.8) and the core-only WASM
@@ -109,7 +115,7 @@ part of linting.
 Exit criterion: the parse, lint and compose suites pass in Rust; the prototype is no longer needed as
 the oracle for them.
 
-## Phase C — Template-first renderers
+## Phase C — Template-first renderers (current)
 
 Goal: output that is faithful to a real corporate template, and identical bytes on every run.
 
@@ -121,7 +127,9 @@ Goal: output that is faithful to a real corporate template, and identical bytes 
 - [ ] xlsx per markdown-spec.md §9: placement, typed values, parsed and allowlisted formulas (with
       `_xlfn.` prefixes), Excel tables, sheet-name repairs, and theme tokens from a supplied template
 - [ ] pdf via Typst with a theme derived from the template (D13)
-- [ ] Render conformance suite passing for all four formats
+- [ ] Render conformance suite passing for all four formats, including number formats (C46's
+      `general` columns and percent decimals) in the xlsx projection
+- [ ] `convert` locates render-stage diagnostics through the same `locate` renumbering as `lint`
 - [ ] Real-viewer verification in CI (test only, D4): OOXML schema validation + LibreOffice → PNG visual diffs
 
 Exit criterion: a real corporate `.potx` and `.dotx` round-trip with masters, logos and headers/footers
@@ -137,6 +145,9 @@ Goal: one engine, every channel (D10).
 - [ ] MCP server (D17): the four operations as tools; dialect spec, diagnostics registry and template
       reports as resources
 - [ ] HTTP server with request-size, upload and decompression limits (template uploads are zip files)
+- [ ] Resource hardening before the server is public: fuzz every operation for panics (Phase B found a
+      percent-decoding panic by review), and a memory budget at the 10 MiB input limit. Peak memory
+      is about 0.7 GB today, mostly comrak's AST during parsing, which is too much for a shared server
 - [ ] Move the web lint UI and docs site onto the Node/WASM host (D9), then retire `packages/`
 - [ ] Docs rewrite: quickstart, per-host reference, MCP guide
 - [ ] Publish 0.1 to npm, PyPI and crates.io, plus CLI binaries on GitHub Releases, with semver
