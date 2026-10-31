@@ -15,6 +15,19 @@ pub struct Rect {
     pub cy: i64,
 }
 
+impl Rect {
+    /// The rectangle held to the schema's bounds, as it is written: geometry derived from a
+    /// template's own (a slot's share, a centered picture) can pass them.
+    pub fn bounded(self) -> Rect {
+        Rect {
+            x: self.x.clamp(MIN_COORDINATE, MAX_COORDINATE),
+            y: self.y.clamp(MIN_COORDINATE, MAX_COORDINATE),
+            cx: self.cx.clamp(0, MAX_COORDINATE),
+            cy: self.cy.clamp(0, MAX_COORDINATE),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Placeholder {
     /// ST_PlaceholderType, `obj` when omitted.
@@ -210,8 +223,10 @@ const MAX_COORDINATE: i64 = 27_273_042_316_900;
 fn rect(xfrm: &Element) -> Option<Rect> {
     let off = xfrm.child(MAIN_A, "off")?;
     let ext = xfrm.child(MAIN_A, "ext")?;
+    // Parsed wider than the bounds, so a value past them is held to them rather than dropped.
     let number = |e: &Element, a: &str, min: i64| {
-        Some(e.attr(a)?.parse::<i64>().ok()?.clamp(min, MAX_COORDINATE))
+        let value = e.attr(a)?.parse::<i128>().ok()?;
+        i64::try_from(value.clamp(i128::from(min), i128::from(MAX_COORDINATE))).ok()
     };
     Some(Rect {
         x: number(off, "x", MIN_COORDINATE)?,
@@ -228,7 +243,7 @@ mod tests {
     #[test]
     fn geometry_is_held_to_the_schemas_bounds() {
         let xfrm = compyla_ooxml::dom::parse(
-            br#"<a:xfrm xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:off x="9223372036854775807" y="-9223372036854775808"/><a:ext cx="-5" cy="9223372036854775807"/></a:xfrm>"#,
+            br#"<a:xfrm xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:off x="92233720368547758070" y="-9223372036854775808"/><a:ext cx="-5" cy="9223372036854775807"/></a:xfrm>"#,
         )
         .unwrap();
         assert_eq!(

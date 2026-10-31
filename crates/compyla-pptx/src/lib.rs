@@ -648,16 +648,7 @@ impl SlideWriter<'_> {
             cy: (ROW_HEIGHT * rows).min(rect.cy.max(ROW_HEIGHT)),
             ..rect
         };
-        out.open("p:xfrm", &[]);
-        out.empty(
-            "a:off",
-            &[("x", &frame.x.to_string()), ("y", &frame.y.to_string())],
-        );
-        out.empty(
-            "a:ext",
-            &[("cx", &frame.cx.to_string()), ("cy", &frame.cy.to_string())],
-        );
-        out.close("p:xfrm");
+        transform(out, "p:xfrm", &[], frame);
         out.open("a:graphic", &[]);
         out.open(
             "a:graphicData",
@@ -858,19 +849,7 @@ impl SlideWriter<'_> {
         if flip_v {
             attrs.push(("flipV", "1"));
         }
-        out.open("a:xfrm", &attrs);
-        out.empty(
-            "a:off",
-            &[("x", &shape.x.to_string()), ("y", &shape.y.to_string())],
-        );
-        out.empty(
-            "a:ext",
-            &[
-                ("cx", &shape.cx.max(0).to_string()),
-                ("cy", &shape.cy.max(0).to_string()),
-            ],
-        );
-        out.close("a:xfrm");
+        transform(out, "a:xfrm", &attrs, shape);
         out.open("a:prstGeom", &[("prst", "rect")]);
         out.empty("a:avLst", &[]);
         out.close("a:prstGeom");
@@ -949,19 +928,22 @@ fn ph(out: &mut Writer, placeholder: &Placeholder) {
 }
 
 fn xfrm(out: &mut Writer, rect: Rect) {
-    out.open("a:xfrm", &[]);
+    transform(out, "a:xfrm", &[], rect);
+}
+
+/// A transform element (`a:xfrm`, `p:xfrm`) placing `rect`, held to the schema's bounds.
+fn transform(out: &mut Writer, element: &str, attrs: &[(&str, &str)], rect: Rect) {
+    let rect = rect.bounded();
+    out.open(element, attrs);
     out.empty(
         "a:off",
         &[("x", &rect.x.to_string()), ("y", &rect.y.to_string())],
     );
     out.empty(
         "a:ext",
-        &[
-            ("cx", &rect.cx.max(0).to_string()),
-            ("cy", &rect.cy.max(0).to_string()),
-        ],
+        &[("cx", &rect.cx.to_string()), ("cy", &rect.cy.to_string())],
     );
-    out.close("a:xfrm");
+    out.close(element);
 }
 
 fn tree(xml: &mut Writer, shapes: &str) {
@@ -1348,6 +1330,28 @@ mod tests {
         );
         let slide = String::from_utf8(parts["ppt/slides/slide1.xml"].clone()).unwrap();
         assert!(slide.contains(r#"<a:xfrm rot="5400000">"#), "{slide}");
+    }
+
+    #[test]
+    fn geometry_is_written_within_the_schemas_bounds() {
+        // A slot's second share of an area at the bounds' edge would pass them.
+        let mut out = Writer::fragment();
+        let edge = 27_273_042_316_900;
+        transform(
+            &mut out,
+            "a:xfrm",
+            &[],
+            Rect {
+                x: -edge * 2,
+                y: edge + edge / 2,
+                cx: -1,
+                cy: edge * 2,
+            },
+        );
+        assert_eq!(
+            out.into_string(),
+            r#"<a:xfrm><a:off x="-27273042329600" y="27273042316900"/><a:ext cx="0" cy="27273042316900"/></a:xfrm>"#
+        );
     }
 
     #[test]
