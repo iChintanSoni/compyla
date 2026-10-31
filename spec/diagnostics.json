@@ -391,6 +391,20 @@
       "summary": "A slide's content doesn't fit its resolved layout's slots (explicit or inferred)."
     },
     {
+      "code": "pptx_ignored_content",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "pptx"
+      ],
+      "strictPromotable": true,
+      "position": "node",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§8.8",
+      "summary": "An image or table inside a list item or a quote can't be placed in a slide's text; it is shown as its alt text or as text rows."
+    },
+    {
       "code": "link_anchor_unresolved",
       "severity": "warning",
       "stage": "validate",

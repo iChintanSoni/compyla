@@ -1,0 +1,15 @@
+{
+  "description": "From review: numbers DrawingML can't count are text; a list item's first line takes its bullet, an empty item keeps one, and an image inside an item shows as alt text (pptx_ignored_content); notes are plain; alt text takes its share of a slot; cover never crops everything; text and properties carry lang.",
+  "spec": [
+    "§5",
+    "§8.8",
+    "§2",
+    "C52"
+  ],
+  "oracle": "corrected",
+  "format": "pptx",
+  "assets": [
+    "tall.png",
+    "logo.png"
+  ]
+}

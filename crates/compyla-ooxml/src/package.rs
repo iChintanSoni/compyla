@@ -159,6 +159,8 @@ impl Relationships {
 pub struct Properties {
     pub title: Option<String>,
     pub creator: Option<String>,
+    /// The document's language, `meta.lang` (§2).
+    pub language: Option<String>,
 }
 
 /// Adds the core and extended properties parts, and the package relationships to them and to the
@@ -201,6 +203,9 @@ pub fn core_xml(properties: &Properties) -> Vec<u8> {
     }
     if let Some(creator) = &properties.creator {
         core.element("dc:creator", &[], creator);
+    }
+    if let Some(language) = &properties.language {
+        core.element("dc:language", &[], language);
     }
     for stamp in ["dcterms:created", "dcterms:modified"] {
         core.element(stamp, &[("xsi:type", "dcterms:W3CDTF")], TIMESTAMP);

@@ -226,6 +226,11 @@ fn slide_rules(composed: &Composed<'_>, settled: &mut HashSet<*const Directive>,
                     ));
                 }
             }
+            Item::Block(Block::List(_) | Block::Quote(_)) => {
+                if let Item::Block(block) = item {
+                    nested_frames(std::slice::from_ref(*block), out);
+                }
+            }
             Item::Heading(section) if section.level >= 4 => out.push(at(
                 Diagnostic::new(
                     "heading_too_deep",
@@ -269,6 +274,55 @@ fn slide_rules(composed: &Composed<'_>, settled: &mut HashSet<*const Directive>,
             ),
         });
     }
+}
+
+/// §8.8: images and tables inside a list item or a quote, which a text body can't hold.
+fn nested_frames(blocks: &[Block], out: &mut Sink) {
+    for block in blocks {
+        match block {
+            Block::List(list) => {
+                for item in &list.items {
+                    for child in &item.children {
+                        report_frame(child, out);
+                    }
+                }
+            }
+            Block::Quote(quote) => {
+                for child in &quote.children {
+                    report_frame(child, out);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn report_frame(block: &Block, out: &mut Sink) {
+    let (what, position) = match block {
+        Block::Media(media) => ("An image", media.position),
+        Block::Table(table) => ("A table", table.position),
+        Block::List(_) | Block::Quote(_) => return nested_frames(std::slice::from_ref(block), out),
+        Block::Directive(d) => {
+            for child in &d.children {
+                report_frame(child, out);
+            }
+            return;
+        }
+        _ => return,
+    };
+    let shown = if matches!(block, Block::Media(_)) {
+        "its alt text"
+    } else {
+        "tab-separated text rows"
+    };
+    out.push(at(
+        Diagnostic::new(
+            "pptx_ignored_content",
+            format!("{what} inside a list item or a quote can't be placed in a slide's text; it is shown as {shown}."),
+        )
+        .hint("Put it at the slide's top level, outside the list or quote."),
+        line(position),
+    ));
 }
 
 /// `layout`, `notes` and `col` directives the slide walk never placed, where they can have no

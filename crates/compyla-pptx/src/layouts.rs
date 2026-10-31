@@ -42,6 +42,8 @@ impl Placeholder {
 pub struct Layout {
     pub part: String,
     pub name: String,
+    /// The OOXML type (`p:sldLayout/@type`), which binding falls back to (§8.5).
+    pub kind: Option<String>,
     pub placeholders: Vec<Placeholder>,
 }
 
@@ -100,6 +102,7 @@ pub fn read(template: &Template) -> Result<Vec<Layout>, Invalid> {
             layouts.push(Layout {
                 part,
                 name,
+                kind: xml.attr("type").map(str::to_string),
                 placeholders: own,
             });
         }
