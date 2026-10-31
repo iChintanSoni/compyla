@@ -8,3 +8,6 @@ coverage/
 
 # Rust (spikes/, and crates/ from Phase B)
 target/
+
+# Agent worktrees (Claude Code)
+.claude/worktrees/

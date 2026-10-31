@@ -7,7 +7,7 @@ and nothing downstream starts until the phase it depends on meets its exit.
 ```
 Phase 0  TypeScript prototype            done; now the reference/oracle
 Phase A  Foundation: spec & contracts    done
-Phase B  Rust core (parse + lint)        next
+Phase B  Rust core (parse + lint)        current
 Phase C  Template-first renderers
 Phase D  Hosts & first public release
 Phase E  Developer growth
@@ -81,18 +81,33 @@ reading the prototype.
 
 Exit criterion (met): all Phase A items checked. No toolchain check failed, so D10 and D13 stand.
 
-## Phase B — Rust core (next)
+## Phase B — Rust core (current)
 
-Goal: `parse` and `lint` in Rust, passing the conformance suites.
+Goal: `parse` and `lint` in Rust, passing the parse, lint and compose suites. The compose suite is
+included because validation runs on the composed model (D15): pptx slide fit and xlsx placement are
+part of linting.
 
-- [ ] Cargo workspace (`crates/`), CI (fmt, clippy, test), MSRV policy
-- [ ] `compyla-core` parser → IR; parse suite passes
-- [ ] Validator, profiles and formula allowlist; lint suite passes
-- [ ] IR JSON in/out; a test asserts the schema generated from the Rust types equals `spec/ir.schema.json`
-- [ ] `compyla` facade: `parse` and `lint` (D8)
-- [ ] First host: `compyla lint` CLI, plus the core-only WASM build
+- [x] Cargo workspace (`crates/`, `hosts/`) with an MSRV policy (Rust 1.89, comrak's own minimum),
+      and CI running fmt, clippy (`-D warnings`), the conformance suites on Linux x64/arm64, macOS
+      and Windows, the MSRV check, and the core-only WASM build (`.github/workflows/rust.yml`)
+- [x] `compyla-core` parser → IR; the parse suite passes (44/44). Uses the toolchain-check design:
+      directive segments, a document-wide link map, and frontmatter parsed from `saphyr-parser`
+      events (chosen because `serde_yaml` is deprecated and `serde_yml` is unmaintained)
+- [ ] Validator and profiles; the lint and compose suites pass. docx/pdf and the shared rules are
+      done; pptx and xlsx are in progress
+- [x] IR out, with the Rust types proven to agree with the spec on the whole fixture corpus: every
+      expected IR round-trips through the Rust types unchanged, and every produced IR and diagnostic
+      validates against `spec/ir.schema.json` / `spec/diagnostic.schema.json`. (This replaces
+      "schemars output equals the spec schema", which would be brittle without proving more.)
+- [ ] IR input for `lint` (§10.7): schema and invariant checks (`ir_invalid`,
+      `ir_version_unsupported`), the text rules, and diagnostics that carry the IR `path` (§11.3)
+- [x] `compyla` facade: `parse` and `lint` (D8), with format resolution, strict escalation,
+      ordering and the diagnostics cap (§10.2, §11)
+- [x] First hosts: the `compyla` CLI (`parse`, `lint`; exit codes per §10.8) and the core-only WASM
+      build (`hosts/wasm`, 1.0 MB)
 
-Exit criterion: both suites pass in Rust; the prototype is no longer needed as the oracle.
+Exit criterion: the parse, lint and compose suites pass in Rust; the prototype is no longer needed as
+the oracle for them.
 
 ## Phase C — Template-first renderers
 
