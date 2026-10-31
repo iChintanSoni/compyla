@@ -403,13 +403,33 @@ fn is_xml(template: &Template, name: &str) -> bool {
                 .trim()
                 .ends_with("xml")
         });
-    declared
-        || template.part(name).is_some_and(|data| {
-            dom::utf8(data).is_ok_and(|text| {
-                std::str::from_utf8(&text).is_ok()
-                    && text.iter().find(|b| !b.is_ascii_whitespace()) == Some(&b'<')
-            })
-        })
+    declared || template.part(name).is_some_and(looks_like_xml)
+}
+
+/// Whether `data` is UTF-8 or UTF-16 text whose first character, past byte order marks and
+/// whitespace, is `<`: what a lenient reader would read as XML, so it is read here too, and
+/// refused if it isn't well-formed.
+fn looks_like_xml(data: &[u8]) -> bool {
+    fn opens(mut chars: impl Iterator<Item = char>) -> bool {
+        chars.find(|c| !(c.is_ascii_whitespace() || *c == '\u{FEFF}')) == Some('<')
+    }
+    let utf16 = |data: &[u8], little: bool| {
+        let units = data.as_chunks::<2>().0.iter().map(|&pair| {
+            if little {
+                u16::from_le_bytes(pair)
+            } else {
+                u16::from_be_bytes(pair)
+            }
+        });
+        opens(char::decode_utf16(units).map_while(Result::ok))
+    };
+    match data {
+        [0xFF, 0xFE, rest @ ..] => utf16(rest, true),
+        [0xFE, 0xFF, rest @ ..] => utf16(rest, false),
+        [b'<', 0x00, ..] => utf16(data, true),
+        [0x00, b'<', ..] => utf16(data, false),
+        _ => std::str::from_utf8(data).is_ok_and(|text| opens(text.chars())),
+    }
 }
 
 fn invalid(name: &str, error: Error) -> Invalid {
@@ -483,6 +503,10 @@ fn nodes(text: &[u8]) -> Result<Vec<Node>, Error> {
             Event::Start(start) | Event::Empty(start) => {
                 if nodes.len() >= dom::MAX_ELEMENTS {
                     return Err(Error::TooLarge);
+                }
+                // Exactly one root element, as dom reads parts.
+                if open.is_empty() && !nodes.is_empty() {
+                    return Err(Error::Malformed("has more than one root element".into()));
                 }
                 if open.len() >= dom::MAX_DEPTH {
                     return Err(Error::Malformed(format!(
@@ -567,7 +591,7 @@ fn nodes(text: &[u8]) -> Result<Vec<Node>, Error> {
                     && !text
                         .xml10_content()
                         .chars()
-                        .all(|c| c.is_ascii_whitespace()) =>
+                        .all(|c| matches!(c, ' ' | '\t' | '\r' | '\n')) =>
             {
                 return Err(Error::Malformed("has text outside its root element".into()));
             }
@@ -582,6 +606,9 @@ fn nodes(text: &[u8]) -> Result<Vec<Node>, Error> {
     }
     if !open.is_empty() {
         return Err(Error::Malformed("unclosed element".into()));
+    }
+    if nodes.is_empty() {
+        return Err(Error::Malformed("has no root element".into()));
     }
     Ok(nodes)
 }
@@ -1428,5 +1455,16 @@ mod tests {
         let part = part(&template, bin).unwrap();
         assert_eq!(part.removed.len(), 1);
         assert!(!text(&part.xml).contains("macro"));
+    }
+
+    #[test]
+    fn a_kept_part_has_exactly_one_root_and_one_byte_order_mark() {
+        let two = template(b"<a/><b/>", &[MASTER]);
+        assert!(part(&two, LAYOUT).is_err());
+        let none = template(b"<!-- nothing -->", &[MASTER]);
+        assert!(part(&none, LAYOUT).is_err());
+        assert!(looks_like_xml(b"\xEF\xBB\xBF\xEF\xBB\xBF<a/>"));
+        assert!(looks_like_xml(b"\xFF\xFE\xFF\xFE<\x00a\x00/\x00>\x00"));
+        assert!(!looks_like_xml(b"\x89PNG\r\n\x1a\n<"));
     }
 }
