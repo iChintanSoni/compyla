@@ -34,6 +34,31 @@ pub fn lint(source: &str, format: &str, strict: bool) -> String {
     }
 }
 
+/// `lint_ir(json, format, strict)`: `lint` for IR JSON (markdown-spec.md §10.7).
+#[wasm_bindgen]
+pub fn lint_ir(json: &str, format: &str, strict: bool) -> String {
+    let format = match format {
+        "" => None,
+        name => match compyla::Format::parse(name) {
+            Some(format) => Some(format),
+            None => {
+                return error(
+                    "format_unknown",
+                    &format!("`{name}` isn't docx, pdf, pptx or xlsx"),
+                );
+            }
+        },
+    };
+    match compyla::lint_ir(
+        json,
+        &compyla::Options { format, strict },
+        &compyla::no_assets,
+    ) {
+        Ok(diagnostics) => serde_json::json!({ "diagnostics": diagnostics }).to_string(),
+        Err(e) => error(e.code, &e.message),
+    }
+}
+
 fn error(code: &str, message: &str) -> String {
     serde_json::json!({ "error": { "code": code, "message": message } }).to_string()
 }

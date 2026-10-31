@@ -42,6 +42,8 @@ pub struct Options {
 pub struct OperationError {
     pub code: &'static str,
     pub message: String,
+    /// For `ir_invalid` and `ir_version_unsupported`: the JSON Pointer of the first failure.
+    pub pointer: Option<String>,
 }
 
 /// `lint`: parse and validate diagnostics for markdown, in §11.2 order. `assets` is the host's asset
@@ -79,6 +81,39 @@ pub fn compose_summary(source: &str, format: Format) -> Option<serde_json::Value
     }
 }
 
+/// Loads IR JSON submitted in place of markdown (markdown-spec.md §10.7): structure, version and
+/// invariants are checked, then the text rules applied. Returns the IR and its diagnostics.
+pub fn load_ir(json: &str) -> Result<(ir::Document, Vec<Diagnostic>), OperationError> {
+    compyla_core::ir_input::load(json).map_err(|r| OperationError {
+        code: r.code,
+        message: if r.pointer.is_empty() {
+            r.message
+        } else {
+            format!("{} (at {})", r.message, r.pointer)
+        },
+        pointer: Some(r.pointer),
+    })
+}
+
+/// `lint` for IR input (§10.7). Its diagnostics carry IR paths rather than lines.
+pub fn lint_ir(
+    json: &str,
+    options: &Options,
+    assets: &dyn Fn(&str) -> Asset,
+) -> Result<Vec<Diagnostic>, OperationError> {
+    let (document, mut diagnostics) = load_ir(json)?;
+    let format = resolve_format(options, &document)?;
+    let sidecar = compyla_core::Sidecar::default();
+    let input = compyla_core::validate::Input {
+        document: &document,
+        sidecar: &sidecar,
+        assets,
+    };
+    diagnostics.extend(compyla_core::validate::validate(&input, format));
+    finish(&mut diagnostics, options.strict);
+    Ok(diagnostics)
+}
+
 /// The resolver of a host with none: in `lint`, every image exists without bytes (§10.3).
 pub fn no_assets(_src: &str) -> Asset {
     Asset::Exists
@@ -97,6 +132,7 @@ fn resolve_format(options: &Options, document: &ir::Document) -> Result<Format, 
         .ok_or_else(|| OperationError {
             code: "format_missing",
             message: "No format was given, and the document's frontmatter has no `format`.".into(),
+            pointer: None,
         })
 }
 

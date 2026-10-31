@@ -11,10 +11,12 @@ use compyla::{Asset, Diagnostic, Format, Options, Severity};
 const USAGE: &str = "\
 usage: compyla parse <file.md>
        compyla lint <file.md> [--format docx|pdf|pptx|xlsx] [--strict] [--json]
+       compyla lint --ir <file.json> [--format ...] [--strict] [--json]
 
   parse   print the document's IR and parse diagnostics as JSON
   lint    check the document for a format; the format defaults to the frontmatter's `format`
 
+  --ir       the input is IR JSON (markdown-spec.md §10.7) instead of markdown
   --strict   escalate every non-advisory warning to an error
   --json     print diagnostics as JSON instead of text";
 
@@ -63,11 +65,13 @@ fn lint(args: &[String]) -> Result<ExitCode, String> {
     let mut file: Option<PathBuf> = None;
     let mut options = Options::default();
     let mut json = false;
+    let mut ir = false;
     let mut args = args.iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--strict" => options.strict = true,
             "--json" => json = true,
+            "--ir" => ir = true,
             "--format" => {
                 let name = args.next().ok_or("--format needs a value")?;
                 options.format = Some(Format::parse(name).ok_or_else(|| {
@@ -85,8 +89,12 @@ fn lint(args: &[String]) -> Result<ExitCode, String> {
     let source = read(&file)?;
     let base = file.parent().map(Path::to_path_buf).unwrap_or_default();
     let assets = move |src: &str| resolve_asset(&base, src);
-    let diagnostics = compyla::lint(&source, &options, &assets)
-        .map_err(|e| format!("{}: {}", e.code, e.message))?;
+    let result = if ir {
+        compyla::lint_ir(&source, &options, &assets)
+    } else {
+        compyla::lint(&source, &options, &assets)
+    };
+    let diagnostics = result.map_err(|e| format!("{}: {}", e.code, e.message))?;
 
     if json {
         println!(
