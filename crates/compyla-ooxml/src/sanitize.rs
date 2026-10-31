@@ -390,7 +390,7 @@ fn suffix(kind: &str) -> &str {
 
 /// Whether `name` is read as XML: by its name or content type, or by what it holds, since a layout
 /// is parsed as one whatever it is called. A part that doesn't decode as UTF-8 or UTF-16, or
-/// doesn't start with `<`, is data.
+/// doesn't start with `<` past byte order marks and whitespace, is data.
 fn is_xml(template: &Template, name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     let declared = lower.ends_with(".xml")
@@ -406,28 +406,33 @@ fn is_xml(template: &Template, name: &str) -> bool {
     declared || template.part(name).is_some_and(looks_like_xml)
 }
 
-/// Whether `data` is UTF-8 or UTF-16 text whose first character, past byte order marks and
-/// whitespace, is `<`: what a lenient reader would read as XML, so it is read here too, and
-/// refused if it isn't well-formed.
+/// Whether `data` is UTF-8 or UTF-16 text, all of it, whose first character past byte order marks
+/// and whitespace is `<`: what a lenient reader would read as XML, so it is read here too, and
+/// refused if it isn't well-formed. Without a byte order mark, UTF-16 is recognised only as dom
+/// recognises it, by `<?`.
 fn looks_like_xml(data: &[u8]) -> bool {
     fn opens(mut chars: impl Iterator<Item = char>) -> bool {
         chars.find(|c| !(c.is_ascii_whitespace() || *c == '\u{FEFF}')) == Some('<')
     }
     let utf16 = |data: &[u8], little: bool| {
-        let units = data.as_chunks::<2>().0.iter().map(|&pair| {
+        let (pairs, odd) = data.as_chunks::<2>();
+        let units = pairs.iter().map(|&pair| {
             if little {
                 u16::from_le_bytes(pair)
             } else {
                 u16::from_be_bytes(pair)
             }
         });
-        opens(char::decode_utf16(units).map_while(Result::ok))
+        odd.is_empty()
+            && char::decode_utf16(units)
+                .collect::<Result<String, _>>()
+                .is_ok_and(|text| opens(text.chars()))
     };
     match data {
         [0xFF, 0xFE, rest @ ..] => utf16(rest, true),
         [0xFE, 0xFF, rest @ ..] => utf16(rest, false),
-        [b'<', 0x00, ..] => utf16(data, true),
-        [0x00, b'<', ..] => utf16(data, false),
+        [b'<', 0x00, b'?', 0x00, ..] => utf16(data, true),
+        [0x00, b'<', 0x00, b'?', ..] => utf16(data, false),
         _ => std::str::from_utf8(data).is_ok_and(|text| opens(text.chars())),
     }
 }
@@ -1466,5 +1471,9 @@ mod tests {
         assert!(looks_like_xml(b"\xEF\xBB\xBF\xEF\xBB\xBF<a/>"));
         assert!(looks_like_xml(b"\xFF\xFE\xFF\xFE<\x00a\x00/\x00>\x00"));
         assert!(!looks_like_xml(b"\x89PNG\r\n\x1a\n<"));
+        // An embedded font whose size happens to start like UTF-16 `<` is still data.
+        assert!(!looks_like_xml(b"\x3C\x00\x01\x00\x00\xD8\x41\x00"));
+        assert!(!looks_like_xml(b"\x00\x3C\x00\x02LP"));
+        assert!(!looks_like_xml(b"\xFF\xFE\x20\x00<\x00\x00\xDC"));
     }
 }
