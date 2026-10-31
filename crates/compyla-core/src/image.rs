@@ -1,6 +1,8 @@
 //! Image dimensions, read from the headers of the formats the profiles accept (markdown-spec.md
 //! §4.7): PNG, JPEG and GIF.
 
+use std::borrow::Cow;
+
 /// The image limits of markdown-spec.md §12.1.
 pub const MAX_ENCODED: usize = 50 * 1024 * 1024;
 pub const MAX_PIXELS: u64 = 100_000_000;
@@ -47,15 +49,41 @@ pub fn dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
     None
 }
 
-/// A JPEG's EXIF orientation (1–8; 1 is upright), from its first APP1 segment. Viewers that
-/// embed the image as it is stored (PowerPoint, Word) don't apply it, so renderers do.
+/// A JPEG's EXIF orientation (1–8; 1 is upright), from its first APP1 segment.
 pub fn orientation(bytes: &[u8]) -> u8 {
-    jpeg_orientation(bytes)
+    orientation_tag(bytes)
+        .and_then(|tag| u8::try_from(tag.value).ok())
         .filter(|o| (1..=8).contains(o))
         .unwrap_or(1)
 }
 
-fn jpeg_orientation(bytes: &[u8]) -> Option<u8> {
+/// `bytes` with its EXIF orientation set to 1 (as stored). A renderer that turns the picture itself
+/// writes this copy, so a viewer that also applies the tag doesn't turn it twice, and one that
+/// ignores it agrees.
+pub fn as_stored(bytes: &[u8]) -> Cow<'_, [u8]> {
+    match orientation_tag(bytes) {
+        Some(tag) if tag.value != 1 => {
+            let mut copy = bytes.to_vec();
+            let one = if tag.little {
+                1u16.to_le_bytes()
+            } else {
+                1u16.to_be_bytes()
+            };
+            copy[tag.at..tag.at + 2].copy_from_slice(&one);
+            Cow::Owned(copy)
+        }
+        _ => Cow::Borrowed(bytes),
+    }
+}
+
+/// An orientation tag's value, the offset of its two bytes in the file, and their byte order.
+struct Tag {
+    value: u16,
+    at: usize,
+    little: bool,
+}
+
+fn orientation_tag(bytes: &[u8]) -> Option<Tag> {
     if !bytes.starts_with(&[0xFF, 0xD8]) {
         return None;
     }
@@ -69,15 +97,17 @@ fn jpeg_orientation(bytes: &[u8]) -> Option<u8> {
         }
         let segment = bytes.get(at + 4..at + 2 + length)?;
         if marker == 0xE1 && segment.starts_with(b"Exif\0\0") {
-            return exif_orientation(&segment[6..]);
+            let mut tag = exif_orientation(&segment[6..])?;
+            tag.at += at + 4 + 6;
+            return Some(tag);
         }
         at += 2 + length;
     }
     None
 }
 
-/// The orientation tag (0x0112) of a TIFF structure's first IFD.
-fn exif_orientation(tiff: &[u8]) -> Option<u8> {
+/// The orientation tag (0x0112) of a TIFF structure's first IFD, its offset relative to `tiff`.
+fn exif_orientation(tiff: &[u8]) -> Option<Tag> {
     let little = match tiff.get(..2)? {
         b"II" => true,
         b"MM" => false,
@@ -108,7 +138,14 @@ fn exif_orientation(tiff: &[u8]) -> Option<u8> {
     let entries = usize::from(u16_at(ifd)?);
     (0..entries).find_map(|i| {
         let entry = ifd + 2 + 12 * i;
-        (u16_at(entry)? == 0x0112).then(|| u16_at(entry + 8).map(|v| v as u8))?
+        // A SHORT is left-justified in the entry's value field.
+        (u16_at(entry)? == 0x0112).then(|| {
+            u16_at(entry + 8).map(|value| Tag {
+                value,
+                at: entry + 8,
+                little,
+            })
+        })?
     })
 }
 
@@ -161,6 +198,23 @@ mod tests {
         assert_eq!(orientation(&exif_jpeg(42, true)), 1);
         assert_eq!(orientation(b"\x89PNG"), 1);
         assert_eq!(orientation(&[0xFF, 0xD8, 0xFF, 0xE1, 0x00]), 1);
+        // A value past a byte isn't truncated into range: 0x0106 isn't 6.
+        assert_eq!(orientation(&exif_jpeg(0x0106, false)), 1);
+    }
+
+    #[test]
+    fn the_copy_written_is_as_stored() {
+        for little in [true, false] {
+            let turned = exif_jpeg(6, little);
+            let copy = as_stored(&turned);
+            assert_eq!(orientation(&copy), 1);
+            assert_eq!(copy.len(), turned.len());
+            let differing = copy.iter().zip(&turned).filter(|(a, b)| a != b).count();
+            assert_eq!(differing, 1, "only the value's low byte changes");
+        }
+        let upright = exif_jpeg(1, true);
+        assert!(matches!(as_stored(&upright), Cow::Borrowed(_)));
+        assert!(matches!(as_stored(b"\x89PNG"), Cow::Borrowed(_)));
     }
 
     #[test]
