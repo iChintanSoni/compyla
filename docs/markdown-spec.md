@@ -760,8 +760,10 @@ content placeholder if it has one (Section Header's text). Otherwise it is laid 
 master's body area with no placeholder: text shares one text box, and other content divides the
 area among its blocks in order, each a shape of its own. Where the master has no title or body
 placeholder, the 16:9 house areas apply. Shapes are written in reading order: the title, then the
-slots' shapes, slots ordered by their areas' left edges and then their top edges, so a caption beside
-a picture or a table is read before it, after the title above it. *(C55)* Placeholders carry no geometry or formatting of
+slots' shapes by column. Slots whose areas overlap horizontally form one column (joined
+transitively); columns go left to right by their left edges, and a column's slots top to bottom,
+then left to right. So a caption beside a picture or a table is read after the title above it, not
+after the picture. A slot whose area isn't known comes last. *(C55)* Placeholders carry no geometry or formatting of
 their own except where their content needs it, so they inherit the layout's.
 
 - **Text** (a text block, code, a quote) shares one text body:
@@ -846,11 +848,12 @@ characters, plus 2 for padding, at most 60, and never narrower than Excel's defa
 - Text displays its longest line. Characters in U+1100–115F, U+2E80–303E, U+3041–33FF,
   U+3400–4DBF, U+4E00–9FFF, U+A000–A4CF, U+AC00–D7A3, U+F900–FAFF, U+FE30–FE4F, U+FF00–FF60,
   U+FFE0–FFE6 and U+20000–3FFFD (East Asian wide and fullwidth) count 2.
-- A number displays as its format writes it: sign, currency prefix, digits with thousands separators,
-  decimals, `%`. A `General` number displays as written, at most 11 characters, and a date 10.
+- A number displays as its format writes it, rounded to its decimals: sign, currency prefix, digits
+  with thousands separators, decimals, `%`. A `General` number displays as written, at most 11 characters, and a date 10.
   A boolean counts 5.
-- A formula's result isn't known, but it can outgrow the rows it totals: a column with a formula is
-  at least as wide as its widest number plus 2.
+- A formula's result isn't known, and can outgrow the numbers it is computed from. A formula
+  displays 2 more than the widest of: the numbers in its column (or, when its column has none, in
+  its table) and its format's `0`. A date formula displays 10.
 - An Excel table's header cell with a filter button counts 2 more. Range titles and notes, merged
   across their range, widen nothing.
 
@@ -1057,7 +1060,8 @@ whatever `lang` is.
   font. Rich text keeps the cell's own styling (a bold title, a link's underline) in every run.
 - A text cell whose text is a decimal number, optionally signed and with an exponent (`007`, a
   `text` column's `42`), is text on purpose: it is marked so Excel doesn't flag it as a number stored
-  as text. *(C55)*
+  as text. Other text Excel reads as a number (`1,000`, `$5`) stays flagged: it is text because this
+  profile doesn't read it as a number (§15), and Excel's offer to convert it is the right one. *(C55)*
 - Text reads back exactly as written, including text that looks like a SpreadsheetML character
   escape (`_x0041_` is written as `_x005F_x0041_`), in cells, sheet names and table names. *(C49)*
 - Fragment links resolve against the slugs of the **repaired** sheet names (§9.6), and link to cell

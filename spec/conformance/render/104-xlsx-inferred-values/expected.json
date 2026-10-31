@@ -67,7 +67,7 @@
         {
           "part": "xl/worksheets/sheet1.xml",
           "expr": "string(//x:ignoredErrors/x:ignoredError[@numberStoredAsText='1']/@sqref)",
-          "equals": "F2 F3"
+          "equals": "F2:F3"
         }
       ]
     }
