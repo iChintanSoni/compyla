@@ -45,6 +45,10 @@ pub struct Layout {
     /// The OOXML type (`p:sldLayout/@type`), which binding falls back to (§8.5).
     pub kind: Option<String>,
     pub placeholders: Vec<Placeholder>,
+    /// The master's title and body areas, for a title or content this layout has no placeholder
+    /// for (§8.8).
+    pub master_title: Option<Rect>,
+    pub master_body: Option<Rect>,
 }
 
 impl Layout {
@@ -103,6 +107,11 @@ pub fn read(template: &Template) -> Result<Vec<Layout>, Invalid> {
                 part,
                 name,
                 kind: xml.attr("type").map(str::to_string),
+                master_title: inherited.iter().find(|p| p.is_title()).and_then(|p| p.rect),
+                master_body: inherited
+                    .iter()
+                    .find(|p| p.kind == "body")
+                    .and_then(|p| p.rect),
                 placeholders: own,
             });
         }

@@ -47,9 +47,121 @@ pub fn dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
     None
 }
 
+/// A JPEG's EXIF orientation (1–8; 1 is upright), from its first APP1 segment. Viewers that
+/// embed the image as it is stored (PowerPoint, Word) don't apply it, so renderers do.
+pub fn orientation(bytes: &[u8]) -> u8 {
+    jpeg_orientation(bytes)
+        .filter(|o| (1..=8).contains(o))
+        .unwrap_or(1)
+}
+
+fn jpeg_orientation(bytes: &[u8]) -> Option<u8> {
+    if !bytes.starts_with(&[0xFF, 0xD8]) {
+        return None;
+    }
+    let be16 = |at: usize| Some(u16::from_be_bytes([*bytes.get(at)?, *bytes.get(at + 1)?]));
+    let mut at = 2;
+    while at + 4 <= bytes.len() && bytes[at] == 0xFF {
+        let marker = bytes[at + 1];
+        let length = usize::from(be16(at + 2)?);
+        if marker == 0xDA || length < 2 {
+            return None; // start of scan: no EXIF before it
+        }
+        let segment = bytes.get(at + 4..at + 2 + length)?;
+        if marker == 0xE1 && segment.starts_with(b"Exif\0\0") {
+            return exif_orientation(&segment[6..]);
+        }
+        at += 2 + length;
+    }
+    None
+}
+
+/// The orientation tag (0x0112) of a TIFF structure's first IFD.
+fn exif_orientation(tiff: &[u8]) -> Option<u8> {
+    let little = match tiff.get(..2)? {
+        b"II" => true,
+        b"MM" => false,
+        _ => return None,
+    };
+    let u16_at = |at: usize| {
+        let b = [*tiff.get(at)?, *tiff.get(at + 1)?];
+        Some(if little {
+            u16::from_le_bytes(b)
+        } else {
+            u16::from_be_bytes(b)
+        })
+    };
+    let u32_at = |at: usize| {
+        let b = [
+            *tiff.get(at)?,
+            *tiff.get(at + 1)?,
+            *tiff.get(at + 2)?,
+            *tiff.get(at + 3)?,
+        ];
+        Some(if little {
+            u32::from_le_bytes(b)
+        } else {
+            u32::from_be_bytes(b)
+        })
+    };
+    let ifd = usize::try_from(u32_at(4)?).ok()?;
+    let entries = usize::from(u16_at(ifd)?);
+    (0..entries).find_map(|i| {
+        let entry = ifd + 2 + 12 * i;
+        (u16_at(entry)? == 0x0112).then(|| u16_at(entry + 8).map(|v| v as u8))?
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A JPEG start with an EXIF segment giving `orientation`, in either byte order.
+    fn exif_jpeg(orientation: u16, little: bool) -> Vec<u8> {
+        let mut tiff: Vec<u8> = if little {
+            b"II*\0".to_vec()
+        } else {
+            b"MM\0*".to_vec()
+        };
+        let put16 = |v: u16| {
+            if little {
+                v.to_le_bytes()
+            } else {
+                v.to_be_bytes()
+            }
+        };
+        let put32 = |v: u32| {
+            if little {
+                v.to_le_bytes()
+            } else {
+                v.to_be_bytes()
+            }
+        };
+        tiff.extend(put32(8));
+        tiff.extend(put16(1));
+        tiff.extend(put16(0x0112));
+        tiff.extend(put16(3));
+        tiff.extend(put32(1));
+        tiff.extend(put16(orientation));
+        tiff.extend([0, 0]);
+        tiff.extend(put32(0));
+        let mut segment = b"Exif\0\0".to_vec();
+        segment.extend(tiff);
+        let mut jpeg = vec![0xFF, 0xD8, 0xFF, 0xE1];
+        jpeg.extend(((segment.len() + 2) as u16).to_be_bytes());
+        jpeg.extend(segment);
+        jpeg.extend([0xFF, 0xDA, 0x00, 0x02]);
+        jpeg
+    }
+
+    #[test]
+    fn reads_exif_orientation() {
+        assert_eq!(orientation(&exif_jpeg(6, true)), 6);
+        assert_eq!(orientation(&exif_jpeg(8, false)), 8);
+        assert_eq!(orientation(&exif_jpeg(42, true)), 1);
+        assert_eq!(orientation(b"\x89PNG"), 1);
+        assert_eq!(orientation(&[0xFF, 0xD8, 0xFF, 0xE1, 0x00]), 1);
+    }
 
     #[test]
     fn reads_png_gif_and_jpeg_sizes() {

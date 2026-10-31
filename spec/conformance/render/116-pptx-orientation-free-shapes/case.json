@@ -1,0 +1,13 @@
+{
+  "description": "A JPEG's EXIF orientation turns the picture upright, fitted by its upright shape. Content a layout has no slot for still shows: in the layout's first content placeholder (Section Header), else in a shape of its own over the master's body area; a title on Blank is a shape over the master's title area.",
+  "spec": [
+    "§8.6",
+    "§8.8",
+    "C53"
+  ],
+  "oracle": "corrected",
+  "format": "pptx",
+  "assets": [
+    "rotated.jpg"
+  ]
+}
