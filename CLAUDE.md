@@ -204,9 +204,10 @@ lint, compose, render and inspect. An `inspect` fixture has no `input.md`; its `
 
 - Every change starts from a GitHub issue, tracked on project #9 with milestones as phases.
 - Branch from `main`. The PR closes the issue and fills in `.github/pull_request_template.md`.
-- Never push to `main`. Merge only through a PR whose checks are all green, with a rebase merge (the
-  only method enabled), so history stays linear. Confirm CI yourself before merging; don't count on
-  branch protection to stop a red merge.
+- `main` is protected by a ruleset. Changes arrive only through PRs, merged by rebase (the only
+  method allowed), so history stays linear. The PR's review threads must be resolved, and
+  `Rust result`, `Toolchain result`, `test (22)` and `test (24)` must pass. The branch must be up to
+  date with `main`, so rebase it when `main` has moved.
 - Every review finding is either fixed in the PR, as "Fix the review of …" commits, or filed as an
   issue. Nothing moves to the next milestone while one is still open.
 - Commit subjects are imperative and at most 72 characters. The body says what changed and why.
