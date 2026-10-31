@@ -15,11 +15,11 @@ jobs:
         # pnpm 11 (packageManager in package.json) requires Node 22.13 or later.
         node-version: [22, 24]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node-version }}
           cache: pnpm
@@ -36,7 +36,7 @@ jobs:
       - name: Test
         run: pnpm test
 
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
 
       - name: Spec artifacts (registry, fixtures, schemas)
         run: node spec/tools/check.mjs --schemas

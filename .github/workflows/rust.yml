@@ -20,7 +20,7 @@ jobs:
     outputs:
       relevant: ${{ steps.diff.outputs.relevant }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 2
       - id: diff
@@ -44,7 +44,7 @@ jobs:
     if: needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -62,11 +62,11 @@ jobs:
       matrix:
         os: [ubuntu-24.04, ubuntu-24.04-arm, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # The render suite checks output with spec/tools/render_check.py, run through uv.
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
       - run: cargo test --workspace
 
   msrv:
@@ -75,7 +75,7 @@ jobs:
     if: needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # The toolchain goes through the input, not the ref: Dependabot reads a ref like `@1.89` as
       # an action release and "bumps" it to a Rust that doesn't exist (#51). `@master` is the ref
       # the action's README prescribes for an explicit toolchain input.
@@ -91,7 +91,7 @@ jobs:
     if: needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
