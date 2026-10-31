@@ -98,3 +98,28 @@ fn compyla_core_code_info(code: &str) -> (compyla::Severity, bool) {
     let d = compyla::Diagnostic::new(code, "");
     (d.severity, compyla::code_info(code).strict_promotable)
 }
+
+#[test]
+fn produced_template_reports_validate_against_the_spec_schema() {
+    // The report schema refers to the diagnostic schema by its $id; embedded, it resolves.
+    let mut schema = json(&spec("template-report.schema.json"));
+    schema["$defs"] = serde_json::json!({ "diagnostic": json(&spec("diagnostic.schema.json")) });
+    let validator = jsonschema::validator_for(&schema).unwrap();
+    let mut fixtures: Vec<PathBuf> = fs::read_dir(spec("conformance/inspect"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.join("case.json").is_file())
+        .collect();
+    fixtures.sort();
+    for fixture in fixtures {
+        let case = json(&fixture.join("case.json"));
+        let bytes = fs::read(fixture.join(case["template"].as_str().unwrap())).unwrap();
+        let report = compyla::inspect_template(&bytes);
+        if let Err(error) = validator.validate(&report) {
+            panic!(
+                "{}: report violates spec/template-report.schema.json: {error}",
+                fixture.display()
+            );
+        }
+    }
+}

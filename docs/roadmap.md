@@ -122,8 +122,13 @@ Goal: output that is faithful to a real corporate template, and identical bytes 
 - [x] `compyla-ooxml` writing: a deterministic zip writer (fixed timestamps and entry order,
       pure-Rust DEFLATE), XML that text can't escape from, the package model, and document
       properties from `meta` only (C44, §13)
-- [ ] `compyla-ooxml` templates: the package reader with §12.1 limits and §10.4 sanitization, and
-      `inspect_template`
+- [x] `compyla-ooxml` templates: a package reader that enforces §12.1's limits on the bytes
+      themselves (inflation stops at the limit), refuses what §10.4 refuses (macros, encryption,
+      DTDs, unsafe paths), a namespace-aware XML reader, and `inspect_template` (C50) in the facade
+      and CLI (`compyla template inspect`). The `inspect` suite has synthetic templates from
+      `spec/tools/make_templates.py`, valid and hostile
+- [ ] Template sanitization on output (§10.4: external relationships, ActiveX and OLE removed with
+      `template_content_removed`), with the pptx and docx renderers
 - [ ] `compyla-fonts`: lockfile, cache, measurement, subsetting (D14)
 - [ ] Compose stage with measured overflow diagnostics (D15)
 - [ ] pptx template-first, with a bundled house `.potx` (D12)
@@ -152,7 +157,7 @@ Goal: one engine, every channel (D10).
 
 - [ ] Node host (napi-rs) and the full browser WASM build
 - [ ] Python host (PyO3 + maturin)
-- [ ] CLI: `convert`, `lint`, `template inspect`, `fonts sync`
+- [ ] CLI: `fonts sync` (`lint`, `convert` and `template inspect` arrived in Phases B and C)
 - [ ] MCP server (D17): the four operations as tools; dialect spec, diagnostics registry and template
       reports as resources
 - [ ] HTTP server with request-size, upload and decompression limits (template uploads are zip files)

@@ -351,3 +351,50 @@ fn render_suite() {
         failures.join("\n")
     );
 }
+
+/// The inspect suite: each template's report equals `expected.json`, with issues compared as
+/// `(code, severity)` in order (spec/conformance/README.md).
+#[test]
+fn inspect_suite() {
+    let fixtures = suite("inspect");
+    assert!(
+        fixtures.len() >= 10,
+        "expected the full inspect suite, found {}",
+        fixtures.len()
+    );
+    let issues = |report: &Value| -> Vec<(String, String)> {
+        report["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| (i["code"].to_string(), i["severity"].to_string()))
+            .collect()
+    };
+    let mut failures = Vec::new();
+    for fixture in fixtures {
+        let name = fixture.file_name().unwrap().to_string_lossy().to_string();
+        let case = read_json(&fixture.join("case.json"));
+        let bytes = fs::read(fixture.join(case["template"].as_str().unwrap())).unwrap();
+        let mut report = compyla::inspect_template(&bytes);
+        let mut expected = read_json(&fixture.join("expected.json"));
+        if issues(&report) != issues(&expected) {
+            failures.push(format!(
+                "{name}: issues {:?}, want {:?}",
+                issues(&report),
+                issues(&expected)
+            ));
+            continue;
+        }
+        report.as_object_mut().unwrap().remove("issues");
+        expected.as_object_mut().unwrap().remove("issues");
+        if report != expected {
+            failures.push(format!("{name}:\n  got  {report}\n  want {expected}"));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} inspect fixture failure(s):\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}

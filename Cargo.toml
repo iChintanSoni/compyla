@@ -22,6 +22,7 @@ compyla-ooxml = { path = "crates/compyla-ooxml" }
 compyla-xlsx = { path = "crates/compyla-xlsx" }
 crc32fast = "1.5"
 miniz_oxide = "0.9"
+quick-xml = "0.42"
 comrak = { version = "0.59", default-features = false }
 saphyr-parser = "0.3"
 serde = { version = "1", features = ["derive"] }

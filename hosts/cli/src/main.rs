@@ -12,10 +12,12 @@ const USAGE: &str = "\
 usage: compyla parse <file.md>
        compyla lint <file> [--ir] [--format docx|pdf|pptx|xlsx] [--strict] [--json]
        compyla convert <file> [--ir] [--format ...] [--strict] [--json] [-o <output>]
+       compyla template inspect <template>
 
   parse     print the document's IR and parse diagnostics as JSON
   lint      check the document for a format; the format defaults to the frontmatter's `format`
   convert   write the document in a format (xlsx in this build), next to the input by default
+  template inspect   print a template's report as JSON: kind, theme, fonts, styles, layouts
 
   --ir       the input is IR JSON (markdown-spec.md §10.7) instead of markdown
   --strict   escalate every non-advisory warning to an error
@@ -39,6 +41,10 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
         "parse" => parse(rest),
         "lint" => lint(rest),
         "convert" => convert(rest),
+        "template" => match rest {
+            [sub, file] if sub == "inspect" => inspect(Path::new(file)),
+            _ => Err(USAGE.into()),
+        },
         "--help" | "-h" | "help" => {
             println!("{USAGE}");
             Ok(ExitCode::SUCCESS)
@@ -184,6 +190,21 @@ fn report(args: &Args, diagnostics: &[Diagnostic]) {
             file.display()
         );
     }
+}
+
+fn inspect(file: &Path) -> Result<ExitCode, String> {
+    let bytes = std::fs::read(file).map_err(|e| format!("can't read {}: {e}", file.display()))?;
+    let report = compyla::inspect_template(&bytes);
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&report).expect("the report serializes")
+    );
+    let invalid = report["kind"].is_null();
+    Ok(if invalid {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    })
 }
 
 /// Reads the input as UTF-8 (markdown-spec.md §1.1); invalid bytes are the `input_not_utf8` error.

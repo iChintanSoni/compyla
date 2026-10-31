@@ -1,0 +1,9 @@
+{
+  "description": "A package with a VBA project is template_invalid, whatever its name.",
+  "spec": [
+    "\u00a710.4",
+    "C50"
+  ],
+  "oracle": "none",
+  "template": "template.pptm"
+}

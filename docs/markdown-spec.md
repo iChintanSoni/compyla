@@ -102,6 +102,7 @@ prototype.
 | C47 | Limits (§12.1) hold for every input: IR input is counted as markdown is, and cells per row and slides are enforced. A limit stops processing, so no validate-stage diagnostic follows one. IR positions are at most 2³²−1, and IR text rules cover every string. Nested annotations of the same name: the innermost applies (§9.4, §10.7, §12.1) | Unenforced for IR input, rows and slides: hostile input crashed, hung or placed cells past XFD | lint/132, lint/133, lint/134, lint/135 |
 | C48 | xlsx rendering: the header row is bold on a light fill unless an Excel table styles it; an Excel table with no data rows gets an empty one; hyperlinked text is underlined in the link color and line breaks wrap (§9.2, §9.6) | Header style unspecified; an Excel table with no data rows was invalid | render/104, render/105, render/106, render/107 |
 | C49 | xlsx output, from review: the diagnostics cap keeps errors first, so a blocked `convert` always reports why (§11.2); text that looks like a SpreadsheetML escape reads back as written; Excel table headers keep links and rich text; emphasis on a number becomes the cell's font; an erroring formula's text is its `raw` (§9.3, §9.5, §9.6) | A blocked `convert` could report no error; `_x0041_` read back as "A"; header links dropped silently | render/108 |
+| C50 | `inspect_template` is specified end to end: an invalid template's report has `kind: null` and its reason; layouts report their OOXML type; Word's page defaults where a template is silent (§10.4, §10.5) | Undefined for invalid packages | inspect/101–110 |
 
 0.2 also corrects 0.1's *text* in one place where the prototype was right: `---` in xlsx is ignored
 without a diagnostic (§5).
@@ -1135,11 +1136,15 @@ masters, layouts, headers and footers, and replaces its content. In addition:
 
 ### 10.5 `inspect_template`
 
-Returns the template report:
+Returns the template report (`spec/template-report.schema.json`):
 - kind, theme fonts and colors, and referenced fonts (with whether each is embedded)
-- for docx: styles and page setup
-- for pptx: slide size, and layouts with their placeholders
-- template-level issues: diagnostics without a line, including `template_invalid`
+- for docx: styles and the final section's page setup (Word's defaults, Letter with 1-inch margins,
+  where the template gives none)
+- for pptx: slide size, and layouts in master order with their OOXML type and placeholders
+- template-level issues: diagnostics without a line (`no_theme`, `no_styles_xml`, `template_invalid`)
+
+An invalid template (§10.4) is reported, not refused: its report has `kind: null` and only its
+`template_invalid` issue, whose message says why. *(C50)*
 
 Agents use the report to write markdown against a template's real layouts and styles.
 

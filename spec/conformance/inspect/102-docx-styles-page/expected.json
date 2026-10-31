@@ -1,0 +1,80 @@
+{
+  "kind": "docx",
+  "theme": {
+    "fonts": {
+      "major": "Brand Serif",
+      "minor": "Brand Sans"
+    },
+    "colors": {
+      "dk1": "000000",
+      "lt1": "FFFFFF",
+      "dk2": "1F2A44",
+      "lt2": "E8ECF3",
+      "accent1": "2F5BEA",
+      "accent2": "00A88F",
+      "accent3": "F2A900",
+      "accent4": "D64545",
+      "accent5": "7A4FD1",
+      "accent6": "4A5568",
+      "hlink": "0563C1",
+      "folHlink": "954F72"
+    }
+  },
+  "fonts": [
+    {
+      "family": "Brand Serif",
+      "embedded": true
+    },
+    {
+      "family": "Brand Sans",
+      "embedded": false
+    },
+    {
+      "family": "Brand Mono",
+      "embedded": false
+    }
+  ],
+  "styles": [
+    {
+      "name": "Normal",
+      "id": "Normal",
+      "type": "paragraph"
+    },
+    {
+      "name": "heading 1",
+      "id": "Heading1",
+      "type": "paragraph"
+    },
+    {
+      "name": "Code Block",
+      "id": "Code",
+      "type": "paragraph"
+    },
+    {
+      "name": "Strong",
+      "id": "Strong",
+      "type": "character"
+    },
+    {
+      "name": "Table Grid",
+      "id": "TableGrid",
+      "type": "table"
+    },
+    {
+      "name": "No List",
+      "id": "NoList",
+      "type": "numbering"
+    }
+  ],
+  "page": {
+    "width": 595.3,
+    "height": 841.9,
+    "margins": {
+      "top": 72,
+      "right": 56.7,
+      "bottom": 72,
+      "left": 56.7
+    }
+  },
+  "issues": []
+}

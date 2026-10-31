@@ -7,7 +7,7 @@
   "required": ["kind", "theme", "fonts", "issues"],
   "additionalProperties": false,
   "properties": {
-    "kind": { "enum": ["docx", "pptx", "xlsx"] },
+    "kind": { "enum": ["docx", "pptx", "xlsx", null], "description": "The package's kind, from its main part's content type. null for a template_invalid package, whose report has only its issue." },
     "theme": {
       "type": "object",
       "required": ["fonts", "colors"],
@@ -98,6 +98,7 @@
         "additionalProperties": false,
         "properties": {
           "name": { "type": "string" },
+          "type": { "type": "string", "description": "The layout's OOXML type (p:sldLayout/@type), which layout binding uses for localized templates (markdown-spec.md §8.5); absent when the template omits it." },
           "placeholders": {
             "type": "array",
             "items": {

@@ -1,0 +1,9 @@
+{
+  "description": "A dotx: styles by stored name, fonts from the theme, styles and font table (with embedding), and the final section's page setup in points.",
+  "spec": [
+    "\u00a710.5",
+    "C50"
+  ],
+  "oracle": "none",
+  "template": "template.dotx"
+}

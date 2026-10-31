@@ -67,7 +67,7 @@ const CASE_KEYS = new Set(["description", "spec", "oracle", "format", "strict", 
 const STAGES_BY_SUITE = { parse: ["parse", "any"], lint: ["parse", "validate", "any"], render: ["parse", "validate", "render", "any"] };
 const fixtures = [];
 
-for (const suite of ["parse", "lint", "compose", "render"]) {
+for (const suite of ["parse", "lint", "compose", "render", "inspect"]) {
   const dir = join(conformance, suite);
   if (!existsSync(dir)) continue;
   for (const name of readdirSync(dir).sort()) {
@@ -75,7 +75,8 @@ for (const suite of ["parse", "lint", "compose", "render"]) {
     if (!statSync(fixture).isDirectory()) continue; // e.g. .DS_Store
     const where = `${suite}/${name}`;
     if (!/^\d{3}-[a-z0-9-]+$/.test(name)) problem(where, "directory must be NNN-kebab-name");
-    for (const file of ["input.md", "case.json", "expected.json"]) {
+    const files = suite === "inspect" ? ["case.json", "expected.json"] : ["input.md", "case.json", "expected.json"];
+    for (const file of files) {
       if (!existsSync(join(fixture, file))) problem(where, `missing ${file}`);
     }
     if (!existsSync(join(fixture, "case.json")) || !existsSync(join(fixture, "expected.json"))) continue;
@@ -88,7 +89,8 @@ for (const suite of ["parse", "lint", "compose", "render"]) {
     if (typeof kase.description !== "string" || kase.description.length === 0) problem(where, "case.json needs a description");
     if (!Array.isArray(kase.spec) || kase.spec.length === 0) problem(where, "case.json needs spec references");
     if (!["prototype", "corrected", "none"].includes(kase.oracle)) problem(where, `bad oracle ${kase.oracle}`);
-    if (suite !== "parse" && !FORMATS.includes(kase.format)) problem(where, "lint, compose and render cases need a format");
+    if (["lint", "compose", "render"].includes(suite) && !FORMATS.includes(kase.format)) problem(where, "lint, compose and render cases need a format");
+    if (suite === "inspect" && !kase.template) problem(where, "inspect cases name their template");
     if (kase.template && !existsSync(join(fixture, kase.template))) problem(where, `template ${kase.template} is missing`);
 
     const correction = name.startsWith("1");
@@ -100,12 +102,13 @@ for (const suite of ["parse", "lint", "compose", "render"]) {
       if (/^§/.test(ref) && !specText.includes(`## ${ref.slice(1).split(".")[0]}.`)) problem(where, `cites ${ref}, which doesn't exist`);
     }
 
-    if (suite === "parse" || suite === "lint" || suite === "render") {
-      if (!Array.isArray(expected.diagnostics)) {
-        problem(where, "expected.json needs a diagnostics array");
+    if (suite === "parse" || suite === "lint" || suite === "render" || suite === "inspect") {
+      const list = suite === "inspect" ? expected.issues : expected.diagnostics;
+      if (!Array.isArray(list)) {
+        problem(where, `expected.json needs a${suite === "inspect" ? "n issues" : " diagnostics"} array`);
         continue;
       }
-      for (const d of expected.diagnostics) {
+      for (const d of list) {
         const entry = codes.get(d.code);
         if (!entry) {
           problem(where, `unregistered code ${d.code}`);
@@ -113,6 +116,7 @@ for (const suite of ["parse", "lint", "compose", "render"]) {
         }
         const severity = kase.strict && entry.strictPromotable ? "error" : entry.severity;
         if (d.severity !== severity) problem(where, `${d.code} must be ${severity} here, not ${d.severity}`);
+        if (suite === "inspect") continue;
         if (!STAGES_BY_SUITE[suite].includes(entry.stage)) problem(where, `${d.code} is a ${entry.stage}-stage code; it can't appear in the ${suite} suite`);
         if (suite !== "parse" && !entry.profiles.includes("*") && !entry.profiles.includes(kase.format)) {
           problem(where, `${d.code} doesn't apply to ${kase.format}`);
@@ -153,7 +157,7 @@ if (process.argv.includes("--schemas")) {
   run(["--check-metaschema", ...schemas.map((s) => join(specDir, s))]);
   run(["--schemafile", join(specDir, "diagnostics.schema.json"), join(specDir, "diagnostics.json")]);
 
-  const instances = { ir: [], compose: [], render: [], case: [] };
+  const instances = { ir: [], compose: [], render: [], inspect: [], case: [] };
   for (const { suite, name, fixture, expected } of fixtures) {
     instances.case.push(join(fixture, "case.json"));
     if (suite === "parse") {
@@ -163,10 +167,19 @@ if (process.argv.includes("--schemas")) {
     }
     if (suite === "compose") instances.compose.push(join(fixture, "expected.json"));
     if (suite === "render") instances.render.push(join(fixture, "expected.json"));
+    if (suite === "inspect") instances.inspect.push(join(fixture, "expected.json"));
   }
   if (instances.ir.length) run(["--schemafile", join(specDir, "ir.schema.json"), ...instances.ir]);
   if (instances.compose.length) run(["--schemafile", join(specDir, "conformance/compose.schema.json"), ...instances.compose]);
   if (instances.render.length) run(["--schemafile", join(specDir, "conformance/render.schema.json"), ...instances.render]);
+  // The report schema refers to the diagnostic schema by $id: embed it, so the reference resolves.
+  if (instances.inspect.length) {
+    const bundled = join(work, "template-report.bundled.json");
+    const report = readJson(join(specDir, "template-report.schema.json"));
+    report.$defs = { diagnostic: readJson(join(specDir, "diagnostic.schema.json")) };
+    writeFileSync(bundled, JSON.stringify(report)); // the embedded schema keeps its $id, which the $ref names
+    run(["--schemafile", bundled, ...instances.inspect]);
+  }
   if (instances.case.length) run(["--schemafile", join(specDir, "conformance/case.schema.json"), ...instances.case]);
 }
 

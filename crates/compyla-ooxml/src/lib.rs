@@ -2,9 +2,15 @@
 //! writing that can't be escaped from, and the package model. Output is reproducible byte for byte
 //! (markdown-spec.md §13).
 
+pub mod dom;
+pub mod inspect;
 pub mod package;
+pub mod read;
+pub mod template;
 pub mod xml;
 pub mod zip;
 
+pub use inspect::inspect;
 pub use package::{Package, Properties, Relationships};
+pub use template::{Kind, Template};
 pub use xml::Writer;
