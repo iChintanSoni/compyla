@@ -1,11 +1,14 @@
 //! Active and external content removed from the template parts an output keeps (markdown-spec.md
-//! §10.4, C58): relationships with an external target other than hyperlinks, OLE objects and
-//! ActiveX controls, together with what refers to them. A part with nothing to remove stays byte
-//! for byte; in one with something, everything else stays as it was.
+//! §10.4, C58): relationships with an external target other than hyperlinks, hyperlinks §4.5
+//! doesn't allow and actions that run something, OLE objects and ActiveX controls, together with
+//! what refers to them. A part with nothing to remove stays byte for byte; in one with something,
+//! everything else stays as it was.
 
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
+use compyla_core::diagnostic::CAP;
+use compyla_core::parse::destination_allowed;
 use quick_xml::NsReader;
 use quick_xml::events::Event;
 use quick_xml::name::ResolveResult;
@@ -16,6 +19,31 @@ use crate::template::{self, Invalid, Relationship, Template};
 const MC: &str = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 /// VML names relationships with `o:relid` as well as `r:id`.
 const VML_OFFICE: &str = "urn:schemas-microsoft-com:office:office";
+/// Strict OOXML's namespaces for PresentationML, DrawingML and relationship attributes: read like
+/// the Transitional ones, so nothing in a Strict part goes unseen.
+const STRICT_P: &str = "http://purl.oclc.org/ooxml/presentationml/main";
+const STRICT_A: &str = "http://purl.oclc.org/ooxml/drawingml/main";
+const STRICT_REL_NS: &str = "http://purl.oclc.org/ooxml/officeDocument/relationships";
+/// The hyperlink relationship type, Transitional and Strict, compared exactly: a type that only
+/// ends like one isn't one.
+const HYPERLINK: [&str; 2] = [
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink",
+    "http://purl.oclc.org/ooxml/officeDocument/relationships/hyperlink",
+];
+/// The hyperlink actions that only navigate; any other runs something (a program, a macro, an
+/// object's verb).
+const NAVIGATION: [&str; 7] = [
+    "noaction",
+    "hlinkshowjump",
+    "hlinksldjump",
+    "hlinkpres",
+    "hlinkfile",
+    "customshow",
+    "media",
+];
+/// The most removals one part reports: the diagnostic cap's worth and one more, so the cap still
+/// applies (§11.2) without holding what it would drop (§12.1).
+pub const REPORTED: usize = CAP + 1;
 
 /// Something removed from a part: each is one `template_content_removed`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,8 +52,13 @@ pub enum Removed {
     OleObject,
     /// An ActiveX control.
     ActiveX,
-    /// A relationship with an external target, other than a hyperlink: its type and target.
+    /// A relationship with an external target, other than a hyperlink, or one of the hyperlink
+    /// type that something other than a hyperlink refers to: its type and target.
     External { kind: String, target: String },
+    /// A hyperlink whose destination §4.5 doesn't allow.
+    Hyperlink { target: String },
+    /// A hyperlink action that runs something rather than navigating.
+    Action { action: String },
 }
 
 /// A template part without its active and external content.
@@ -37,7 +70,8 @@ pub struct Part {
     pub xml: Option<Vec<u8>>,
     /// Its relationships part's new bytes, when a relationship was removed.
     pub rels: Option<Vec<u8>>,
-    /// What was removed: objects in document order, then relationships in their order.
+    /// What was removed: objects and actions in document order, then relationships in their
+    /// order; at most `REPORTED`.
     pub removed: Vec<Removed>,
 }
 
@@ -52,27 +86,31 @@ pub fn part(template: &Template, name: &str) -> Result<Part, Invalid> {
             removed: Vec::new(),
         })
     };
-    // Without relationships, nothing in a part can refer to anything outside it.
+    // A part that relates to nothing can't embed, link to or run anything.
     if relationships.is_empty() {
         return unchanged(relationships);
     }
-    let removable: HashSet<&str> = relationships
+    // Relationships that go whatever refers to them; hyperlinks, which go if anything but a
+    // hyperlink refers to them; and embedded data, which goes unless something kept refers to it.
+    let mut removable: HashSet<&str> = relationships
         .iter()
         .filter(|r| removable(r))
         .map(|r| r.id.as_str())
         .collect();
+    let hyperlinks: HashSet<&str> = relationships
+        .iter()
+        .filter(|r| is_hyperlink(r) && !removable.contains(r.id.as_str()))
+        .map(|r| r.id.as_str())
+        .collect();
+    if removable.is_empty() && hyperlinks.is_empty() && !relationships.iter().any(is_embedding) {
+        return unchanged(relationships);
+    }
     let text = if is_xml(template, name) {
         let data = template.part(name).unwrap_or_default();
         Some(dom::utf8_document(data).map_err(|error| invalid(name, error))?)
     } else {
         None
     };
-    let objects_named = text
-        .as_deref()
-        .is_some_and(|text| contains(text, b"oleObj") || contains(text, b"control"));
-    if removable.is_empty() && !objects_named {
-        return unchanged(relationships);
-    }
     let nodes = match &text {
         Some(text) => nodes(text).map_err(|error| invalid(name, error))?,
         None => Vec::new(),
@@ -81,36 +119,44 @@ pub fn part(template: &Template, name: &str) -> Result<Part, Invalid> {
     // Every pass below is linear: a hostile part may have as many elements as §12.1 allows.
     let extents = Extents::new(&nodes);
 
-    // OLE objects (the graphic frame holding one) and ActiveX controls, each once.
-    let mut objects: Vec<(usize, Removed)> = Vec::new();
+    // A relationship of the hyperlink type is a hyperlink only where hyperlinks refer to it.
+    for node in nodes.iter().filter(|node| !node.is_hyperlink()) {
+        for (_, id) in &node.refs {
+            if let Some(&id) = hyperlinks.get(id.as_str()) {
+                removable.insert(id);
+            }
+        }
+    }
+
+    // OLE objects (the graphic frame holding one), ActiveX controls and actions that run
+    // something, each once: these are reported, and what they refer to goes with them.
+    let mut reported: Vec<(usize, Removed)> = Vec::new();
     let mut roots: HashSet<usize> = HashSet::new();
     for (index, node) in nodes.iter().enumerate() {
-        let object = if node.is(MAIN_P, "oleObj") {
+        let found = if node.is_p("oleObj") {
             let frame = extents.frame[index].unwrap_or(index);
             Some((extents.of(frame), Removed::OleObject))
-        } else if node.is(MAIN_P, "control") {
+        } else if node.is_p("control") {
             Some((extents.of(index), Removed::ActiveX))
+        } else if let Some(action) = node.action.as_deref().filter(|a| !navigates(a)) {
+            let action = action.to_string();
+            Some((extents.of(index), Removed::Action { action }))
         } else {
             None
         };
-        if let Some((root, what)) = object
+        if let Some((root, what)) = found
             && roots.insert(root)
         {
-            if nodes[root].parent.is_none() {
-                return Err(Invalid(format!(
-                    "has an OLE object or ActiveX control as the whole of `{name}`"
-                )));
-            }
-            objects.push((root, what));
+            reported.push((root, what));
         }
     }
-    let in_object = mark(&nodes, &roots);
+    let in_reported = mark(&nodes, &roots);
 
     // What refers to a removed relationship: a picture's blip loses the attribute naming it (so
     // does the root, which can't go); anything else is removed.
     let mut strip: HashMap<usize, Vec<String>> = HashMap::new();
     for (index, node) in nodes.iter().enumerate() {
-        if in_object[index] {
+        if in_reported[index] {
             continue;
         }
         let named: Vec<String> = node
@@ -123,7 +169,7 @@ pub fn part(template: &Template, name: &str) -> Result<Part, Invalid> {
             continue;
         }
         let root = extents.of(index);
-        if node.is(MAIN_A, "blip") || nodes[root].parent.is_none() {
+        if node.is_a("blip") || nodes[root].parent.is_none() {
             strip.insert(index, named);
         } else {
             roots.insert(root);
@@ -140,7 +186,7 @@ pub fn part(template: &Template, name: &str) -> Result<Part, Invalid> {
         .collect();
     for (index, node) in nodes.iter().enumerate() {
         if !inside[index]
-            && node.is(MAIN_P, "spTgt")
+            && node.is_p("spTgt")
             && node.key.as_deref().is_some_and(|id| shapes.contains(id))
         {
             roots.insert(extents.of(index));
@@ -157,7 +203,7 @@ pub fn part(template: &Template, name: &str) -> Result<Part, Invalid> {
         }
     }
     for (index, node) in nodes.iter().enumerate() {
-        if node.is(MAIN_P, "controls")
+        if node.is_p("controls")
             && !inside[index]
             && children[index] > 0
             && gone[index] == children[index]
@@ -165,13 +211,18 @@ pub fn part(template: &Template, name: &str) -> Result<Part, Invalid> {
             roots.insert(index);
         }
     }
+    // The root element can't go: a part that is only active content isn't a usable template part.
+    if roots.iter().any(|&root| nodes[root].parent.is_none()) {
+        return Err(Invalid(format!(
+            "has an OLE object, ActiveX control or action as the whole of `{name}`"
+        )));
+    }
     let inside = mark(&nodes, &roots);
     strip.retain(|index, _| !inside[*index]);
 
-    // Relationships only removed content used go with it.
-    let (mut within, mut outside) = (HashSet::new(), HashSet::new());
-    // Whether every reference to a relationship is inside an object, which reports it.
-    let mut objects_own: HashMap<&str, bool> = HashMap::new();
+    // Relationships only removed content used go with it, and so does embedded data nothing kept
+    // refers to. A relationship something reported refers to is that report's.
+    let (mut within, mut outside, mut owned) = (HashSet::new(), HashSet::new(), HashSet::new());
     for (index, node) in nodes.iter().enumerate() {
         let stripped = strip.get(&index).map_or(&[][..], Vec::as_slice);
         for (key, id) in &node.refs {
@@ -180,26 +231,36 @@ pub fn part(template: &Template, name: &str) -> Result<Part, Invalid> {
             } else if !stripped.contains(key) {
                 outside.insert(id.as_str());
             }
-            *objects_own.entry(id.as_str()).or_insert(true) &= in_object[index];
+            if in_reported[index] {
+                owned.insert(id.as_str());
+            }
         }
     }
-    let gone_ids: HashSet<String> = removable
+    let goes = |r: &Relationship| {
+        let id = r.id.as_str();
+        removable.contains(id)
+            || (within.contains(id) && !outside.contains(id))
+            || (is_embedding(r) && !outside.contains(id))
+    };
+    let gone_ids: HashSet<&str> = relationships
         .iter()
-        .copied()
-        .chain(within.difference(&outside).copied())
-        .map(str::to_string)
+        .filter(|r| goes(r))
+        .map(|r| r.id.as_str())
         .collect();
 
-    // One report per object, and one per removed relationship that isn't an object's.
-    let mut removed: Vec<Removed> = objects
-        .iter()
-        .filter(|(root, _)| !nodes[*root].parent.is_some_and(|p| in_object[p]))
-        .map(|(_, what)| what.clone())
+    // One report per object or action, and one per removed relationship that isn't one's.
+    let mut removed: Vec<Removed> = reported
+        .into_iter()
+        .filter(|(root, _)| !nodes[*root].parent.is_some_and(|p| in_reported[p]))
+        .map(|(_, what)| what)
+        .take(REPORTED)
         .collect();
     for relationship in &relationships {
-        if !removable.contains(relationship.id.as_str())
-            || objects_own.get(relationship.id.as_str()) == Some(&true)
-        {
+        if removed.len() >= REPORTED {
+            break;
+        }
+        let id = relationship.id.as_str();
+        if !removable.contains(id) || owned.contains(id) {
             continue;
         }
         let kind = suffix(&relationship.kind);
@@ -207,6 +268,13 @@ pub fn part(template: &Template, name: &str) -> Result<Part, Invalid> {
             Removed::OleObject
         } else if kind.eq_ignore_ascii_case("control") {
             Removed::ActiveX
+        } else if kind.eq_ignore_ascii_case("vmlDrawing") {
+            // A legacy drawing of the objects and controls, which are reported themselves.
+            continue;
+        } else if is_hyperlink(relationship) && !destination_allowed(&relationship.target) {
+            Removed::Hyperlink {
+                target: relationship.target.clone(),
+            }
         } else {
             Removed::External {
                 kind: kind.to_string(),
@@ -238,18 +306,21 @@ pub fn part(template: &Template, name: &str) -> Result<Part, Invalid> {
         let part = template::relationships_part(name);
         let data = dom::utf8_document(template.part(&part).unwrap_or_default())
             .map_err(|error| invalid(&part, error))?;
+        // A relationship without an `Id` has the id "" (template::Template::relationships).
         let edits = nodes_of(&data, &part)?
             .iter()
             .filter(|node| node.is(PACKAGE_RELS, "Relationship"))
-            .filter(|node| node.key.as_ref().is_some_and(|id| gone_ids.contains(id)))
+            .filter(|node| gone_ids.contains(node.key.as_deref().unwrap_or("")))
             .map(|node| (node.span.clone(), Vec::new()))
             .collect();
         Some(splice(&data, edits))
     };
+    let kept: Vec<bool> = relationships.iter().map(|r| !goes(r)).collect();
     Ok(Part {
         relationships: relationships
             .into_iter()
-            .filter(|r| !gone_ids.contains(&r.id))
+            .zip(kept)
+            .filter_map(|(r, keep)| keep.then_some(r))
             .collect(),
         xml,
         rels,
@@ -257,14 +328,39 @@ pub fn part(template: &Template, name: &str) -> Result<Part, Invalid> {
     })
 }
 
-/// A relationship §10.4 removes: an external target other than a hyperlink, or an OLE object or
-/// ActiveX control wherever it is. Types compare without case, by their last segment, so the
-/// Strict namespace counts too.
+/// A relationship §10.4 removes whatever refers to it: an external target other than a
+/// hyperlink's; a hyperlink to a destination §4.5 doesn't allow; an OLE object, an ActiveX control,
+/// or the legacy VML drawing that only draws them, wherever it is. Types other than the hyperlink
+/// compare without case, by their last segment, so the Strict namespace counts too.
 fn removable(relationship: &Relationship) -> bool {
     let kind = suffix(&relationship.kind);
-    (relationship.external && !kind.eq_ignore_ascii_case("hyperlink"))
-        || kind.eq_ignore_ascii_case("oleObject")
-        || kind.eq_ignore_ascii_case("control")
+    if is_hyperlink(relationship) {
+        return !destination_allowed(&relationship.target);
+    }
+    relationship.external
+        || ["oleObject", "control", "vmlDrawing"]
+            .iter()
+            .any(|k| kind.eq_ignore_ascii_case(k))
+}
+
+fn is_hyperlink(relationship: &Relationship) -> bool {
+    HYPERLINK.contains(&relationship.kind.as_str())
+}
+
+/// Embedded data: an embedded package (an OLE object's or a chart's), or an ActiveX control's.
+fn is_embedding(relationship: &Relationship) -> bool {
+    let kind = suffix(&relationship.kind);
+    kind.eq_ignore_ascii_case("package") || kind.eq_ignore_ascii_case("activeXControlBinary")
+}
+
+/// Whether a hyperlink `action` only navigates (`ppaction://` and a verb, case-insensitively).
+fn navigates(action: &str) -> bool {
+    let action = action.trim().to_ascii_lowercase();
+    action.is_empty()
+        || action.strip_prefix("ppaction://").is_some_and(|rest| {
+            let verb = rest.split(['?', '/']).next().unwrap_or_default();
+            NAVIGATION.contains(&verb)
+        })
 }
 
 fn suffix(kind: &str) -> &str {
@@ -283,12 +379,6 @@ fn is_xml(template: &Template, name: &str) -> bool {
                 .trim()
                 .ends_with("xml")
         })
-}
-
-fn contains(haystack: &[u8], needle: &[u8]) -> bool {
-    haystack
-        .windows(needle.len())
-        .any(|window| window == needle)
 }
 
 fn invalid(name: &str, error: Error) -> Invalid {
@@ -314,11 +404,27 @@ struct Node {
     refs: Vec<(String, String)>,
     /// A shape's id (`cNvPr`), an animation target's (`p:spTgt`), or a relationship's (`Id`).
     key: Option<String>,
+    /// A hyperlink's action (`ppaction://…`), if it has one.
+    action: Option<String>,
 }
 
 impl Node {
     fn is(&self, namespace: &str, name: &str) -> bool {
         self.namespace == namespace && self.name == name
+    }
+
+    /// A PresentationML element, Transitional or Strict.
+    fn is_p(&self, name: &str) -> bool {
+        self.name == name && (self.namespace == MAIN_P || self.namespace == STRICT_P)
+    }
+
+    /// A DrawingML element, Transitional or Strict.
+    fn is_a(&self, name: &str) -> bool {
+        self.name == name && (self.namespace == MAIN_A || self.namespace == STRICT_A)
+    }
+
+    fn is_hyperlink(&self) -> bool {
+        self.is_a("hlinkClick") || self.is_a("hlinkHover") || self.is_a("hlinkMouseOver")
     }
 }
 
@@ -354,12 +460,19 @@ fn nodes(text: &[u8]) -> Result<Vec<Node>, Error> {
                     )));
                 }
                 let (namespace, name) = dom::names(&reader, start);
+                let hyperlink = (namespace == MAIN_A || namespace == STRICT_A)
+                    && matches!(
+                        name.as_str(),
+                        "hlinkClick" | "hlinkHover" | "hlinkMouseOver"
+                    );
                 let mut refs = Vec::new();
                 let mut key = None;
+                let mut action = None;
                 for attribute in start.attributes() {
                     let attribute = attribute.map_err(|e| Error::Malformed(e.to_string()))?;
                     let qualified = attribute.key.as_ref();
-                    if qualified.starts_with("xmlns") {
+                    // Namespace declarations only: `xmlnsr:link` is an attribute like any other.
+                    if qualified == "xmlns" || qualified.starts_with("xmlns:") {
                         continue;
                     }
                     let (resolved, local) = reader.resolver().resolve_attribute(attribute.key);
@@ -375,18 +488,21 @@ fn nodes(text: &[u8]) -> Result<Vec<Node>, Error> {
                             .into_owned())
                     };
                     if attribute_namespace == REL_NS
+                        || attribute_namespace == STRICT_REL_NS
                         || (attribute_namespace == VML_OFFICE && local == "relid")
                     {
                         refs.push((qualified.to_string(), value()?));
-                    } else if attribute_namespace.is_empty()
-                        && matches!(
+                    } else if attribute_namespace.is_empty() {
+                        if hyperlink && local == "action" {
+                            action = Some(value()?);
+                        } else if matches!(
                             (namespace.as_str(), name.as_str(), local),
                             (_, "cNvPr", "id")
-                                | (MAIN_P, "spTgt", "spid")
+                                | (MAIN_P | STRICT_P, "spTgt", "spid")
                                 | (PACKAGE_RELS, "Relationship", "Id")
-                        )
-                    {
-                        key = Some(value()?);
+                        ) {
+                            key = Some(value()?);
+                        }
                     }
                 }
                 nodes.push(Node {
@@ -397,6 +513,7 @@ fn nodes(text: &[u8]) -> Result<Vec<Node>, Error> {
                     parent: open.last().copied(),
                     refs,
                     key,
+                    action,
                 });
                 if matches!(event, Event::Start(_)) {
                     open.push(nodes.len() - 1);
@@ -421,14 +538,16 @@ fn nodes(text: &[u8]) -> Result<Vec<Node>, Error> {
 }
 
 /// What removing each element takes with it, found in one pass (parents come before children):
-/// the animations or transition it is part of; then each `mc:AlternateContent` it is a branch of,
-/// whose other branches are the same content, and each extension it is in.
+/// the animations or transition it is part of; then the extension it is in, at any depth (an
+/// extension is optional, its content isn't); the graphic frame whose payload it is (a graphic
+/// can't be empty); and each `mc:AlternateContent` it is a branch of, whose other branches are the
+/// same content.
 struct Extents {
     /// The nearest `p:timing` or `p:transition`, the element included.
     animation: Vec<Option<usize>>,
     /// The nearest `p:graphicFrame`, the element included.
     frame: Vec<Option<usize>>,
-    /// What an element takes with it through alternates and extensions.
+    /// What an element takes with it through extensions, graphics and alternates.
     climb: Vec<usize>,
 }
 
@@ -439,25 +558,36 @@ impl Extents {
             frame: vec![None; nodes.len()],
             climb: vec![0; nodes.len()],
         };
+        // The nearest extension (`p:ext` or `a:ext` in an extension list), the element included.
+        let mut extension: Vec<Option<usize>> = vec![None; nodes.len()];
         for (index, node) in nodes.iter().enumerate() {
             let parent = node.parent;
-            extents.animation[index] = if node.is(MAIN_P, "timing") || node.is(MAIN_P, "transition")
-            {
+            extents.animation[index] = if node.is_p("timing") || node.is_p("transition") {
                 Some(index)
             } else {
                 parent.and_then(|p| extents.animation[p])
             };
-            extents.frame[index] = if node.is(MAIN_P, "graphicFrame") {
+            extents.frame[index] = if node.is_p("graphicFrame") {
                 Some(index)
             } else {
                 parent.and_then(|p| extents.frame[p])
             };
+            let in_list =
+                parent.is_some_and(|p| nodes[p].is_p("extLst") || nodes[p].is_a("extLst"));
+            extension[index] = if in_list && (node.is_p("ext") || node.is_a("ext")) {
+                Some(index)
+            } else {
+                parent.and_then(|p| extension[p])
+            };
             extents.climb[index] = match parent {
+                Some(p) if extension[p].is_some() => {
+                    extension[p].map_or(index, |e| extents.climb[e])
+                }
                 Some(p) if nodes[p].is(MC, "Choice") || nodes[p].is(MC, "Fallback") => nodes[p]
                     .parent
                     .map_or(index, |alternate| extents.climb[alternate]),
-                Some(p) if nodes[p].is(MAIN_P, "ext") || nodes[p].is(MAIN_A, "ext") => {
-                    extents.climb[p]
+                Some(p) if nodes[p].is_a("graphicData") => {
+                    extents.frame[p].map_or(index, |frame| extents.climb[frame])
                 }
                 _ => index,
             };
@@ -552,6 +682,27 @@ mod tests {
         .map(|(name, data)| (name.to_string(), data))
         .collect();
         Template::read(&crate::zip::write(&entries)).unwrap()
+    }
+
+    /// A package whose layout is `xml` with `relationships` as written.
+    fn template_raw(xml: &[u8], relationships: &str) -> Template {
+        let entries: Vec<(String, Vec<u8>)> = [
+            ("[Content_Types].xml", r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/></Types>"#.as_bytes().to_vec()),
+            ("_rels/.rels", format!(r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{R}/officeDocument" Target="ppt/presentation.xml"/></Relationships>"#).into_bytes()),
+            ("ppt/presentation.xml", format!("<p:presentation {NS}/>").into_bytes()),
+            (LAYOUT, xml.to_vec()),
+            ("ppt/slideLayouts/_rels/slideLayout1.xml.rels", format!(r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">{relationships}</Relationships>"#).into_bytes()),
+        ]
+        .into_iter()
+        .map(|(name, data)| (name.to_string(), data))
+        .collect();
+        Template::read(&crate::zip::write(&entries)).unwrap()
+    }
+
+    fn shape(id: u32, link: &str) -> String {
+        format!(
+            r#"<p:sp><p:nvSpPr><p:cNvPr id="{id}" name="s{id}">{link}</p:cNvPr><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr/></p:sp>"#
+        )
     }
 
     fn layout(tree: &str, after: &str) -> String {
@@ -795,5 +946,247 @@ mod tests {
                 .0
                 .contains("malformed XML")
         );
+    }
+
+    #[test]
+    fn a_hyperlink_relationship_anything_else_refers_to_is_external_content() {
+        // A picture linked through a relationship of the hyperlink type, and through a type that
+        // only ends like one.
+        let xml = layout(
+            r#"<p:pic><p:nvPicPr><p:cNvPr id="2" name="a"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:link="rId2"/></p:blipFill><p:spPr/></p:pic><p:pic><p:nvPicPr><p:cNvPr id="3" name="b"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:link="rId3"/></p:blipFill><p:spPr/></p:pic>"#,
+            "",
+        );
+        let template = template_raw(
+            xml.as_bytes(),
+            &format!(
+                r#"<Relationship Id="rId1" Type="{R}/slideMaster" Target="../slideMasters/slideMaster1.xml"/><Relationship Id="rId2" Type="{R}/hyperlink" Target="https://tracker.example/a.png" TargetMode="External"/><Relationship Id="rId3" Type="http://evil.example/x/hyperlink" Target="https://tracker.example/b.png" TargetMode="External"/>"#
+            ),
+        );
+        let part = part(&template, LAYOUT).unwrap();
+        assert_eq!(ids(&part), ["rId1"]);
+        assert_eq!(part.removed.len(), 2);
+        let out = text(&part.xml);
+        assert!(
+            !out.contains("r:link") && out.matches("<a:blip/>").count() == 2,
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn hyperlinks_go_where_section_4_5_refuses_their_destination_or_their_action_runs_something() {
+        let tree = [
+            shape(2, r#"<a:hlinkClick r:id="rId2"/>"#),
+            shape(3, r#"<a:hlinkHover r:id="rId3"/>"#),
+            shape(
+                4,
+                r#"<a:hlinkClick r:id="rId4" action="ppaction://program"/>"#,
+            ),
+            shape(
+                5,
+                r#"<a:hlinkClick r:id="" action="ppaction://macro?name=Run"/>"#,
+            ),
+            shape(6, r#"<a:hlinkClick r:id="rId5"/>"#),
+            shape(
+                7,
+                r#"<a:hlinkClick r:id="" action="ppaction://hlinkshowjump?jump=nextslide"/>"#,
+            ),
+        ]
+        .concat();
+        let template = template(
+            layout(&tree, "").as_bytes(),
+            &[
+                MASTER,
+                ("rId2", "hyperlink", "ms-msdt:/id PCWDiagnostic", true),
+                ("rId3", "hyperlink", "file://host/share", true),
+                (
+                    "rId4",
+                    "hyperlink",
+                    "file:///C:/Windows/System32/calc.exe",
+                    true,
+                ),
+                ("rId5", "hyperlink", "https://example.com/", true),
+            ],
+        );
+        let part = part(&template, LAYOUT).unwrap();
+        // The two actions first (document order), then the refused destinations; the program's
+        // relationship is its action's.
+        assert_eq!(
+            part.removed,
+            [
+                Removed::Action {
+                    action: "ppaction://program".into()
+                },
+                Removed::Action {
+                    action: "ppaction://macro?name=Run".into()
+                },
+                Removed::Hyperlink {
+                    target: "ms-msdt:/id PCWDiagnostic".into()
+                },
+                Removed::Hyperlink {
+                    target: "file://host/share".into()
+                },
+            ]
+        );
+        assert_eq!(ids(&part), ["rId1", "rId5"]);
+        let out = text(&part.xml);
+        assert_eq!(out.matches("<a:hlink").count(), 2, "{out}");
+        assert!(out.contains(r#"r:id="rId5""#) && out.contains("hlinkshowjump"));
+        assert!(
+            out.contains(r#"name="s4""#),
+            "the shape stays, only its link goes"
+        );
+    }
+
+    #[test]
+    fn a_target_mode_other_than_internal_is_external() {
+        let xml = layout(
+            r#"<p:pic><p:nvPicPr><p:cNvPr id="2" name="a"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:link="rId2"/></p:blipFill><p:spPr/></p:pic>"#,
+            "",
+        );
+        for mode in [
+            r#" TargetMode="external""#,
+            r#" TargetMode="External ""#,
+            "",
+        ] {
+            let target = if mode.is_empty() {
+                "https://tracker.example/a.png"
+            } else {
+                "../media/a.png"
+            };
+            let template = template_raw(
+                xml.as_bytes(),
+                &format!(
+                    r#"<Relationship Id="rId1" Type="{R}/slideMaster" Target="../slideMasters/slideMaster1.xml"/><Relationship Id="rId2" Type="{R}/image" Target="{target}"{mode}/>"#
+                ),
+            );
+            let part = part(&template, LAYOUT).unwrap();
+            assert_eq!(ids(&part), ["rId1"], "{mode:?}");
+            assert_eq!(part.removed.len(), 1, "{mode:?}");
+        }
+    }
+
+    #[test]
+    fn a_relationship_without_an_id_goes_from_the_relationships_part() {
+        let template = template_raw(
+            layout("", "").as_bytes(),
+            &format!(
+                r#"<Relationship Id="rId1" Type="{R}/slideMaster" Target="../slideMasters/slideMaster1.xml"/><Relationship Type="{R}/image" Target="https://tracker.example/a.png" TargetMode="External"/>"#
+            ),
+        );
+        let part = part(&template, LAYOUT).unwrap();
+        assert_eq!(part.removed.len(), 1);
+        assert!(!text(&part.rels).contains("tracker"));
+    }
+
+    #[test]
+    fn legacy_drawings_and_orphaned_embeddings_go_unreported() {
+        let template = template(
+            layout("", "").as_bytes(),
+            &[
+                MASTER,
+                ("rId2", "vmlDrawing", "../drawings/vmlDrawing1.vml", false),
+                ("rId3", "package", "../embeddings/orphan.docx", false),
+                (
+                    "rId4",
+                    "activeXControlBinary",
+                    "../activeX/orphan.bin",
+                    false,
+                ),
+            ],
+        );
+        let part = part(&template, LAYOUT).unwrap();
+        assert!(part.removed.is_empty());
+        assert_eq!(ids(&part), ["rId1"]);
+        assert!(part.xml.is_none());
+    }
+
+    #[test]
+    fn a_prefix_that_starts_like_xmlns_is_still_read() {
+        let xml = r#"<p:sldLayout xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:xmlnsr="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:cSld><p:spTree><p:pic><a:blip xmlnsr:link="rId2"/></p:pic></p:spTree></p:cSld></p:sldLayout>"#;
+        let template = template(
+            xml.as_bytes(),
+            &[
+                MASTER,
+                ("rId2", "image", "https://tracker.example/a.png", true),
+            ],
+        );
+        assert!(text(&part(&template, LAYOUT).unwrap().xml).contains("<a:blip/>"));
+    }
+
+    #[test]
+    fn an_ole_object_something_else_also_refers_to_is_one_removal() {
+        let frame = r#"<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="4" name="o"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr><p:xfrm/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/presentationml/2006/ole"><p:oleObj r:id="rId2"><p:embed/></p:oleObj></a:graphicData></a:graphic></p:graphicFrame>"#;
+        let tree = format!(r#"{frame}{}"#, shape(5, r#"<a:hlinkClick r:id="rId2"/>"#));
+        let template = template(
+            layout(&tree, "").as_bytes(),
+            &[MASTER, ("rId2", "oleObject", "../embeddings/o.bin", false)],
+        );
+        let part = part(&template, LAYOUT).unwrap();
+        assert_eq!(part.removed, [Removed::OleObject]);
+        assert!(!text(&part.xml).contains("hlinkClick"));
+    }
+
+    #[test]
+    fn a_graphics_payload_takes_its_frame_and_an_extensions_content_takes_the_extension() {
+        let diagram = r#"<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="4" name="d"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr><p:xfrm/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/diagram"><dgm:relIds xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram" r:dm="rId2" r:lo="rId1" r:qs="rId1" r:cs="rId1"/></a:graphicData></a:graphic></p:graphicFrame>"#;
+        let deep = r#"<p:pic><p:nvPicPr><p:cNvPr id="5" name="p"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="rId4"><a:extLst><a:ext uri="{BEBA8EAE-BF5A-486C-A8C5-ECC9F3942E4B}"><a14:imgProps xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main"><a14:imgLayer r:embed="rId3"><a14:imgEffect/></a14:imgLayer></a14:imgProps></a:ext></a:extLst></a:blip></p:blipFill><p:spPr/></p:pic>"#;
+        let template = template(
+            layout(&format!("{diagram}{deep}"), "").as_bytes(),
+            &[
+                MASTER,
+                (
+                    "rId2",
+                    "diagramData",
+                    "https://tracker.example/data.xml",
+                    true,
+                ),
+                ("rId3", "image", "https://tracker.example/layer.wdp", true),
+                ("rId4", "image", "../media/p.png", false),
+            ],
+        );
+        let out = text(&part(&template, LAYOUT).unwrap().xml);
+        assert!(
+            !out.contains("graphicFrame") && !out.contains("<a:ext "),
+            "{out}"
+        );
+        assert!(
+            out.contains(r#"<a:blip r:embed="rId4"><a:extLst></a:extLst></a:blip>"#),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn strict_parts_are_read_like_transitional_ones() {
+        let xml = r#"<p:sldLayout xmlns:p="http://purl.oclc.org/ooxml/presentationml/main" xmlns:a="http://purl.oclc.org/ooxml/drawingml/main" xmlns:r="http://purl.oclc.org/ooxml/officeDocument/relationships"><p:cSld><p:spTree><p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="4" name="o"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr><p:xfrm/><a:graphic><a:graphicData uri="x"><p:oleObj r:id="rId2"><p:embed/></p:oleObj></a:graphicData></a:graphic></p:graphicFrame></p:spTree></p:cSld></p:sldLayout>"#;
+        let template = template(
+            xml.as_bytes(),
+            &[MASTER, ("rId2", "package", "../embeddings/o.docx", false)],
+        );
+        let part = part(&template, LAYOUT).unwrap();
+        assert_eq!(part.removed, [Removed::OleObject]);
+        assert_eq!(ids(&part), ["rId1"]);
+    }
+
+    #[test]
+    fn a_part_reports_at_most_one_more_removal_than_the_cap() {
+        let rels: Vec<(String, &str, String, bool)> = (0..REPORTED + 10)
+            .map(|i| {
+                (
+                    format!("rIdX{i}"),
+                    "image",
+                    format!("https://tracker.example/{i}.png"),
+                    true,
+                )
+            })
+            .collect();
+        let mut all: Vec<(&str, &str, &str, bool)> = vec![MASTER];
+        all.extend(
+            rels.iter().map(|(id, kind, target, external)| {
+                (id.as_str(), *kind, target.as_str(), *external)
+            }),
+        );
+        let part = part(&template(layout("", "").as_bytes(), &all), LAYOUT).unwrap();
+        assert_eq!(part.removed.len(), REPORTED);
+        assert_eq!(ids(&part), ["rId1"], "every one is still removed");
     }
 }

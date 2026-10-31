@@ -544,7 +544,10 @@ fn render(
                 Err(why) => {
                     rendered.push(Diagnostic::new(
                         "render_failed",
-                        format!("The document couldn't be rendered: the template {}.", why.0),
+                        format!(
+                            "The document couldn't be rendered: the template {}.",
+                            escaped(&why.0)
+                        ),
                     ));
                     None
                 }
@@ -574,6 +577,7 @@ fn render(
 #[cfg(feature = "pptx")]
 fn content_removed(part: &str, what: &compyla_ooxml::sanitize::Removed) -> Diagnostic {
     use compyla_ooxml::sanitize::Removed;
+    let part = shown(part);
     let message = match what {
         Removed::OleObject => format!(
             "An OLE object in the template's `{part}` was removed: output keeps no embedded or linked objects."
@@ -581,19 +585,53 @@ fn content_removed(part: &str, what: &compyla_ooxml::sanitize::Removed) -> Diagn
         Removed::ActiveX => format!(
             "An ActiveX control in the template's `{part}` was removed: output keeps no active content."
         ),
-        Removed::External { kind, target } => {
-            // A target is the template's text, of any length.
-            let mut shown: String = target.chars().take(100).collect();
-            if shown.len() < target.len() {
-                shown.push('…');
-            }
-            format!(
-                "The template's `{part}` links to `{shown}` through an external `{kind}` relationship, which was removed: output keeps no external links but hyperlinks."
-            )
-        }
+        Removed::External { kind, target } if kind.eq_ignore_ascii_case("hyperlink") => format!(
+            "The template's `{part}` refers to `{}` through a hyperlink relationship but not from a hyperlink; it was removed: output keeps no external links but hyperlinks.",
+            shown(target)
+        ),
+        Removed::External { kind, target } => format!(
+            "The template's `{part}` links to `{}` through an external `{}` relationship, which was removed: output keeps no external links but hyperlinks.",
+            shown(target),
+            shown(kind)
+        ),
+        Removed::Hyperlink { target } => format!(
+            "A hyperlink to `{}` in the template's `{part}` was removed: its destination isn't one §4.5 allows.",
+            shown(target)
+        ),
+        Removed::Action { action } => format!(
+            "A hyperlink action in the template's `{part}` (`{}`) was removed: output keeps no actions that run a program, a macro or an object.",
+            shown(action)
+        ),
     };
     Diagnostic::new("template_content_removed", message)
         .hint("Remove it from the template, and this warning goes away.")
+}
+
+/// Text from a template, as a message shows it: at most 100 characters, escaped.
+#[cfg(feature = "pptx")]
+fn shown(text: &str) -> String {
+    const MOST: usize = 100;
+    let mut out = escaped(&text.chars().take(MOST).collect::<String>());
+    if text.chars().nth(MOST).is_some() {
+        out.push('…');
+    }
+    out
+}
+
+/// `text` with control and bidi formatting characters escaped, so a template's text can't write
+/// to a terminal or reorder a message's line.
+#[cfg(feature = "pptx")]
+fn escaped(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        let formatting = matches!(c, '\u{200E}' | '\u{200F}' | '\u{061C}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}');
+        if c.is_control() || formatting {
+            out.extend(c.escape_unicode());
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 fn properties(meta: &serde_json::Map<String, serde_json::Value>) -> Properties {

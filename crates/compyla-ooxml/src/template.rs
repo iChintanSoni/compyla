@@ -270,7 +270,8 @@ impl Template {
     }
 
     /// The relationships of `source` (`""` for the package), with targets resolved to part names.
-    /// A target that leaves the package is treated as external.
+    /// Only a relationship without a `TargetMode`, or with exactly `Internal`, is internal; and a
+    /// target that leaves the package, however written, is treated as external (§10.4).
     pub fn relationships(&self, source: &str) -> Result<Vec<Relationship>, Invalid> {
         let folder = source.rsplit_once('/').map_or("", |(folder, _)| folder);
         let Some(root) = self.xml(&relationships_part(source))? else {
@@ -279,11 +280,13 @@ impl Template {
         let mut out = Vec::new();
         for rel in root.children_named(PACKAGE_RELS, "Relationship") {
             let target = rel.attr("Target").unwrap_or_default();
-            let mut external = rel.attr("TargetMode") == Some("External");
+            let mut external = rel
+                .attr("TargetMode")
+                .is_some_and(|mode| mode != "Internal");
             let target = if external {
                 target.to_string()
             } else {
-                match resolve(folder, target) {
+                match resolve(folder, target).filter(|_| stays_inside(folder, target)) {
                     Some(part) => part,
                     None => {
                         external = true;
@@ -326,6 +329,21 @@ fn contains_ignoring_case(haystack: &[u8], needle: &[u8]) -> bool {
     haystack
         .windows(needle.len())
         .any(|window| window.eq_ignore_ascii_case(needle))
+}
+
+/// Whether an internal `target` stays in the package, however it's written: no scheme (`https:`,
+/// `file:`, …), no `//host` or backslash, and no `..` past the root once percent-decoded.
+fn stays_inside(folder: &str, target: &str) -> bool {
+    let scheme = target.split_once(':').is_some_and(|(scheme, _)| {
+        scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+            && scheme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '.' | '-'))
+    });
+    !scheme
+        && !target.starts_with("//")
+        && !target.contains('\\')
+        && resolve(folder, &crate::read::percent_decoded(target)).is_some()
 }
 
 /// A relationship target relative to `folder`, as a part name; `None` if it leaves the package.
@@ -372,5 +390,22 @@ mod tests {
             Some("word/document.xml")
         );
         assert_eq!(resolve("ppt", "../../etc/passwd"), None);
+    }
+
+    #[test]
+    fn targets_that_leave_the_package_however_written_are_external() {
+        for target in [
+            "https://tracker.example/x.png",
+            "//tracker.example/x.png",
+            "\\\\tracker.example\\share\\x.png",
+            "media\\x.png",
+            "%2E%2E/%2E%2E/%2E%2E/outside.png",
+            "file:///C:/x.png",
+        ] {
+            assert!(!stays_inside("ppt/slideMasters", target), "{target}");
+        }
+        for target in ["../media/image1.png", "image%201.png", "#fragment"] {
+            assert!(stays_inside("ppt/slideMasters", target), "{target}");
+        }
     }
 }

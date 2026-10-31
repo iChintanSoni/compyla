@@ -62,7 +62,7 @@ pub type Images<'a> = dyn Fn(&str) -> Option<Vec<u8>> + 'a;
 pub struct Rendered {
     pub bytes: Vec<u8>,
     /// What the template's kept parts had removed (§10.4), with each part's name, in package
-    /// order.
+    /// order; at most `sanitize::REPORTED`.
     pub removed: Vec<(String, Removed)>,
 }
 
@@ -1051,14 +1051,23 @@ fn assemble(
             Some(targets) => targets.clone(),
             None if new_names.contains(&lower) => Vec::new(),
             None => {
-                let clean = sanitize::part(template, &part)?;
+                let mut clean = sanitize::part(template, &part)?;
                 let targets = clean
                     .relationships
                     .iter()
                     .filter(|r| !r.external && !viewed(&part, &r.kind))
                     .map(|r| r.target.clone())
                     .collect();
-                sanitized.insert(lower, clean);
+                // Only what writing the package needs is kept (§12.1): new bytes, what was
+                // removed, and the view settings' relationships, which are rewritten.
+                let view = typed(&part, "viewProps");
+                if !view {
+                    clean.relationships = Vec::new();
+                }
+                if view || clean.xml.is_some() || clean.rels.is_some() || !clean.removed.is_empty()
+                {
+                    sanitized.insert(lower, clean);
+                }
                 targets
             }
         };
@@ -1222,9 +1231,14 @@ fn assemble(
     types.close("Types");
     entries.insert(0, ("[Content_Types].xml".into(), types.finish()));
 
-    // What the kept template parts had removed, in package order.
+    // What the kept template parts had removed, in package order: no more than the diagnostic
+    // cap can report and one, so the cap still applies (§11.2).
     let mut removed = Vec::new();
     for (name, _) in template.parts() {
+        let room = sanitize::REPORTED - removed.len();
+        if room == 0 {
+            break;
+        }
         let lower = name.to_ascii_lowercase();
         let clean = if name.eq_ignore_ascii_case(&main) {
             Some(&presentation.sanitized)
@@ -1232,7 +1246,13 @@ fn assemble(
             sanitized.get(&lower)
         };
         if let Some(clean) = clean {
-            removed.extend(clean.removed.iter().map(|r| (name.to_string(), r.clone())));
+            removed.extend(
+                clean
+                    .removed
+                    .iter()
+                    .take(room)
+                    .map(|r| (name.to_string(), r.clone())),
+            );
         }
     }
     Ok(Rendered {

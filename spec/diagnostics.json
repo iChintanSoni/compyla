@@ -724,7 +724,7 @@
       "since": "0.2",
       "status": "active",
       "spec": "§10.4",
-      "summary": "Active or external content (external relationships, ActiveX, embedded OLE) was removed from the template's kept parts."
+      "summary": "Active or external content (external relationships, hyperlinks §4.5 refuses, actions that run something, ActiveX controls, embedded or linked OLE objects) was removed from the template's kept parts."
     }
   ],
   "operationErrors": [

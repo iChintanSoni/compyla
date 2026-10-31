@@ -129,7 +129,7 @@ fn check_name(name: &str) -> Result<(), Refused> {
     Ok(())
 }
 
-fn percent_decoded(name: &str) -> String {
+pub(crate) fn percent_decoded(name: &str) -> String {
     let bytes = name.as_bytes();
     let hex = |b: u8| (b as char).to_digit(16);
     let mut out = Vec::with_capacity(bytes.len());

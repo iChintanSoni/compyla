@@ -110,7 +110,7 @@ prototype.
 | C55 | From opening the output in PowerPoint and Excel: columns are as wide as what they display, so numbers and dates don't show as `####`; a link in an Excel table keeps the table's text color (contrast); text that reads as a number isn't flagged as a number stored as text; slide shapes are written in reading order; a title on Blank is a title placeholder (§8.8, §9.2, §9.5) | Unreadable numbers; accessibility checks failing on contrast, reading order and slide titles; error flags on intended text | render/104, render/116–118 |
 | C56 | Supplied pptx templates: the `template` option and `meta.template` through the resolver, with `template_unresolved`, `template_invalid`, `no_theme` and `xlsx_template_unsupported`; layout binding by alias, name and type, with `layout_not_in_template` once per layout; a template's own layouts; `layoutAliases` checked (`option_invalid`); slots past a bound layout's placeholders share its last (§8.5, §8.6, §8.8, §10.2, §10.6) | Templates not used; aliases unchecked; content drawn over a placeholder | lint/139–143, render/119 |
 | C57 | A workbook takes a docx or pptx template's theme tokens: its colors and heading and body fonts as the workbook's theme, cells and titles in its fonts, the header fill and links in its colors, and a striped Excel table's dark header where white wouldn't read on its accent (§9.2, §9.6, §10.4) | Templates not used for xlsx | render/120 |
-| C58 | Active and external content is removed from a supplied template's kept parts: external relationships other than hyperlinks, OLE objects and ActiveX controls, with what refers to them (a blip loses only the attribute; anything else goes with its alternates, extension, animations or transition), what only they used, and the parts only they reached; one `template_content_removed` per object or other removed relationship (§10.4) | Which elements go with a removed relationship, and what counts as one removal, were unspecified | render/121 |
+| C58 | Active and external content is removed from a supplied template's kept parts: external relationships other than hyperlinks (with `TargetMode` and targets that leave the package read fail-closed), hyperlinks §4.5 doesn't allow and actions that run something, OLE objects, ActiveX controls and their legacy drawings, with what refers to them (a blip loses only the attribute; anything else goes with its alternates, extension, graphic frame, animations or transition), what only they used, and the parts only they reached; one `template_content_removed` per object, action or other removed relationship (§4.5, §10.4) | Which elements go with a removed relationship, what counts as one removal, and which hyperlinks a template may keep were unspecified | render/121 |
 
 0.2 also corrects 0.1's *text* in one place where the prototype was right: `---` in xlsx is ignored
 without a diagnostic (§5).
@@ -1245,25 +1245,45 @@ masters, layouts, headers and footers, and replaces its content. In addition:
 - Document properties (title, author, dates, application, company) are written from `meta` and fixed
   values (§13), never copied from the template.
 - Active and external content is removed from every kept part *(C58)*:
-  - each relationship with an external target, or a target outside the package, other than a
-    hyperlink: remote attached templates, linked images, media and OLE objects;
+  - each relationship with an external target, other than a hyperlink: remote attached templates,
+    linked images, media and OLE objects. A target is external unless its relationship has no
+    `TargetMode` or exactly `Internal`, and it stays in the package: no scheme, no leading `//`, no
+    `\`, and no `..` past the package root once percent-decoded;
+  - each hyperlink whose destination §4.5 doesn't allow (`file:`, `ms-msdt:`, UNC paths, …), and
+    each hyperlink (`a:hlinkClick`, `a:hlinkHover`, `a:hlinkMouseOver`) whose `action` runs
+    something instead of navigating: anything but `ppaction://` followed by `noaction`,
+    `hlinkshowjump`, `hlinksldjump`, `hlinkpres`, `hlinkfile`, `customshow` or `media`. A
+    relationship of the hyperlink type (its type compared exactly, Transitional or Strict) is a
+    hyperlink only where hyperlinks refer to it: if anything else refers to it, it is external
+    content like any other;
   - each OLE object, embedded or linked: in pptx, the graphic frame holding a `p:oleObj`;
   - each ActiveX control (`p:control`), and a `p:controls` left with nothing else in it;
-  - each relationship of type `oleObject` or `control` that remains.
+  - each relationship of type `oleObject` or `control` that remains;
+  - each `vmlDrawing` relationship: in a deck, legacy VML only draws OLE objects and ActiveX
+    controls.
 
   What refers to a removed relationship goes too. A picture's `a:blip` loses the attribute that
   names it, and keeps an embedded image if it has one. Any other element is removed. An element is
   removed together with:
   - the `mc:AlternateContent` it is a branch of, since its other branches show the same content;
-  - the extension (`p:ext`, `a:ext`) it is in;
+  - the extension (`p:ext`, `a:ext`) it is in, at any depth;
+  - the graphic frame whose payload it is (a child of `a:graphicData`), since a graphic can't be
+    empty;
   - the animations (`p:timing`) or transition (`p:transition`) it is part of.
 
   So are the animations of a removed shape. A relationship that only removed elements referred to is
-  removed as well, and a part that only removed relationships reached isn't kept: an embedded
-  object's file, or a control's parts. Each OLE object and each ActiveX control produces one
-  `template_content_removed` (warning, advisory, render stage, without a line). So does each other
-  removed relationship of the first or last kind, such as a linked image. A part with nothing to
-  remove is kept byte for byte.
+  removed as well, and so is embedded data (`package`, `activeXControlBinary`) that nothing kept
+  refers to. A part that only removed relationships reached isn't kept: an embedded object's file, a
+  control's parts, a legacy drawing. Elements are read by namespace, Transitional and Strict alike.
+
+  Each OLE object, ActiveX control and refused action produces one `template_content_removed`
+  (warning, advisory, render stage, without a line). So does each other removed relationship of
+  the first two kinds, or of type `oleObject` or `control`, that none of them refers to, such as a
+  linked image. Like every code, these stop at the cap (§11.2). Text from the template appears in
+  messages shortened, with its control characters escaped. A part that relates to nothing can't
+  embed, link to or run anything, and a part with nothing to remove is kept byte for byte. A kept
+  part that has something to remove but isn't well-formed XML makes the render fail
+  (`render_failed`).
 
 ### 10.5 `inspect_template`
 
