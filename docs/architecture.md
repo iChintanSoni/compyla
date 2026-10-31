@@ -124,7 +124,7 @@ the final layout of flowing text.
 |--------|----------|
 | docx | **Template-first** (D12): the template's package is copied, its body replaced, and IR content written against its named styles |
 | pptx | **Template-first** (D12): the template's sample slides are removed, and each composed slide is written against one of its real layouts |
-| xlsx | `rust_xlsxwriter`, with a house style plus theme tokens taken from a supplied docx/pptx template. Template-first xlsx comes later, since the writer can't open existing files |
+| xlsx | Written by `compyla-xlsx` (its own writer, on the `compyla-ooxml` package model), with a house style plus theme tokens taken from a supplied docx/pptx template. Template-first xlsx, from an `.xltx`, comes later |
 | pdf | **Typst** (D13): the composed flow becomes Typst markup with a theme generated from the template, compiled in-process |
 
 No LibreOffice and no format-to-format conversion in the pipeline (D4).

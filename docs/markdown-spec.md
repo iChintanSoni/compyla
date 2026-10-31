@@ -858,8 +858,9 @@ Each sheet keeps a stacking cursor, starting at row 1, column A. Tables are plac
 tokens: its twelve colors and its heading and body fonts (Latin, East Asian, complex script) become
 the workbook's theme, written afresh with a plain format scheme, so nothing else of the template
 comes along. A color slot the theme leaves out, or whose color can't be read (an sRGB value, or a
-system color's last value), takes Office's default, and a font without a Latin typeface Office's
-(Calibri Light, Calibri). Cells use the body font and range titles the heading font, by theme
+system color's last value), takes Office's default, and a font without a Latin typeface a workbook
+can name (blank, or longer than Excel's 31 characters) Office's (Calibri Light, Calibri). A theme
+part that isn't an `a:theme` counts as no theme. Cells use the body font and range titles the heading font, by theme
 reference; the house header fill is the first accent, lighter 80%; links take the theme's hyperlink
 color, unless it contrasts with the light 1 color by less than 4.5:1 (WCAG 2), when they keep the
 house one. Without a template, or with one without a theme (`no_theme`), the house style applies:
@@ -1122,7 +1123,8 @@ key for a default sheet). Formulas and fragment links refer to sheets by their r
 - **Automatic names** are `Table1`, `Table2`, … in workbook order, skipping names already used.
 - **Style.** `striped` maps to `TableStyleMedium2` (the default), `plain` to `TableStyleLight1`. With
   theme tokens (§9.2) whose light 1 color contrasts with accent 1 by less than 4.5:1, `striped` maps
-  to `TableStyleMedium1` instead, whose header is dark 1, so the header stays readable. *(C57)*
+  to `TableStyleMedium1` instead, whose header pairs light 1 with dark 1, the theme's own text
+  colors. *(C57)*
 - **`autofilter`** shows filter buttons on the table's header row.
 - **Header cells** keep their links and rich text when their text is already the column name; a
   repaired header is written as its new name. *(C49)*

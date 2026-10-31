@@ -17,6 +17,9 @@ pub const LT1: usize = 1;
 pub const ACCENT1: usize = 4;
 pub const HLINK: usize = 10;
 
+/// The longest font name a workbook can hold (SpreadsheetML `name/@val`, MS-OI29500 §2.1.711).
+const MAX_FONT_NAME: usize = 31;
+
 /// WCAG 2's minimum contrast for normal text (1.4.3, AA).
 pub const READABLE: f64 = 4.5;
 
@@ -60,8 +63,8 @@ impl Theme {
     }
 
     /// The tokens of an `a:theme` element. A slot it leaves out, or whose color can't be read,
-    /// takes Office's default, and a font scheme entry without a Latin typeface Office's
-    /// (Calibri Light, Calibri).
+    /// takes Office's default, and a font scheme entry without a Latin typeface a workbook can name
+    /// (a blank one, or one longer than 31 characters) Office's (Calibri Light, Calibri).
     pub fn from(theme: &Element) -> Theme {
         let elements = theme.child(MAIN_A, "themeElements");
         let scheme = elements.and_then(|e| e.child(MAIN_A, "clrScheme"));
@@ -83,7 +86,7 @@ impl Theme {
             };
             let latin = typeface("latin");
             Fonts {
-                latin: if latin.is_empty() {
+                latin: if latin.trim().is_empty() || latin.chars().count() > MAX_FONT_NAME {
                     default.to_string()
                 } else {
                     latin
@@ -99,9 +102,20 @@ impl Theme {
         }
     }
 
+    /// The color in slot `index`, or the slot's default when it isn't six hex digits (the fields
+    /// are public, so a caller may have set anything).
+    pub fn color(&self, index: usize) -> &str {
+        let color = &self.colors[index];
+        if color.len() == 6 && color.bytes().all(|b| b.is_ascii_hexdigit()) {
+            color
+        } else {
+            DEFAULT_COLORS[index]
+        }
+    }
+
     /// The WCAG 2 contrast ratio between two of its colors, by slot.
     pub fn contrast(&self, a: usize, b: usize) -> f64 {
-        let (a, b) = (luminance(&self.colors[a]), luminance(&self.colors[b]));
+        let (a, b) = (luminance(self.color(a)), luminance(self.color(b)));
         (a.max(b) + 0.05) / (a.min(b) + 0.05)
     }
 
@@ -111,9 +125,9 @@ impl Theme {
         xml.open("a:theme", &[("xmlns:a", MAIN_A), ("name", "Compyla")]);
         xml.open("a:themeElements", &[]);
         xml.open("a:clrScheme", &[("name", "Compyla")]);
-        for (slot, color) in SLOTS.iter().zip(&self.colors) {
+        for (index, slot) in SLOTS.iter().enumerate() {
             xml.open(&format!("a:{slot}"), &[]);
-            xml.empty("a:srgbClr", &[("val", color)]);
+            xml.empty("a:srgbClr", &[("val", self.color(index))]);
             xml.close(&format!("a:{slot}"));
         }
         xml.close("a:clrScheme");
@@ -135,10 +149,13 @@ impl Theme {
     }
 }
 
-/// WCAG 2's relative luminance of an RRGGBB color.
+/// WCAG 2's relative luminance of an RRGGBB color (checked by [`Theme::color`]).
 fn luminance(color: &str) -> f64 {
     let channel = |i: usize| {
-        let value = f64::from(u8::from_str_radix(&color[i..i + 2], 16).unwrap_or(0)) / 255.0;
+        let byte = color
+            .get(i..i + 2)
+            .and_then(|hex| u8::from_str_radix(hex, 16).ok());
+        let value = f64::from(byte.unwrap_or(0)) / 255.0;
         if value <= 0.039_28 {
             value / 12.92
         } else {
@@ -178,6 +195,34 @@ mod tests {
         // Written and read back, the tokens are the same.
         let written = crate::dom::parse(&theme.to_xml()).unwrap();
         assert_eq!(Theme::from(&written), theme);
+    }
+
+    #[test]
+    fn typefaces_a_workbook_cant_name_take_the_default() {
+        let theme = crate::dom::parse(
+            br#"<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:fontScheme name="x"><a:majorFont><a:latin typeface="  "/></a:majorFont><a:minorFont><a:latin typeface="Proxima Nova Alt Condensed Semibold Extra"/></a:minorFont></a:fontScheme></a:themeElements></a:theme>"#,
+        )
+        .unwrap();
+        let theme = Theme::from(&theme);
+        assert_eq!(
+            (theme.major.latin.as_str(), theme.minor.latin.as_str()),
+            ("Calibri Light", "Calibri")
+        );
+    }
+
+    #[test]
+    fn a_malformed_color_is_never_used() {
+        let mut theme = Theme::from(
+            &crate::dom::parse(
+                br#"<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"/>"#,
+            )
+            .unwrap(),
+        );
+        theme.colors[ACCENT1] = "ab\u{e9}".into();
+        assert_eq!(theme.color(ACCENT1), "4472C4");
+        assert!(theme.contrast(LT1, ACCENT1) > 1.0);
+        let xml = String::from_utf8(theme.to_xml()).unwrap();
+        assert!(xml.contains(r#"<a:accent1><a:srgbClr val="4472C4"/>"#));
     }
 
     #[test]

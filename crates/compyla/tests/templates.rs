@@ -150,13 +150,11 @@ fn a_workbook_takes_a_templates_theme() {
     );
     let styles = String::from_utf8(parts["xl/styles.xml"].clone()).unwrap();
     assert!(
-        styles.contains(r#"<name val="Brand Sans"/><family val="2"/><scheme val="minor"/>"#),
+        styles.contains(r#"<name val="Brand Sans"/><scheme val="minor"/>"#),
         "{styles}"
     );
     assert!(
-        styles.contains(
-            r#"<b/><sz val="11"/><name val="Brand Display"/><family val="2"/><scheme val="major"/>"#
-        ),
+        styles.contains(r#"<b/><sz val="11"/><name val="Brand Display"/><scheme val="major"/>"#),
         "{styles}"
     );
     // White reads on this accent: the striped table keeps its accent header.

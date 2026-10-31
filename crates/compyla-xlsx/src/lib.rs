@@ -581,9 +581,10 @@ impl Styles {
             }
             let (name, scheme) = font_name(self.theme.as_ref(), font.heading);
             xml.empty("name", &[("val", name)]);
-            xml.empty("family", &[("val", "2")]);
-            if let Some(scheme) = scheme {
-                xml.empty("scheme", &[("val", scheme)]);
+            match scheme {
+                // A theme font's family isn't known: the scheme reference stands for it.
+                Some(scheme) => xml.empty("scheme", &[("val", scheme)]),
+                None => xml.empty("family", &[("val", "2")]),
             }
             xml.close("font");
         }

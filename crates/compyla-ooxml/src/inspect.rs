@@ -82,7 +82,12 @@ pub(crate) fn theme(template: &Template) -> Result<Option<Element>, Invalid> {
             None => None,
         },
     };
-    Ok(part.map(|p| template.xml(&p)).transpose()?.flatten())
+    // A part that isn't a theme counts as none (`no_theme`).
+    Ok(part
+        .map(|p| template.xml(&p))
+        .transpose()?
+        .flatten()
+        .filter(|theme| theme.is(MAIN_A, "theme")))
 }
 
 fn no_theme() -> Diagnostic {
