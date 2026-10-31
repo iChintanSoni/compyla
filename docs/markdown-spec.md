@@ -1295,7 +1295,7 @@ masters, layouts, headers and footers, and replaces its content. In addition:
   `oleObject` or `control`, that none of them refers to, such as a linked image. Like every code,
   these stop at the cap (§11.2). Every kept XML part is read, so an object, a control or an action
   is found however it is written; a part is XML by its name, its content type, or because it
-  decodes as UTF-8 or UTF-16 text starting with `<`. A part with nothing to remove is kept byte for byte. A kept XML
+  decodes, all of it, as UTF-8 or UTF-16 text whose first character past byte order marks and whitespace is `<`. A part with nothing to remove is kept byte for byte. A kept XML
   part that isn't well-formed (anything but whitespace, comments and processing instructions outside a single root element counts, a second byte order mark included), or whose root element would
   be removed, makes the render fail (`render_failed`), unless validation already refused the
   template for it (`template_invalid`).
