@@ -32,7 +32,7 @@
     "@compyla/core": "workspace:*",
     "@compyla/fonts": "workspace:*",
     "@compyla/ooxml": "workspace:*",
-    "image-size": "^1.2.0",
+    "image-size": "^2.0.4",
     "jszip": "^3.10.1",
     "pptxgenjs": "^4.0.1"
   },
