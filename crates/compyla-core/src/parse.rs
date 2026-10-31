@@ -932,20 +932,24 @@ pub fn destination_allowed(url: &str) -> bool {
             .filter(|c| !matches!(c, '\t' | '\n' | '\r'))
             .collect()
     };
+    // A space, a formatting character or a replacement character (a byte that didn't decode)
+    // can hide what follows.
     let hidden = |url: &str| {
-        url.starts_with(|c: char| c.is_whitespace() || crate::diagnostic::is_formatting(c))
+        url.starts_with(|c: char| {
+            c.is_whitespace() || c == '\u{FFFD}' || crate::diagnostic::is_formatting(c)
+        })
     };
     let url = read(url);
     if url.chars().any(|c| c.is_control()) || hidden(&url) {
         return false;
     }
     let path = url.split(['?', '#']).next().unwrap_or_default();
-    let decoded = read(&crate::validate::percent_decode(path));
-    if hidden(&decoded) {
-        return false;
-    }
-    let decoded: String = decoded.chars().filter(|c| !c.is_control()).collect();
-    allowed(&url) && allowed(&decoded)
+    let decoded: String = crate::validate::percent_decode(path)
+        .chars()
+        .filter(|c| !c.is_control())
+        .collect();
+    let decoded = read(&decoded);
+    !hidden(&decoded) && allowed(&url) && allowed(&decoded)
 }
 
 /// Whether `url` has an allowed scheme, or is a fragment or a relative reference (§4.5).

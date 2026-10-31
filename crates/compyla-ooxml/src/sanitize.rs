@@ -560,6 +560,20 @@ fn nodes(text: &[u8]) -> Result<Vec<Node>, Error> {
                     .ok_or_else(|| Error::Malformed("unbalanced end tag".into()))?;
                 nodes[index].span.end = after;
             }
+            // As dom reads parts: nothing but whitespace, comments and processing instructions
+            // outside the root element.
+            Event::Text(text)
+                if open.is_empty()
+                    && !text
+                        .xml10_content()
+                        .chars()
+                        .all(|c| c.is_ascii_whitespace()) =>
+            {
+                return Err(Error::Malformed("has text outside its root element".into()));
+            }
+            Event::CData(_) | Event::GeneralRef(_) if open.is_empty() => {
+                return Err(Error::Malformed("has text outside its root element".into()));
+            }
             Event::DocType(_) => return Err(Error::Dtd),
             Event::Eof => break,
             _ => {}

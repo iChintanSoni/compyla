@@ -440,9 +440,10 @@ Inline content becomes a flat list of **runs**: `{ "text", "bold"?, "italic"?, "
   control characters, and without tabs and line breaks anywhere in it, so ` file:///…` (in IR
   input, §10.7, or a template's hyperlink, §10.4) is a `file:` link. Any other control character
   refuses a destination, and so does a leading space or formatting character that isn't ASCII
-  (`U+00A0`, `U+FEFF`, …). Percent-decoded, the part before any `?` or `#` must pass these rules
-  too, control characters it decodes to aside: `%5C%5Chost` is a UNC path, `%2F…` an absolute
-  path, `%C2%A0file:` a hidden scheme, and an encoded colon a scheme.
+  (`U+00A0`, `U+FEFF`, …) or a replacement character. Percent-decoded, without the control
+  characters it decodes to, the part before any `?` or `#` must pass these rules too: `%5C%5Chost`
+  is a UNC path, `%2F…` an absolute path, `%C2%A0file:` a hidden scheme, and an encoded colon a
+  scheme.
 - **Fragment links** (`[see costs](#costs)`) target a heading or another per-format target (§6.2,
   §8.7, §9.5). A target's **slug** is computed from its plain text:
   1. Convert to lowercase (Unicode default case conversion).
@@ -1295,8 +1296,9 @@ masters, layouts, headers and footers, and replaces its content. In addition:
   these stop at the cap (§11.2). Every kept XML part is read, so an object, a control or an action
   is found however it is written; a part is XML by its name, its content type, or because it
   decodes as UTF-8 or UTF-16 text starting with `<`. A part with nothing to remove is kept byte for byte. A kept XML
-  part that isn't well-formed, or whose root element would be removed, makes the render fail
-  (`render_failed`).
+  part that isn't well-formed (text outside its root element counts), or whose root element would
+  be removed, makes the render fail (`render_failed`), unless validation already refused the
+  template for it (`template_invalid`).
 
   Text from a template (a target, a type, a part name, a parser's reason) appears in any message
   shortened, with its control and bidi formatting characters escaped.

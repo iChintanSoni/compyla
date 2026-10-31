@@ -191,7 +191,7 @@ fn convert(args: &[String]) -> Result<ExitCode, String> {
     let Some(bytes) = result.bytes else {
         eprintln!(
             "{}: not converted: an error blocks the output",
-            args.file.display()
+            shown_path(&args.file)
         );
         return Ok(ExitCode::from(1));
     };
@@ -202,7 +202,7 @@ fn convert(args: &[String]) -> Result<ExitCode, String> {
     };
     std::fs::write(&output, bytes).map_err(|e| format!("can't write {}: {e}", output.display()))?;
     if !args.json {
-        eprintln!("wrote {}", output.display());
+        eprintln!("wrote {}", shown_path(&output));
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -228,7 +228,7 @@ fn report(args: &Args, diagnostics: &[Diagnostic]) {
         let warnings = diagnostics.len() - errors;
         eprintln!(
             "{}: {errors} error(s), {warnings} warning(s)",
-            file.display()
+            shown_path(file)
         );
     }
 }
@@ -280,9 +280,9 @@ fn resolve_asset(base: &Path, src: &str) -> Asset {
 
 fn print_diagnostic(file: &Path, d: &Diagnostic) {
     let location = match (d.line, d.column) {
-        (Some(line), Some(column)) => format!("{}:{line}:{column}", file.display()),
-        (Some(line), None) => format!("{}:{line}", file.display()),
-        _ => file.display().to_string(),
+        (Some(line), Some(column)) => format!("{}:{line}:{column}", shown_path(file)),
+        (Some(line), None) => format!("{}:{line}", shown_path(file)),
+        _ => shown_path(file),
     };
     let severity = match d.severity {
         Severity::Error => "error",
@@ -311,6 +311,11 @@ fn printable(text: &str) -> String {
         }
     }
     out
+}
+
+/// A path as printed: a file's name is anyone's text.
+fn shown_path(path: &Path) -> String {
+    printable(&path.display().to_string())
 }
 
 /// JSON safe for a terminal: serde escapes C0 controls in strings (and its own line breaks must
