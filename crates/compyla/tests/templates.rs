@@ -175,3 +175,20 @@ fn a_workbook_takes_a_templates_theme() {
         .collect();
     assert!(!parts.iter().any(|p| p.contains("theme")), "{parts:?}");
 }
+
+#[test]
+fn a_theme_part_that_isnt_a_theme_is_no_theme() {
+    let entries: Vec<(String, Vec<u8>)> = compyla_ooxml::read::entries(BRAND)
+        .unwrap()
+        .into_iter()
+        .map(|(name, data)| match name.as_str() {
+            "ppt/theme/theme1.xml" => (name, br#"<foo xmlns="urn:x"/>"#.to_vec()),
+            _ => (name, data),
+        })
+        .collect();
+    let template = compyla_ooxml::zip::write(&entries);
+    assert_eq!(
+        codes("# A\n\n## B\n\nText.\n", &pptx(Some(&template), &[])),
+        ["no_theme"]
+    );
+}

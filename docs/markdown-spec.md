@@ -859,8 +859,8 @@ tokens: its twelve colors and its heading and body fonts (Latin, East Asian, com
 the workbook's theme, written afresh with a plain format scheme, so nothing else of the template
 comes along. A color slot the theme leaves out, or whose color can't be read (an sRGB value, or a
 system color's last value), takes Office's default, and a font without a Latin typeface a workbook
-can name (blank, or longer than Excel's 31 characters) Office's (Calibri Light, Calibri). A theme
-part that isn't an `a:theme` counts as no theme. Cells use the body font and range titles the heading font, by theme
+can name (blank, or longer than Excel's 31 UTF-16 code units) Office's (Calibri Light, Calibri). A
+theme part that isn't an `a:theme` counts as no theme (§10.4). Cells use the body font and range titles the heading font, by theme
 reference; the house header fill is the first accent, lighter 80%; links take the theme's hyperlink
 color, unless it contrasts with the light 1 color by less than 4.5:1 (WCAG 2), when they keep the
 house one. Without a template, or with one without a theme (`no_theme`), the house style applies:
@@ -1233,7 +1233,8 @@ produce `template_invalid` (error):
   (after percent-decoding; a segment of dots, or with trailing dots or spaces, counts as `..`), or
   whose central directory and local headers disagree about an entry's name
 
-A template without a theme part produces `no_theme` (warning; defaults are used). A docx document
+A template without a theme part, or whose theme part isn't an `a:theme`, produces `no_theme`
+(warning; defaults are used). *(C57)* A docx document
 whose template has no styles part produces `no_styles_xml` (warning; house styles are used).
 
 **Template-first output** (architecture.md D12) keeps the template's styles, numbering, theme,

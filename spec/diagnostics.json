@@ -458,7 +458,7 @@
       "since": "0.1",
       "status": "active",
       "spec": "§10.4",
-      "summary": "The template has no theme part; default theme fonts and colors are used."
+      "summary": "The template has no theme part, or one that isn't an a:theme; default theme fonts and colors are used."
     },
     {
       "code": "sheet_name_invalid",
