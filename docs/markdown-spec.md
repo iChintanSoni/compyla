@@ -109,6 +109,7 @@ prototype.
 | C54 | xlsx leftovers: a cell's diagnostics carry its path; table names `TRUE`, `FALSE` and anything shaped like a cell reference are invalid; more than 65,530 hyperlinks on a sheet or 200 custom number formats in a workbook are `xlsx_limit_exceeded`; conformance compares `path` where the expectation has one; an empty Excel table stacked onto the last row is reported at the table (§9.6, §9.7, §11.3) | Row-level paths only; names and files Excel may reject or repair; a position no node has | lint/137, lint/138 |
 | C55 | From opening the output in PowerPoint and Excel: columns are as wide as what they display, so numbers and dates don't show as `####`; a link in an Excel table keeps the table's text color (contrast); text that reads as a number isn't flagged as a number stored as text; slide shapes are written in reading order; a title on Blank is a title placeholder (§8.8, §9.2, §9.5) | Unreadable numbers; accessibility checks failing on contrast, reading order and slide titles; error flags on intended text | render/104, render/116–118 |
 | C56 | Supplied pptx templates: the `template` option and `meta.template` through the resolver, with `template_unresolved`, `template_invalid`, `no_theme` and `xlsx_template_unsupported`; layout binding by alias, name and type, with `layout_not_in_template` once per layout; a template's own layouts; `layoutAliases` checked (`option_invalid`); slots past a bound layout's placeholders share its last (§8.5, §8.6, §8.8, §10.2, §10.6) | Templates not used; aliases unchecked; content drawn over a placeholder | lint/139–143, render/119 |
+| C57 | A workbook takes a docx or pptx template's theme tokens: its colors and heading and body fonts as the workbook's theme, cells and titles in its fonts, the header fill and links in its colors, and a striped Excel table's dark header where white wouldn't read on its accent (§9.2, §9.6, §10.4) | Templates not used for xlsx | render/120 |
 
 0.2 also corrects 0.1's *text* in one place where the prototype was right: `---` in xlsx is ignored
 without a diagnostic (§5).
@@ -853,6 +854,17 @@ Each sheet keeps a stacking cursor, starting at row 1, column A. Tables are plac
 5. An unanchored table moves the cursor to *header row + data rows + 2* (one blank row between
    tables). An anchored table does not move the cursor.
 
+**Theme tokens.** With a docx or pptx template (§10.4), the workbook takes the template's theme
+tokens: its twelve colors and its heading and body fonts (Latin, East Asian, complex script) become
+the workbook's theme, written afresh with a plain format scheme, so nothing else of the template
+comes along. A color slot the theme leaves out, or whose color can't be read (an sRGB value, or a
+system color's last value), takes Office's default, and a font without a Latin typeface Office's
+(Calibri Light, Calibri). Cells use the body font and range titles the heading font, by theme
+reference; the house header fill is the first accent, lighter 80%; links take the theme's hyperlink
+color, unless it contrasts with the light 1 color by less than 4.5:1 (WCAG 2), when they keep the
+house one. Without a template, or with one without a theme (`no_theme`), the house style applies:
+Calibri 11, a light header fill (`E8ECF3`) and the house link color (`0563C1`). *(C57)*
+
 **Column widths.** A column is as wide as the widest header or data cell in it displays, in
 characters, plus 2 for padding, at most 60, and never narrower than Excel's default. *(C55)*
 - Text displays its longest line. Characters in U+1100–115F, U+2E80–303E, U+3041–33FF,
@@ -1063,7 +1075,7 @@ whatever `lang` is.
   cell produce `xlsx_ignored_content`, and only the first is kept.
 - Range titles and notes are written to cells, so this rule and the cell text limit (§9.7) apply to
   them too.
-- A cell with a hyperlink shows its text underlined, in the link color, except in an Excel table
+- A cell with a hyperlink shows its text underlined, in the link color (§9.2), except in an Excel table
   (its header and data rows; a title or note above it isn't in it), where it keeps the table style's
   text color, which the style's fills contrast with. *(C55)* A cell
   whose text has a line break wraps its text. *(C48)*
@@ -1108,7 +1120,9 @@ key for a default sheet). Formulas and fragment links refer to sheets by their r
   (`R[0-9]*C[0-9]*`, `R[0-9]+`, `C[0-9]+`). *(C54)* It must also be unique in the workbook (case-insensitive). An invalid or repeated name
   produces `invalid_directive_args`, and the table gets an automatic name.
 - **Automatic names** are `Table1`, `Table2`, … in workbook order, skipping names already used.
-- **Style.** `striped` maps to `TableStyleMedium2` (the default), `plain` to `TableStyleLight1`.
+- **Style.** `striped` maps to `TableStyleMedium2` (the default), `plain` to `TableStyleLight1`. With
+  theme tokens (§9.2) whose light 1 color contrasts with accent 1 by less than 4.5:1, `striped` maps
+  to `TableStyleMedium1` instead, whose header is dark 1, so the header stays readable. *(C57)*
 - **`autofilter`** shows filter buttons on the table's header row.
 - **Header cells** keep their links and rich text when their text is already the column name; a
   repaired header is written as its new name. *(C49)*
@@ -1203,7 +1217,7 @@ The core performs no I/O (architecture.md D11). Hosts supply resolvers:
 | docx | `.docx`, `.dotx` |
 | pdf | `.docx`, `.dotx` (page setup and theme tokens) or `.pptx`, `.potx` (theme tokens) |
 | pptx | `.pptx`, `.potx` |
-| xlsx | `.docx`, `.dotx`, `.pptx`, `.potx` (theme tokens). `.xlsx`/`.xltx` produce `xlsx_template_unsupported` (warning) and are not used. Until theme tokens are specified and applied (roadmap), a docx or pptx template isn't used either, with the same warning, so it is never silently the house style *(C56)* |
+| xlsx | `.docx`, `.dotx`, `.pptx`, `.potx` (theme tokens, §9.2). `.xlsx`/`.xltx` produce `xlsx_template_unsupported` (warning) and are not used |
 
 A template's kind is determined from its package's main content type, not its file name. These
 produce `template_invalid` (error):

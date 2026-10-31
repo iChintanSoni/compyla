@@ -16,7 +16,7 @@ fn render(source: &str) -> Vec<u8> {
     else {
         unreachable!("an xlsx validation composes a workbook")
     };
-    compyla_xlsx::render(&workbook, &compyla_ooxml::Properties::default())
+    compyla_xlsx::render(&workbook, &compyla_ooxml::Properties::default(), None)
 }
 
 fn part(bytes: &[u8], name: &str) -> String {

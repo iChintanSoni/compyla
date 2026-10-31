@@ -323,8 +323,8 @@ fn check(
         diagnostics,
         blocked: blocking.merge(validate_blocking).blocks(options.strict),
         composed: Some((composed, format, properties)),
-        // Only pptx renders into a supplied template so far; xlsx theme tokens are to come.
-        template: template.filter(|_| format == Format::Pptx),
+        // pptx renders into the template, and xlsx takes its theme tokens.
+        template: template.filter(|_| matches!(format, Format::Pptx | Format::Xlsx)),
     })
 }
 
@@ -385,20 +385,19 @@ fn template(
         Format::Docx => template.kind == Kind::Docx,
         Format::Pdf => matches!(template.kind, Kind::Docx | Kind::Pptx),
         Format::Pptx => template.kind == Kind::Pptx,
-        Format::Xlsx => {
-            // A workbook template is never used, and a docx or pptx template's theme tokens aren't
-            // applied yet: either way the house style is, and that is said.
-            let message = if template.kind == Kind::Xlsx {
-                "A workbook template isn't used; the house style is."
-            } else {
-                "Theme tokens from a template aren't applied to workbooks yet; the house style is used."
-            };
+        // A workbook takes a docx or pptx template's theme tokens (§9.2); a workbook template
+        // is never used.
+        Format::Xlsx if template.kind == Kind::Xlsx => {
             out.push(
-                Diagnostic::new("xlsx_template_unsupported", message)
-                    .hint("Convert without a template for now."),
+                Diagnostic::new(
+                    "xlsx_template_unsupported",
+                    "A workbook template isn't used; a workbook takes its theme from a docx or pptx template.",
+                )
+                .hint("Supply a .docx, .dotx, .pptx or .potx template, or none."),
             );
             return Ok(None);
         }
+        Format::Xlsx => true,
     };
     if !accepted {
         out.push(
@@ -506,7 +505,12 @@ fn render(
                 creator: properties.creator,
                 language: properties.language,
             };
-            Some(compyla_xlsx::render(&workbook, &properties))
+            // A template without a theme keeps the house style (`no_theme`).
+            let theme = checked
+                .template
+                .as_ref()
+                .and_then(|template| compyla_ooxml::theme::Theme::of(template).ok().flatten());
+            Some(compyla_xlsx::render(&workbook, &properties, theme.as_ref()))
         }
         #[cfg(feature = "pptx")]
         Some((Composed::Pptx(deck), _, properties)) => {
