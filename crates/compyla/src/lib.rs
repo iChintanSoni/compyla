@@ -2,7 +2,7 @@
 //! diagnostics shape and ordering of markdown-spec.md §11. Hosts call this crate, never
 //! `compyla-core` directly.
 
-pub use compyla_core::diagnostic::{Diagnostic, Severity};
+pub use compyla_core::diagnostic::{CodeInfo, Diagnostic, Severity, code_info};
 pub use compyla_core::ir;
 pub use compyla_core::{Asset, Format};
 

@@ -8,8 +8,9 @@ exclude = ["spikes"]
 [workspace.package]
 version = "0.0.0"
 edition = "2024"
-# MSRV policy: the oldest stable Rust we support. Raised only deliberately, in its own change.
-rust-version = "1.88"
+# MSRV policy: the oldest stable Rust we support, raised only deliberately. 1.89 is comrak 0.59's
+# own minimum; CI checks it.
+rust-version = "1.89"
 license = "MIT"
 repository = "https://github.com/iChintanSoni/compyla"
 publish = false
@@ -21,6 +22,10 @@ comrak = { version = "0.59", default-features = false }
 saphyr-parser = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
