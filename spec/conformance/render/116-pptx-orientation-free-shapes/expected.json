@@ -1,0 +1,105 @@
+{
+  "diagnostics": [
+    {
+      "code": "layout_overflow",
+      "severity": "warning",
+      "line": 13
+    },
+    {
+      "code": "layout_overflow",
+      "severity": "warning",
+      "line": 22
+    },
+    {
+      "code": "layout_overflow",
+      "severity": "warning",
+      "line": 31
+    }
+  ],
+  "output": {
+    "slides": [
+      {
+        "layout": "Title Slide",
+        "title": "Orientation",
+        "texts": [],
+        "notes": null
+      },
+      {
+        "layout": "Picture with Caption",
+        "title": "Photo",
+        "texts": [],
+        "notes": null
+      },
+      {
+        "layout": "Section Header",
+        "title": "Section",
+        "texts": [
+          "A line under the section title."
+        ],
+        "notes": null
+      },
+      {
+        "layout": "Title Only",
+        "title": "Only a title",
+        "texts": [
+          "Text the layout has no place for."
+        ],
+        "notes": null
+      },
+      {
+        "layout": "Blank",
+        "title": null,
+        "texts": [
+          "Blank, titled",
+          "Words on a blank slide."
+        ],
+        "notes": null
+      }
+    ],
+    "package": {
+      "partsPresent": [
+        "ppt/media/compyla1.jpeg"
+      ],
+      "partsAbsent": [
+        "ppt/media/compyla2\\..*"
+      ],
+      "xpath": [
+        {
+          "part": "ppt/slides/slide2.xml",
+          "expr": "string(//p:pic/p:spPr/a:xfrm/@rot)",
+          "equals": "5400000"
+        },
+        {
+          "part": "ppt/slides/slide2.xml",
+          "expr": "number(//p:pic/p:spPr/a:xfrm/a:ext/@cx) > number(//p:pic/p:spPr/a:xfrm/a:ext/@cy)",
+          "equals": true
+        },
+        {
+          "part": "ppt/slides/slide3.xml",
+          "expr": "count(//p:sp[.//p:ph[@type='body']][.//a:t='A line under the section title.'])",
+          "equals": 1
+        },
+        {
+          "part": "ppt/slides/slide4.xml",
+          "expr": "count(//p:sp[not(.//p:ph)][.//a:t='Text the layout has no place for.'])",
+          "equals": 1
+        },
+        {
+          "part": "ppt/slides/slide5.xml",
+          "expr": "count(//p:ph)",
+          "equals": 0
+        },
+        {
+          "part": "ppt/slides/slide5.xml",
+          "expr": "string(//p:sp[.//a:t='Blank, titled']/p:spPr/a:xfrm/a:off/@y)",
+          "equals": "365125"
+        },
+        {
+          "part": "ppt/slides/slide5.xml",
+          "expr": "string(//p:pic/p:spPr/a:xfrm/@rot)",
+          "equals": "5400000"
+        }
+      ]
+    }
+  }
+}

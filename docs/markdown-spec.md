@@ -105,6 +105,7 @@ prototype.
 | C50 | `inspect_template` is specified end to end: an invalid template's report has `kind: null` and its reason; layouts report their OOXML type; Word's page defaults where a template is silent (§10.4, §10.5) | Undefined for invalid packages | inspect/101–110 |
 | C51 | pptx rendering is specified: placeholders by slot, text (bullets, numbering, code, quotes), tables, images (`contain` by default, `cover` cropped), shared slots, links to slides, notes, and the package (§8.8) | Undefined beyond the projection | render/109–render/114 |
 | C52 | From review of the pptx renderer: images over §12.1's limits are `limit_exceeded`, and unreadable ones `image_unsupported`; nested images and tables are `pptx_ignored_content`; numbering outside DrawingML's range is text; notes are plain; `lang` reaches the output (§5, §8.8, §12.1) | Unchecked, silent, or schema-invalid output | render/115, lint/136 |
+| C53 | Nothing a slide holds is dropped: content on a layout without slots goes into its first content placeholder or over the master's body area, and a title on Blank over the master's title area; EXIF orientation is honored; show settings naming removed slides are dropped (§8.6, §8.8) | Dropped content, sideways photos, a show of missing slides | render/116 |
 
 0.2 also corrects 0.1's *text* in one place where the prototype was right: `---` in xlsx is ignored
 without a diagnostic (§5).
@@ -725,7 +726,8 @@ A template layout outside the house set provides one slot per content placeholde
 Content that doesn't fit produces `layout_overflow` (warning) against the **resolved** layout,
 explicit or inferred. With an explicit layout it is positioned at the layout directive; otherwise at
 the first block that doesn't fit. When the layout wasn't chosen explicitly, the hint suggests
-splitting the slide. Content beyond the last slot is placed in the last slot. Text that measures
+splitting the slide. Content beyond the last slot is placed in the last slot; on a layout without
+slots, it forms one slot of its own (§8.8), so content is never dropped. Text that measures
 larger than its placeholder produces `content_overflow` (warning, render stage).
 
 ### 8.7 Validation
@@ -745,12 +747,17 @@ larger than its placeholder produces `content_overflow` (warning, render stage).
 | `content_overflow` | warning | Render stage, §8.6 |
 | `font_unresolved` | warning | §3 |
 
-### 8.8 Rendering *(C51)*
+### 8.8 Rendering *(C51, C53)*
 
 Each slide is written into its bound layout (§8.5). The title goes into the layout's title
-placeholder; a layout without one (Blank) has no title. Slot `i` (§8.6) goes into the layout's
-`i`-th content placeholder, in shape order: any placeholder but the title, date, footer, header and
-slide number. An empty slot's placeholder is left out. Placeholders carry no geometry or formatting of
+placeholder; on a layout without one (Blank) it is a text box of its own over the master's title
+area. Slot `i` (§8.6) goes into the layout's `i`-th content placeholder, in shape order: any
+placeholder but the title, date, footer, header and slide number. An empty slot's placeholder is
+left out. Content on a layout without slots (`layout_overflow`, §8.6) goes into the layout's first
+content placeholder if it has one (Section Header's text). Otherwise it is laid out over the
+master's body area with no placeholder: text shares one text box, and other content divides the
+area among its blocks in order, each a shape of its own. Where the master has no title or body
+placeholder, the 16:9 house areas apply. Placeholders carry no geometry or formatting of
 their own except where their content needs it, so they inherit the layout's.
 
 - **Text** (a text block, code, a quote) shares one text body:
@@ -772,8 +779,9 @@ their own except where their content needs it, so they inherit the layout's.
   geometry.
 - **Images** are a picture in the slot. With `fit=contain`, the default, the whole image is scaled
   to fit and centered; with `fit=cover` it fills the slot, cropped evenly from both sides (always
-  leaving some of the image). An image whose bytes can't be written shows its alt text (§5), in its
-  share of the slot.
+  leaving some of the image). A JPEG's EXIF orientation is honored: the picture is turned and
+  flipped so the image shows upright, and fitted by its upright shape. An image whose bytes can't be
+  written shows its alt text (§5), in its share of the slot.
 - **Several blocks in one slot** (§8.6): if all are text, they share the placeholder's text body.
   Otherwise the slot's height is divided among them in order; the first keeps the placeholder, and
   the rest are shapes of their own.
@@ -783,7 +791,9 @@ their own except where their content needs it, so they inherit the layout's.
   master. Code and images there are plain text (an image is its alt text), and a fragment link in
   the notes doesn't jump: a notes page's own relationship to its slide must stay unambiguous.
 - **The package** (§10.4): the template's own slides are removed, with every part no longer reached
-  from the presentation, and a `.potx` is written as a presentation.
+  from the presentation, and a `.potx` is written as a presentation. What named those slides goes
+  with them: custom shows, sections, and the show settings' slide range or custom show, so the show
+  plays every slide. An edited part in UTF-16 is written as UTF-8.
 
 ---
 

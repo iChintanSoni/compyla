@@ -32,6 +32,19 @@ const PML: &str = "application/vnd.openxmlformats-officedocument.presentationml"
 const REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 /// Medium Style 2 - Accent 1, built into every Office application.
 const TABLE_STYLE: &str = "{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}";
+/// The standard 16:9 title and body areas, where a template's master has none.
+const TITLE_AREA: Rect = Rect {
+    x: 838_200,
+    y: 365_125,
+    cx: 10_515_600,
+    cy: 1_325_563,
+};
+const BODY_AREA: Rect = Rect {
+    x: 838_200,
+    y: 1_825_625,
+    cx: 10_515_600,
+    cy: 4_351_338,
+};
 /// A table row's height: PowerPoint grows a row to fit its text.
 const ROW_HEIGHT: i64 = 370_840;
 
@@ -259,7 +272,8 @@ fn relative(from: &str, target: &str) -> String {
 /// The deck's images, each written once.
 #[derive(Default)]
 struct Media {
-    by_source: HashMap<String, (String, (u32, u32))>,
+    /// Source → part, pixel size as stored, and EXIF orientation.
+    by_source: HashMap<String, (String, (u32, u32), u8)>,
     parts: Vec<(String, Vec<u8>)>,
     /// Part names in use, lowercased.
     taken: HashSet<String>,
@@ -308,16 +322,38 @@ impl SlideWriter<'_> {
 
     fn slide(&mut self, slide: &Slide, layout: &Layout) -> Vec<u8> {
         let mut shapes = Writer::fragment();
-        if let (Some(title), Some(placeholder)) = (&slide.title, layout.title()) {
+        match (&slide.title, layout.title()) {
             // The title's paragraph has no properties of its own: the layout's title style applies.
-            self.text_shape(&mut shapes, placeholder, None, Bullets::Inherit, |text| {
-                text.cell(title, None);
-            });
+            (Some(title), Some(placeholder)) => {
+                self.text_shape(&mut shapes, placeholder, None, Bullets::Inherit, |text| {
+                    text.cell(title, None);
+                })
+            }
+            // A layout without a title placeholder (Blank): the title is a shape of its own over
+            // the master's title area, never dropped (§8.8).
+            (Some(title), None) => {
+                let area = layout.master_title.unwrap_or(TITLE_AREA);
+                self.text_box(&mut shapes, area, |text| text.cell(title, None));
+            }
+            (None, _) => {}
         }
         let content = layout.content();
-        for (blocks, placeholder) in slide.slots.iter().zip(content) {
-            if !blocks.is_empty() {
-                self.slot(&mut shapes, blocks, placeholder);
+        for (index, blocks) in slide.slots.iter().enumerate() {
+            if blocks.is_empty() {
+                continue;
+            }
+            match content.get(index) {
+                Some(placeholder) => self.slot(&mut shapes, blocks, placeholder),
+                // Content for a slot the layout has no placeholder for: a shape of its own over
+                // the master's body area.
+                None => {
+                    let free = Placeholder {
+                        kind: String::new(),
+                        index: None,
+                        rect: Some(layout.master_body.unwrap_or(BODY_AREA)),
+                    };
+                    self.free_slot(&mut shapes, blocks, &free);
+                }
             }
         }
         let mut xml = Writer::new();
@@ -381,12 +417,7 @@ impl SlideWriter<'_> {
             });
             return;
         }
-        let rect = placeholder.rect.unwrap_or(Rect {
-            x: 838_200,
-            y: 1_825_625,
-            cx: 10_515_600,
-            cy: 4_351_338,
-        });
+        let rect = placeholder.rect.unwrap_or(BODY_AREA);
         let count = blocks.len() as i64;
         for (index, block) in blocks.iter().enumerate() {
             let band = if count == 1 {
@@ -416,6 +447,36 @@ impl SlideWriter<'_> {
                     }
                     None => self.text_box(out, band, |text| content_text(text, other)),
                 },
+            }
+        }
+    }
+
+    /// A slot's blocks with no placeholder to hold them: each a shape of its own, the slot's area
+    /// divided among them in order.
+    fn free_slot(&mut self, out: &mut Writer, blocks: &[Content], area: &Placeholder) {
+        let rect = area.rect.unwrap_or(BODY_AREA);
+        let text_like =
+            |c: &Content| matches!(c, Content::Text(_) | Content::Code(_) | Content::Quote(_));
+        if blocks.iter().all(text_like) {
+            self.text_box(out, rect, |text| {
+                for block in blocks {
+                    content_text(text, block);
+                }
+            });
+            return;
+        }
+        let count = blocks.len() as i64;
+        for (index, block) in blocks.iter().enumerate() {
+            let height = rect.cy / count;
+            let band = Rect {
+                y: rect.y + height * index as i64,
+                cy: height,
+                ..rect
+            };
+            match block {
+                Content::Table(table) => self.table(out, table, None, band),
+                Content::Media(media, fit) => self.picture(out, media, *fit, None, band, None),
+                other => self.text_box(out, band, |text| content_text(text, other)),
             }
         }
     }
@@ -610,7 +671,7 @@ impl SlideWriter<'_> {
         rect: Rect,
         geometry: Option<Rect>,
     ) {
-        let Some((target, (width, height))) = self.image(&media.src) else {
+        let Some((target, (width, height), orientation)) = self.image(&media.src) else {
             // The alt text takes the image's share of the slot, without a bullet (§5, §8.8).
             match placeholder {
                 Some(placeholder) => {
@@ -662,7 +723,14 @@ impl SlideWriter<'_> {
         out.close("p:nvPicPr");
         out.open("p:blipFill", &[]);
         out.empty("a:blip", &[("r:embed", &relationship)]);
-        let (w, h) = (f64::from(width), f64::from(height));
+        // EXIF orientation (§8.8): the picture is turned and flipped so the image shows upright,
+        // and fitted by its upright shape. A quarter turn swaps the stored width and height.
+        let quarter = (5..=8).contains(&orientation);
+        let (w, h) = if quarter {
+            (f64::from(height), f64::from(width))
+        } else {
+            (f64::from(width), f64::from(height))
+        };
         let (rw, rh) = (rect.cx as f64, rect.cy as f64);
         let placed = match fit {
             Fit::Contain => {
@@ -684,6 +752,8 @@ impl SlideWriter<'_> {
                         .clamp(0, 49_999)
                 };
                 let (x, y) = (crop(w, rw), crop(h, rh));
+                // The crop is on the stored image's axes.
+                let (x, y) = if quarter { (y, x) } else { (x, y) };
                 if x > 0 || y > 0 {
                     let (x, y) = (x.to_string(), y.to_string());
                     out.empty("a:srcRect", &[("l", &x), ("t", &y), ("r", &x), ("b", &y)]);
@@ -696,7 +766,51 @@ impl SlideWriter<'_> {
         out.close("a:stretch");
         out.close("p:blipFill");
         out.open("p:spPr", &[]);
-        xfrm(out, placed);
+        let (rot, flip_h, flip_v) = match orientation {
+            2 => (0, true, false),
+            3 => (10_800_000, false, false),
+            4 => (0, false, true),
+            5 => (5_400_000, false, true),
+            6 => (5_400_000, false, false),
+            7 => (5_400_000, true, false),
+            8 => (16_200_000, false, false),
+            _ => (0, false, false),
+        };
+        // A shape turned a quarter has its unturned size, centered where the upright box is.
+        let shape = if quarter {
+            Rect {
+                x: placed.x + (placed.cx - placed.cy) / 2,
+                y: placed.y + (placed.cy - placed.cx) / 2,
+                cx: placed.cy,
+                cy: placed.cx,
+            }
+        } else {
+            placed
+        };
+        let rot = rot.to_string();
+        let mut attrs = Vec::new();
+        if rot != "0" {
+            attrs.push(("rot", rot.as_str()));
+        }
+        if flip_h {
+            attrs.push(("flipH", "1"));
+        }
+        if flip_v {
+            attrs.push(("flipV", "1"));
+        }
+        out.open("a:xfrm", &attrs);
+        out.empty(
+            "a:off",
+            &[("x", &shape.x.to_string()), ("y", &shape.y.to_string())],
+        );
+        out.empty(
+            "a:ext",
+            &[
+                ("cx", &shape.cx.max(0).to_string()),
+                ("cy", &shape.cy.max(0).to_string()),
+            ],
+        );
+        out.close("a:xfrm");
         out.open("a:prstGeom", &[("prst", "rect")]);
         out.empty("a:avLst", &[]);
         out.close("a:prstGeom");
@@ -705,7 +819,7 @@ impl SlideWriter<'_> {
     }
 
     /// The media part for an image source, written once per deck, with its pixel size.
-    fn image(&mut self, src: &str) -> Option<(String, (u32, u32))> {
+    fn image(&mut self, src: &str) -> Option<(String, (u32, u32), u8)> {
         if let Some(found) = self.media.by_source.get(src) {
             return Some(found.clone());
         }
@@ -717,6 +831,7 @@ impl SlideWriter<'_> {
             _ => return None,
         };
         let size = compyla_core::image::dimensions(&bytes)?;
+        let orientation = compyla_core::image::orientation(&bytes);
         let mut number = self.media.parts.len() + 1;
         let part = loop {
             let part = format!("ppt/media/compyla{number}.{extension}");
@@ -728,8 +843,8 @@ impl SlideWriter<'_> {
         self.media.parts.push((part.clone(), bytes));
         self.media
             .by_source
-            .insert(src.to_string(), (part.clone(), size));
-        Some((part, size))
+            .insert(src.to_string(), (part.clone(), size, orientation));
+        Some((part, size, orientation))
     }
 }
 
@@ -901,12 +1016,18 @@ fn assemble(
             entries.push((name.to_string(), presentation_rels.to_xml()));
             continue;
         }
-        if let Some(content_type) = template.content_type(name)
-            && !is_rels(name)
-        {
+        let content_type = template.content_type(name).filter(|_| !is_rels(name));
+        if let Some(content_type) = content_type {
             overrides.insert(name.to_string(), content_type.to_string());
         }
-        entries.push((name.to_string(), data.to_vec()));
+        // Show settings may name the template's slides or custom shows, which are gone.
+        let data = if content_type == Some(&format!("{PML}.presProps+xml")) {
+            presentation::show_properties(data)
+                .map_err(|why| Invalid(format!("has show settings that can't be edited: {why}")))?
+        } else {
+            data.to_vec()
+        };
+        entries.push((name.to_string(), data));
     }
     if !entries
         .iter()

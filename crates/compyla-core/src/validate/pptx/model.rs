@@ -23,7 +23,7 @@ pub struct Slide {
     pub layout: Layout,
     pub title: Option<Vec<Run>>,
     /// The content, slot by slot in the layout's order (§8.6). Content that fits no slot is in the
-    /// last one; a layout without slots holds none.
+    /// last one; a layout without slots gets one slot for content it can't hold (§8.8).
     pub slots: Vec<Vec<Content>>,
     /// The speaker notes: the `notes` directives' children, in order (§8.2).
     pub notes: Vec<Block>,
@@ -162,10 +162,16 @@ impl Accepts {
 fn slots(composed: &Composed<'_>, fits: &HashMap<*const Media, Fit>) -> Vec<Vec<Content>> {
     let layout = composed.layout;
     let count = layout.slots();
-    let mut slots: Vec<Vec<Content>> = vec![Vec::new(); count];
     if count == 0 {
-        return slots;
+        // Content a layout has no slot for (`layout_overflow`) is still shown, never dropped.
+        let overflow: Vec<Content> = blocks(composed, fits).into_iter().map(|(_, c)| c).collect();
+        return if overflow.is_empty() {
+            Vec::new()
+        } else {
+            vec![overflow]
+        };
     }
+    let mut slots: Vec<Vec<Content>> = vec![Vec::new(); count];
     let columns = composed.measure.columns;
     let accepts: Vec<Accepts> = match layout {
         Layout::TitleSlide => vec![Accepts::Text],

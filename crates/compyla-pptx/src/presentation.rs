@@ -58,6 +58,11 @@ fn parts(bytes: &[u8]) -> Result<Parts, String> {
                 }
                 depth += 1;
             }
+            // A root with no content: nothing to edit inside it.
+            Event::Empty(start) if depth == 0 => {
+                root = Some(start.name().as_ref().to_string());
+                (open_end, close) = (after, after);
+            }
             Event::Empty(start) if depth == 1 => children.push(Child {
                 name: start.name().as_ref().to_string(),
                 start: before,
@@ -101,6 +106,8 @@ fn local(name: &str) -> &str {
 /// relationship id of its part), custom shows removed, and section lists removed from its
 /// extensions.
 pub fn edit(bytes: &[u8], slides: &[(u32, String)]) -> Result<Vec<u8>, String> {
+    let bytes = utf8(bytes)?;
+    let bytes = bytes.as_slice();
     let root = parts(bytes)?;
     let prefix = root
         .name
@@ -164,6 +171,63 @@ pub fn edit(bytes: &[u8], slides: &[(u32, String)]) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
+/// A part as UTF-8 (§10.4 allows UTF-16 parts): transcoded, with its declaration saying so.
+fn utf8(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    let text = compyla_ooxml::dom::utf8(bytes).map_err(|_| "an XML part isn't UTF-8 or UTF-16")?;
+    let transcoded = matches!(text, std::borrow::Cow::Owned(_));
+    let mut text = text.into_owned();
+    if transcoded
+        && text.starts_with(b"<?xml")
+        && let Some(end) = text.windows(2).position(|w| w == b"?>")
+    {
+        let declaration = String::from_utf8_lossy(&text[..end]).to_string();
+        let fixed = declaration
+            .replace("encoding=\"UTF-16\"", "encoding=\"UTF-8\"")
+            .replace("encoding=\"utf-16\"", "encoding=\"UTF-8\"")
+            .replace("encoding='UTF-16'", "encoding='UTF-8'")
+            .replace("encoding='utf-16'", "encoding='UTF-8'");
+        text.splice(..end, fixed.into_bytes());
+    }
+    Ok(text)
+}
+
+/// `presProps.xml` without show settings that name slides or custom shows the output doesn't have:
+/// the show plays every slide.
+pub fn show_properties(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    let bytes = utf8(bytes)?;
+    let root = parts(&bytes)?;
+    let mut out = bytes[..root.open_end].to_vec();
+    let mut cursor = root.open_end;
+    for child in &root.children {
+        out.extend(&bytes[cursor..child.start]);
+        cursor = child.end;
+        let element = &bytes[child.start..child.end];
+        if local(&child.name) == "showPr" {
+            out.extend(without(element, &["custShow", "sldRg"])?);
+        } else {
+            out.extend(element);
+        }
+    }
+    out.extend(&bytes[cursor..]);
+    Ok(out)
+}
+
+/// An element without its children named `names`.
+fn without(bytes: &[u8], names: &[&str]) -> Result<Vec<u8>, String> {
+    let element = parts(bytes)?;
+    let mut out = bytes[..element.open_end].to_vec();
+    let mut cursor = element.open_end;
+    for child in &element.children {
+        out.extend(&bytes[cursor..child.start]);
+        cursor = child.end;
+        if !names.contains(&local(&child.name)) {
+            out.extend(&bytes[child.start..child.end]);
+        }
+    }
+    out.extend(&bytes[cursor..]);
+    Ok(out)
+}
+
 /// An `extLst` without the extensions that list sections, which name the template's slides.
 fn without_sections(bytes: &[u8]) -> Result<Vec<u8>, String> {
     let list = parts(bytes)?;
@@ -196,6 +260,35 @@ mod tests {
         );
         assert!(!out.contains("rId9") && !out.contains("custShow") && !out.contains("sectionLst"));
         assert!(out.contains(r#"<p:ext uri="b"><x/></p:ext>"#));
+    }
+
+    #[test]
+    fn utf16_parts_are_edited_as_utf8() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-16"?><presentation xmlns="urn:p"><sldSz cx="1" cy="2"/></presentation>"#;
+        let mut utf16 = vec![0xFF, 0xFE];
+        utf16.extend(xml.encode_utf16().flat_map(u16::to_le_bytes));
+        let out = String::from_utf8(edit(&utf16, &[(256, "s1".into())]).unwrap()).unwrap();
+        assert!(
+            out.starts_with(r#"<?xml version="1.0" encoding="UTF-8"?>"#),
+            "{out}"
+        );
+        assert!(out.contains("<sldIdLst"));
+    }
+
+    #[test]
+    fn an_empty_root_is_kept() {
+        let xml = br#"<?xml version="1.0"?><p:presentationPr xmlns:p="urn:p"/>"#;
+        assert_eq!(show_properties(xml).unwrap(), xml.to_vec());
+    }
+
+    #[test]
+    fn show_settings_naming_slides_are_removed() {
+        let xml = br#"<p:presentationPr xmlns:p="urn:p"><p:showPr loop="1"><p:custShow id="0"/></p:showPr><p:extLst/></p:presentationPr>"#;
+        let out = String::from_utf8(show_properties(xml).unwrap()).unwrap();
+        assert_eq!(
+            out,
+            r#"<p:presentationPr xmlns:p="urn:p"><p:showPr loop="1"></p:showPr><p:extLst/></p:presentationPr>"#
+        );
     }
 
     #[test]
