@@ -55,8 +55,11 @@ pub fn parse(
         .into_iter()
         .map(|(key, line)| (key, open + 1 + line))
         .collect();
-    let key_line = |key: &str| lines.get(key).copied();
-    let meta = normalize(raw, &key_line, diagnostics);
+    let locate = |key: &str, d: Diagnostic| match lines.get(key) {
+        Some(&line) => d.at_line(line),
+        None => d,
+    };
+    let meta = normalize(raw, &locate, diagnostics);
     (meta, lines)
 }
 
@@ -231,23 +234,21 @@ fn is_float(text: &str) -> bool {
     mantissa_ok && exponent_ok && (mantissa.contains('.') || exponent.is_some())
 }
 
-/// Known-key checking and normalization (markdown-spec.md §2).
-fn normalize(
+/// Known-key checking and normalization (markdown-spec.md §2). `locate` positions a diagnostic about
+/// a key: at its frontmatter line for markdown, at its IR path for IR input (§10.7).
+pub(crate) fn normalize(
     raw: Map<String, Value>,
-    key_line: &dyn Fn(&str) -> Option<usize>,
+    locate: &dyn Fn(&str, Diagnostic) -> Diagnostic,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Map<String, Value> {
     let mut meta = Map::new();
     for (key, value) in raw {
         let invalid = |diagnostics: &mut Vec<Diagnostic>, expected: &str| {
-            let mut d = Diagnostic::new(
+            let d = Diagnostic::new(
                 "meta_value_invalid",
                 format!("Frontmatter `{key}` must be {expected}; it is ignored."),
             );
-            if let Some(line) = key_line(&key) {
-                d = d.at_line(line);
-            }
-            diagnostics.push(d);
+            diagnostics.push(locate(&key, d));
         };
         let normalized = match key.as_str() {
             "format" => match text_of(&value).map(|s| s.to_ascii_lowercase()) {
@@ -295,16 +296,13 @@ fn normalize(
             "spec" => match text_of(&value) {
                 Some(version) => {
                     if version != SPEC_VERSION {
-                        let mut d = Diagnostic::new(
+                        let d = Diagnostic::new(
                             "spec_version_unsupported",
                             format!(
                                 "The document targets spec {version}; it is processed under spec {SPEC_VERSION}."
                             ),
                         );
-                        if let Some(line) = key_line(&key) {
-                            d = d.at_line(line);
-                        }
-                        diagnostics.push(d);
+                        diagnostics.push(locate(&key, d));
                     }
                     Some(Value::String(version))
                 }
