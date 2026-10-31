@@ -254,6 +254,20 @@ fn walk(bytes: &[u8], capture: &dyn Fn(&OpenPath) -> bool) -> Result<Vec<Element
                         .ok_or_else(|| Error::Malformed("unbalanced end tag".into()))?;
                 }
             },
+            // Nothing but whitespace, comments and processing instructions may sit outside the
+            // root element: a part with more isn't well-formed, whatever a lenient reader keeps.
+            Event::Text(text)
+                if open.is_empty()
+                    && !text
+                        .xml10_content()
+                        .chars()
+                        .all(|c| c.is_ascii_whitespace()) =>
+            {
+                return Err(Error::Malformed("has text outside its root element".into()));
+            }
+            Event::CData(_) | Event::GeneralRef(_) if open.is_empty() => {
+                return Err(Error::Malformed("has text outside its root element".into()));
+            }
             Event::Text(text) => {
                 // Entity references arrive as their own events, so the text has none.
                 if let Some(top) = building.last_mut() {
@@ -349,6 +363,24 @@ fn element(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nothing_but_whitespace_comments_and_instructions_sits_outside_the_root() {
+        for part in [
+            &b"x<a/>"[..],
+            b"\x00<a/>",
+            b"<a/>x",
+            b"<![CDATA[x]]><a/>",
+            b"&#65;<a/>",
+        ] {
+            assert!(
+                matches!(parse(part), Err(Error::Malformed(_))),
+                "{}",
+                String::from_utf8_lossy(part)
+            );
+        }
+        assert!(parse(b" <?xml version=\"1.0\"?>\n<!-- c --><?pi x?><a/>\n").is_ok());
+    }
 
     #[test]
     fn namespaces_resolve_whatever_the_prefix() {
