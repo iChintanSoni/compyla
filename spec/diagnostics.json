@@ -1,0 +1,760 @@
+{
+  "$schema": "./diagnostics.schema.json",
+  "specVersion": "0.2",
+  "description": "Registry of every Compyla diagnostic code and operation error (markdown-spec.md §11, §10.6). Codes are public API: never reused for a different meaning; retired codes stay with status \"retired\" (§14).",
+  "diagnostics": [
+    {
+      "code": "ambiguous_break",
+      "severity": "warning",
+      "stage": "parse",
+      "profiles": [
+        "*"
+      ],
+      "strictPromotable": false,
+      "position": "underline",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§4.9",
+      "summary": "A paragraph line directly above --- became a level-2 heading; a break was probably intended."
+    },
+    {
+      "code": "directive_malformed",
+      "severity": "warning",
+      "stage": "parse",
+      "profiles": [
+        "*"
+      ],
+      "strictPromotable": true,
+      "position": "fence",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§1.3",
+      "summary": "A line looks like a directive fence but isn't one (indented, inside a quote or list item, not matching the grammar, or a closer with nothing open)."
+    },
+    {
+      "code": "directive_unclosed",
+      "severity": "warning",
+      "stage": "parse",
+      "profiles": [
+        "*"
+      ],
+      "strictPromotable": true,
+      "position": "node",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§1.3",
+      "summary": "A directive opener has no matching closer. It becomes a directive with no children; the following lines are parsed as ordinary content."
+    },
+    {
+      "code": "document_in_code_fence",
+      "severity": "warning",
+      "stage": "parse",
+      "profiles": [
+        "*"
+      ],
+      "strictPromotable": false,
+      "position": "node",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§4.9",
+      "summary": "The whole body is one markdown code block, as LLMs produce when asked for markdown."
+    },
+    {
+      "code": "frontmatter_invalid",
+      "severity": "warning",
+      "stage": "parse",
+      "profiles": [
+        "*"
+      ],
+      "strictPromotable": true,
+      "position": "frontmatter",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§2",
+      "summary": "Frontmatter is not valid YAML, is not a mapping, or uses a feature outside the JSON-compatible subset. meta is treated as empty."
+    },
+    {
+      "code": "invalid_character",
+      "severity": "warning",
+      "stage": "parse",
+      "profiles": [
+        "*"
+      ],
+      "strictPromotable": true,
+      "position": "char",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§1.1",
+      "summary": "A character XML forbids, or an unpaired surrogate, was replaced with U+FFFD."
+    },
+    {
+      "code": "link_scheme_blocked",
+      "severity": "warning",
+      "stage": "parse",
+      "profiles": [
+        "*"
+      ],
+      "strictPromotable": true,
+      "position": "construct",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§4.5",
+      "summary": "A link destination is outside the allowlist; the link is removed and its text kept."
+    },
+    {
+      "code": "meta_value_invalid",
+      "severity": "warning",
+      "stage": "parse",
+      "profiles": [
+        "*"
+      ],
+      "strictPromotable": true,
+      "position": "key",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§2",
+      "summary": "A known frontmatter key has a value of the wrong type or form; the key is removed from meta."
+    },
+    {
+      "code": "spec_version_unsupported",
+      "severity": "warning",
+      "stage": "parse",
+      "profiles": [
+        "*"
+      ],
+      "strictPromotable": true,
+      "position": "key",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§2",
+      "summary": "The frontmatter spec value differs from the implemented version; the document is processed under the implemented version."
+    },
+    {
+      "code": "table_malformed",
+      "severity": "warning",
+      "stage": "parse",
+      "profiles": [
+        "*"
+      ],
+      "strictPromotable": true,
+      "position": "node",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§4.9",
+      "summary": "A paragraph looks like a table whose header and delimiter rows have different cell counts; it is kept as text."
+    },
+    {
+      "code": "unsupported_content",
+      "severity": "warning",
+      "stage": "parse",
+      "profiles": [
+        "*"
+      ],
+      "strictPromotable": true,
+      "position": "construct",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§4.8",
+      "summary": "A recognized construct with no IR representation (an image mixed with text, a footnote, an HTML block, a known HTML inline tag) was dropped."
+    },
+    {
+      "code": "diagnostics_truncated",
+      "severity": "warning",
+      "stage": "any",
+      "profiles": [
+        "*"
+      ],
+      "strictPromotable": false,
+      "position": "none",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§11.2",
+      "summary": "The diagnostics list was capped; further diagnostics were not reported."
+    },
+    {
+      "code": "limit_exceeded",
+      "severity": "error",
+      "stage": "any",
+      "profiles": [
+        "*"
+      ],
+      "strictPromotable": false,
+      "position": "construct",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§12.1",
+      "summary": "Input exceeds a limit (size, nesting, table cells, slides, sheets, image size); it is not processed further. Input-size limits have no line."
+    },
+    {
+      "code": "directive_misplaced",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "*"
+      ],
+      "strictPromotable": true,
+      "position": "node",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§1.5",
+      "summary": "A directive is in a position where its profile gives it no effect; it is ignored."
+    },
+    {
+      "code": "duplicate_sheet_name",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "xlsx"
+      ],
+      "strictPromotable": true,
+      "position": "node",
+      "since": "0.1",
+      "status": "active",
+      "spec": "§9.6",
+      "summary": "A sheet name repeats an earlier one or is History (case-insensitive); a numeric suffix is appended."
+    },
+    {
+      "code": "font_unresolved",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "docx",
+        "pdf",
+        "pptx"
+      ],
+      "strictPromotable": true,
+      "position": "none",
+      "since": "0.1",
+      "status": "active",
+      "spec": "§3, §11.2",
+      "summary": "A font family the template references can't be resolved; the viewer substitutes one. Validate stage when a template and font resolver are available, else render stage."
+    },
+    {
+      "code": "formula_error",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "xlsx"
+      ],
+      "strictPromotable": true,
+      "position": "row",
+      "since": "0.1",
+      "status": "active",
+      "spec": "§9.3",
+      "summary": "A formula doesn't match the grammar, calls a function off the allowlist, or qualifies an unknown sheet; the cell is written as literal text."
+    },
+    {
+      "code": "formula_ref_out_of_range",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "xlsx"
+      ],
+      "strictPromotable": true,
+      "position": "row",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§9.3",
+      "summary": "An unqualified reference falls outside its table's own grid."
+    },
+    {
+      "code": "heading_skip",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "docx",
+        "pdf"
+      ],
+      "strictPromotable": false,
+      "position": "node",
+      "since": "0.1",
+      "status": "active",
+      "spec": "§6.3",
+      "summary": "A heading skips a level relative to its parent section in the same heading tree."
+    },
+    {
+      "code": "heading_too_deep",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "pptx"
+      ],
+      "strictPromotable": false,
+      "position": "node",
+      "since": "0.1",
+      "status": "active",
+      "spec": "§8.7",
+      "summary": "A demoted heading of level 4 or deeper inside a slide."
+    },
+    {
+      "code": "image_unresolved",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "docx",
+        "pdf",
+        "pptx"
+      ],
+      "strictPromotable": true,
+      "position": "node",
+      "since": "0.1",
+      "status": "active",
+      "spec": "§5, §10.3",
+      "summary": "An image source doesn't resolve; its alt text is rendered in its place."
+    },
+    {
+      "code": "image_unsupported",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "docx",
+        "pdf",
+        "pptx"
+      ],
+      "strictPromotable": true,
+      "position": "node",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§4.7, §5",
+      "summary": "An image's bytes are not PNG, JPEG or GIF; its alt text is rendered in its place."
+    },
+    {
+      "code": "invalid_directive_args",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "*"
+      ],
+      "strictPromotable": true,
+      "position": "node",
+      "since": "0.1",
+      "status": "active",
+      "spec": "§1.6",
+      "summary": "A directive's arguments are malformed (a repeated key, a malformed or out-of-range value, a missing argument, a bad columns entry, anchor or table name); it falls back as its profile defines."
+    },
+    {
+      "code": "invalid_margins",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "docx",
+        "pdf"
+      ],
+      "strictPromotable": true,
+      "position": "key",
+      "since": "0.1",
+      "status": "active",
+      "spec": "§7",
+      "summary": "margins isn't normal or narrow; the template's margins or normal is used."
+    },
+    {
+      "code": "invalid_page_size",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "docx",
+        "pdf"
+      ],
+      "strictPromotable": true,
+      "position": "key",
+      "since": "0.1",
+      "status": "active",
+      "spec": "§7",
+      "summary": "page_size isn't A4 or Letter; the template's page size or A4 is used."
+    },
+    {
+      "code": "layout_not_in_template",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "pptx"
+      ],
+      "strictPromotable": true,
+      "position": "none",
+      "since": "0.1",
+      "status": "active",
+      "spec": "§8.5, §11.2",
+      "summary": "A layout the deck uses has no match in the template by alias, name or type; the template's Title and Content layout is used."
+    },
+    {
+      "code": "layout_overflow",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "pptx"
+      ],
+      "strictPromotable": true,
+      "position": "node",
+      "since": "0.1",
+      "status": "active",
+      "spec": "§8.6",
+      "summary": "A slide's content doesn't fit its resolved layout's slots (explicit or inferred)."
+    },
+    {
+      "code": "link_anchor_unresolved",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "*"
+      ],
+      "strictPromotable": true,
+      "position": "construct",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§4.5, §6.2, §8.7, §9.5",
+      "summary": "A fragment link matches no target slug in this format; its text is kept without a link."
+    },
+    {
+      "code": "mixed_column_type",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "xlsx"
+      ],
+      "strictPromotable": false,
+      "position": "table",
+      "since": "0.1",
+      "status": "active",
+      "spec": "§9.5",
+      "summary": "A column without a columns entry has cells of disagreeing inferred types; it is typed as text."
+    },
+    {
+      "code": "no_styles_xml",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "docx"
+      ],
+      "strictPromotable": true,
+      "position": "none",
+      "since": "0.1",
+      "status": "active",
+      "spec": "§10.4",
+      "summary": "The docx template has no styles part; house styles are used."
+    },
+    {
+      "code": "no_theme",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "*"
+      ],
+      "strictPromotable": true,
+      "position": "none",
+      "since": "0.1",
+      "status": "active",
+      "spec": "§10.4",
+      "summary": "The template has no theme part; default theme fonts and colors are used."
+    },
+    {
+      "code": "sheet_name_invalid",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "xlsx"
+      ],
+      "strictPromotable": true,
+      "position": "node",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§9.6",
+      "summary": "A sheet name is empty, contains : \\ / ? * [ ], or starts or ends with an apostrophe; it is repaired."
+    },
+    {
+      "code": "sheet_name_too_long",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "xlsx"
+      ],
+      "strictPromotable": true,
+      "position": "node",
+      "since": "0.1",
+      "status": "active",
+      "spec": "§9.6",
+      "summary": "A sheet name is longer than 31 UTF-16 code units; it is truncated."
+    },
+    {
+      "code": "table_header_invalid",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "xlsx"
+      ],
+      "strictPromotable": true,
+      "position": "node",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§9.6",
+      "summary": "A table registered with ::: table has empty or repeated header cells; they are renamed."
+    },
+    {
+      "code": "table_not_rectangular",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "*"
+      ],
+      "strictPromotable": true,
+      "position": "row",
+      "since": "0.1",
+      "status": "active",
+      "spec": "§5",
+      "summary": "A table row's cell count differs from the header's; short rows are padded and long rows widen the table."
+    },
+    {
+      "code": "template_invalid",
+      "severity": "error",
+      "stage": "validate",
+      "profiles": [
+        "*"
+      ],
+      "strictPromotable": false,
+      "position": "none",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§10.4",
+      "summary": "The template isn't an accepted, well-formed, macro-free, unencrypted, DTD-free OOXML package within limits."
+    },
+    {
+      "code": "template_unresolved",
+      "severity": "error",
+      "stage": "validate",
+      "profiles": [
+        "*"
+      ],
+      "strictPromotable": false,
+      "position": "key",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§10.3",
+      "summary": "meta.template could not be resolved by the host's template resolver."
+    },
+    {
+      "code": "typed_value_invalid",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "xlsx"
+      ],
+      "strictPromotable": true,
+      "position": "row",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§9.5",
+      "summary": "A literal in a typed column doesn't parse as that type; it is written as text."
+    },
+    {
+      "code": "unknown_directive",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "*"
+      ],
+      "strictPromotable": true,
+      "position": "node",
+      "since": "0.1",
+      "status": "active",
+      "spec": "§1.5",
+      "summary": "The directive name is not in the dialect's directive registry. Its children render in its place."
+    },
+    {
+      "code": "unknown_directive_option",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "*"
+      ],
+      "strictPromotable": true,
+      "position": "node",
+      "since": "0.1",
+      "status": "active",
+      "spec": "§1.6",
+      "summary": "An unknown option, a value outside an option's enumerated values, or arguments to a directive that takes none; ignored, so the default applies."
+    },
+    {
+      "code": "unknown_layout",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "pptx"
+      ],
+      "strictPromotable": true,
+      "position": "node",
+      "since": "0.1",
+      "status": "active",
+      "spec": "§8.3, §8.5",
+      "summary": "A layout name resolves to no valid name; the layout is inferred instead."
+    },
+    {
+      "code": "xlsx_empty_workbook",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "xlsx"
+      ],
+      "strictPromotable": false,
+      "position": "none",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§9.1",
+      "summary": "The document yields no sheets; one empty sheet is written."
+    },
+    {
+      "code": "xlsx_ignored_content",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "xlsx"
+      ],
+      "strictPromotable": true,
+      "position": "node",
+      "since": "0.1",
+      "status": "active",
+      "spec": "§9.1, §9.4, §9.5",
+      "summary": "Content with no xlsx mapping, a paragraph or range title that never attached to a table, or an extra link in a cell, is ignored."
+    },
+    {
+      "code": "xlsx_limit_exceeded",
+      "severity": "error",
+      "stage": "validate",
+      "profiles": [
+        "xlsx"
+      ],
+      "strictPromotable": false,
+      "position": "row",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§9.2, §9.3, §9.7",
+      "summary": "Content would lie beyond Excel's grid, or a cell's text or a formula exceeds Excel's length limit."
+    },
+    {
+      "code": "xlsx_range_overlap",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "xlsx"
+      ],
+      "strictPromotable": true,
+      "position": "node",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§9.2",
+      "summary": "A table's placed range would overlap an earlier one; it is placed at the cursor instead."
+    },
+    {
+      "code": "xlsx_template_unsupported",
+      "severity": "warning",
+      "stage": "validate",
+      "profiles": [
+        "xlsx"
+      ],
+      "strictPromotable": true,
+      "position": "none",
+      "since": "0.1",
+      "status": "active",
+      "spec": "§9.7, §10.4",
+      "summary": "An .xlsx/.xltx template was supplied; xlsx templates aren't supported yet and it isn't used."
+    },
+    {
+      "code": "content_overflow",
+      "severity": "warning",
+      "stage": "render",
+      "profiles": [
+        "pptx"
+      ],
+      "strictPromotable": true,
+      "position": "node",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§8.6",
+      "summary": "Text measures larger than its placeholder."
+    },
+    {
+      "code": "glyph_missing",
+      "severity": "warning",
+      "stage": "render",
+      "profiles": [
+        "pdf"
+      ],
+      "strictPromotable": true,
+      "position": "none",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§7",
+      "summary": "Text contains characters no available font can display."
+    },
+    {
+      "code": "render_failed",
+      "severity": "error",
+      "stage": "render",
+      "profiles": [
+        "*"
+      ],
+      "strictPromotable": false,
+      "position": "none",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§11.1",
+      "summary": "Rendering failed for a reason no other code covers."
+    },
+    {
+      "code": "template_content_removed",
+      "severity": "warning",
+      "stage": "render",
+      "profiles": [
+        "*"
+      ],
+      "strictPromotable": false,
+      "position": "none",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§10.4",
+      "summary": "Active or external content (external relationships, ActiveX, embedded OLE) was removed from the template's kept parts."
+    }
+  ],
+  "operationErrors": [
+    {
+      "code": "input_not_utf8",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§1.1, §10.6",
+      "summary": "The input bytes aren't valid UTF-8."
+    },
+    {
+      "code": "format_missing",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§10.2, §10.6",
+      "summary": "No format was given in the options or meta.format."
+    },
+    {
+      "code": "format_unknown",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§10.6",
+      "summary": "The format option isn't docx, pdf, pptx or xlsx."
+    },
+    {
+      "code": "renderer_unavailable",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§10.6",
+      "summary": "This build doesn't include the requested renderer."
+    },
+    {
+      "code": "ir_invalid",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§10.6, §10.7",
+      "summary": "IR input fails spec/ir.schema.json; carries the JSON Pointer of the first failure."
+    },
+    {
+      "code": "ir_version_unsupported",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§10.6, §10.7",
+      "summary": "IR input has an irVersion this implementation doesn't support."
+    }
+  ]
+}

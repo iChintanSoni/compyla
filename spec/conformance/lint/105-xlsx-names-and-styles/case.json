@@ -1,0 +1,11 @@
+{
+  "description": "Invalid sheet names, table names, table headers and styles are diagnosed.",
+  "spec": [
+    "§9.6",
+    "§9.7",
+    "C14",
+    "C32"
+  ],
+  "oracle": "corrected",
+  "format": "xlsx"
+}

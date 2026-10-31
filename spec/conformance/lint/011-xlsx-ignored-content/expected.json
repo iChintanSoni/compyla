@@ -1,0 +1,19 @@
+{
+  "diagnostics": [
+    {
+      "code": "xlsx_ignored_content",
+      "severity": "warning",
+      "line": 3
+    },
+    {
+      "code": "xlsx_ignored_content",
+      "severity": "warning",
+      "line": 5
+    },
+    {
+      "code": "xlsx_ignored_content",
+      "severity": "warning",
+      "line": 9
+    }
+  ]
+}

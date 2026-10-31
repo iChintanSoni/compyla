@@ -1,0 +1,14 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "code",
+        "value": "```\n::: notes\n:::\n```",
+        "position": { "line": 1, "column": 1 }
+      }
+    ]
+  },
+  "diagnostics": []
+}

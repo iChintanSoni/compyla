@@ -1,0 +1,9 @@
+{
+  "description": "Anchored tables whose placed ranges overlap are an error at the later table.",
+  "spec": [
+    "§9.2",
+    "C27"
+  ],
+  "oracle": "corrected",
+  "format": "xlsx"
+}

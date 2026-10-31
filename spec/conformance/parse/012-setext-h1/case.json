@@ -1,0 +1,8 @@
+{
+  "description": "A setext heading underlined with = is a level-1 section and produces no diagnostic.",
+  "spec": [
+    "§4.2",
+    "§4.9"
+  ],
+  "oracle": "prototype"
+}

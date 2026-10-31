@@ -1,0 +1,132 @@
+# Conformance Suite
+
+The executable definition of correct Compyla behavior (markdown-spec.md §0.1). Every implementation and
+every host must pass it for the spec version it claims.
+
+## Layout
+
+```
+spec/conformance/
+  parse/<NNN-name>/     markdown → IR + parse diagnostics
+  lint/<NNN-name>/      markdown + format → parse + validate diagnostics
+  compose/<NNN-name>/   markdown + format → compose summary (compose.schema.json)
+  render/<NNN-name>/    markdown + format (+ template) → convert diagnostics + a projection of the file
+```
+
+Each fixture directory holds:
+
+| File | Contents |
+|------|----------|
+| `input.md` | The source document |
+| `case.json` | What the fixture covers and how to run it (`case.schema.json`) |
+| `expected.json` | The expected output, by suite (below) |
+| other files | Asset bytes for sources listed in `assets` (e.g. `logo.png`), and a render fixture's `template` |
+
+Numbering: `0xx` fixtures agree with the TypeScript prototype; `1xx` fixtures encode a correction made in
+spec 0.2 (markdown-spec.md §0.2). The `oracle` field in `case.json` records which applies.
+
+## Expected output per suite
+
+| Suite | `expected.json` | Comparison |
+|-------|-----------------|------------|
+| parse | `{ "ir": <IR>, "diagnostics": [...] }` | IR: exact JSON equality (key order irrelevant). Diagnostics: as below |
+| lint | `{ "diagnostics": [...] }` | As below |
+| compose | `<compose summary>` | Exact JSON equality |
+| render | `{ "diagnostics": [...], "output": <projection> }` (`render.schema.json`) | Diagnostics as below; output as in "Render suite" |
+
+**Diagnostics** are compared as lists of `(code, severity, line, column)` in the order markdown-spec.md
+§11.2 defines (line, absent first; then column; then code), keeping duplicates. `line` is always
+compared: a document-level diagnostic has none, and the actual one must have none either. `column` is
+compared only when the expected diagnostic has one. `message` and `hint` are never compared. Expected
+diagnostics in fixtures carry only `code`, `severity`, `line` and, where the code's registry `position`
+has a column, `column`.
+
+## Running a case
+
+- **parse:** call `parse(input.md)`.
+- **lint:** call `lint(input.md, { format, strict })` with an asset resolver that resolves exactly the
+  sources listed in `assets`, or every source when `assets` is omitted. A listed source that names a
+  file in the fixture directory resolves to that file's bytes; any other resolves as *exists*, without
+  bytes (markdown-spec.md §10.3). No template.
+- **compose:** run the implementation's compose stage for `format` and project it to the compose summary.
+- **render:** call `convert(input.md, { format, strict, template })`, with the asset resolver as for
+  lint and `template` read from the fixture directory. Do it **twice**: the two outputs must be
+  byte-identical (markdown-spec.md §13). Then project the output (below) and compare.
+
+## Render suite
+
+Byte equality across implementations isn't required (markdown-spec.md §13), so render fixtures pin a
+**projection**: the parts of the file the spec defines, extracted the same way from any implementation's
+output. Every key under `output` is optional; only the keys a fixture lists are checked.
+
+### Projections
+
+| Format | Key | Extracted as |
+|--------|-----|--------------|
+| docx | `paragraphs` | Body-level paragraphs with non-empty text, in order: `{ style, text }`. `style` is the paragraph style's **name**, lowercased (the default paragraph style's when none is set). `text` joins the runs' text, with tabs as `\t` and line breaks as `\n` |
+| docx | `tables` | Body-level tables in order, as rows of cell texts (a cell's paragraphs joined with `\n`) |
+| docx | `hyperlinks` | `{ text, target }` in order; external targets from relationships, internal ones as `#anchor` |
+| docx | `pageBreaks` | Page breaks: `w:br` of type `page`, plus `w:pageBreakBefore` |
+| docx | `horizontalRules` | Empty body paragraphs with a bottom border |
+| pptx | `slides` | One entry per slide, in order: `layout` (the bound layout's name), `title` (title placeholder text, or null), `texts` (non-empty paragraph texts of every other shape and graphic frame, in order), `notes` (the notes body text, or null) |
+| xlsx | `sheets` | In order: `name`, and `cells` keyed by address, each with `value` (string, number or boolean), `type` (`s`, `n`, `b`), `formula` (without `=`) and `numFmt` (the format code) |
+| docx, pptx, xlsx | `properties` | `title` and `creator` from `docProps/core.xml` |
+| pdf | `pages`, `pageSize` | Page count; the first page's `[width, height]` in points |
+| pdf | `text` | The extracted text of all pages, whitespace-normalized |
+| pdf | `outline` | Outline (bookmark) titles, flattened in order |
+| pdf | `links` | Link-annotation URIs in order; consecutive duplicates collapse (one link split across lines has several annotations) |
+| pdf | `metadata` | `title` and `author` from the document information |
+| docx, pptx, xlsx | `package` | Package assertions (below) |
+
+### Matching
+
+| Key | A fixture's value matches when |
+|-----|--------------------------------|
+| `paragraphs`, pptx `texts`, pdf `text` | it is an **in-order subsequence** of the actual list (or, for pdf `text`, every fragment appears in order in the actual text). Content the spec doesn't pin, such as list paragraphs, may appear in between |
+| `slides` | the slide counts are equal and, slide by slide, every field the fixture lists matches (`texts` as a subsequence) |
+| `sheets` | the sheet names are equal and in order, and every listed cell exists with every listed field equal |
+| `pageSize` | each dimension is within 0.5 pt |
+| everything else, including `properties` and `metadata` | exact equality. So `properties: {}` asserts that no title or creator is written |
+
+### Package assertions
+
+| Key | Meaning |
+|-----|---------|
+| `partsPresent` | Part names that must exist |
+| `partsAbsent` | Regular expressions; no part name may match one in full (e.g. `word/vbaProject\.bin`) |
+| `xpath` | `{ part, expr, equals }`: an XPath 1.0 expression evaluated on a part must equal the value. Namespace prefixes: `w`, `a`, `p`, `r`, `x` (SpreadsheetML), `rel`, `cp`, `dc` |
+
+`spec/tools/render_check.py` is the reference extractor and matcher. Phase B and Phase C runners
+reimplement it in Rust and must agree with it on every render fixture.
+
+## The oracle
+
+`spec/tools/oracle.mjs` runs the TypeScript prototype (`packages/*/dist`, so build first with
+`pnpm build`) against every fixture:
+
+- `oracle: "prototype"`: the prototype's output, normalized to the spec's shapes, must equal
+  `expected.json`. For a render fixture, it must satisfy it. With `--write`, the oracle (re)writes
+  `expected.json` for parse, lint and compose fixtures instead. Review every rewritten file against the
+  spec: the oracle can only reproduce the prototype, it can't judge it. Render expectations are always
+  hand-written, because a projection is a chosen subset of the output.
+- `oracle: "corrected"`: `expected.json` is hand-written. The oracle checks that the prototype's output
+  really *differs*, so a fixture can't claim a correction that isn't one.
+- `oracle: "none"`: hand-written; the prototype can't produce this output. Skipped.
+
+```bash
+pnpm build                                # once: builds packages/*/dist
+node spec/tools/oracle.mjs                # check every fixture (render fixtures need uv)
+node spec/tools/oracle.mjs --write        # regenerate prototype-oracle fixtures
+node spec/tools/check.mjs --schemas       # artifact consistency and schema validation
+```
+
+The oracle exists only until the Rust implementation passes the suite (roadmap Phases B and C). After
+that the fixtures stand on their own.
+
+## Adding a fixture
+
+1. Create `<suite>/<NNN-name>/` with `input.md` and `case.json`.
+2. Prototype-compatible behavior: set `"oracle": "prototype"`, then run the oracle with `--write`
+   (parse, lint and compose) or write `expected.json` by hand (render), and review the result.
+   Otherwise write `expected.json` by hand and set `"corrected"` or `"none"`.
+3. Keep each fixture focused on one rule. Name the rule in `description` and its sections in `spec`.

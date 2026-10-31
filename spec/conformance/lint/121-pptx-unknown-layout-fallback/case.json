@@ -1,0 +1,11 @@
+{
+  "description": "An unknown layout name warns and the layout is inferred instead.",
+  "spec": [
+    "§8.3",
+    "§8.5",
+    "C32",
+    "C38"
+  ],
+  "oracle": "corrected",
+  "format": "pptx"
+}

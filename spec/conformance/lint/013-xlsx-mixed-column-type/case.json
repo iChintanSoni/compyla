@@ -1,0 +1,8 @@
+{
+  "description": "A column whose cells infer to different types warns at the table line.",
+  "spec": [
+    "§9.5"
+  ],
+  "oracle": "prototype",
+  "format": "xlsx"
+}

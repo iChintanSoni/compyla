@@ -1,0 +1,8 @@
+{
+  "description": "Inline images, footnotes, HTML blocks and inline tags produce unsupported_content; comments are ignored.",
+  "spec": [
+    "§4.8",
+    "C6"
+  ],
+  "oracle": "corrected"
+}

@@ -1,0 +1,10 @@
+{
+  "description": "Range title and note shift the header; table-relative formulas are translated; tables stack with one blank row.",
+  "spec": [
+    "§9.2",
+    "§9.3",
+    "C12"
+  ],
+  "oracle": "none",
+  "format": "xlsx"
+}

@@ -1,0 +1,111 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "paragraph",
+        "runs": [
+          {
+            "text": "Plain "
+          },
+          {
+            "text": "bold",
+            "bold": true
+          },
+          {
+            "text": " "
+          },
+          {
+            "text": "italic",
+            "italic": true
+          },
+          {
+            "text": " "
+          },
+          {
+            "text": "code",
+            "code": true
+          },
+          {
+            "text": " "
+          },
+          {
+            "text": "struck",
+            "strike": true
+          },
+          {
+            "text": " text."
+          }
+        ],
+        "position": {
+          "line": 1,
+          "column": 1
+        }
+      },
+      {
+        "type": "paragraph",
+        "runs": [
+          {
+            "text": "Nested "
+          },
+          {
+            "text": "both",
+            "bold": true,
+            "italic": true
+          },
+          {
+            "text": " and "
+          },
+          {
+            "text": "bold with ",
+            "bold": true
+          },
+          {
+            "text": "italic",
+            "bold": true,
+            "italic": true
+          },
+          {
+            "text": " inside",
+            "bold": true
+          },
+          {
+            "text": "."
+          }
+        ],
+        "position": {
+          "line": 3,
+          "column": 1
+        }
+      },
+      {
+        "type": "paragraph",
+        "runs": [
+          {
+            "text": "A "
+          },
+          {
+            "text": "link",
+            "link": "https://example.com/a"
+          },
+          {
+            "text": " and an autolink "
+          },
+          {
+            "text": "https://example.com/b",
+            "link": "https://example.com/b"
+          },
+          {
+            "text": "."
+          }
+        ],
+        "position": {
+          "line": 5,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": []
+}

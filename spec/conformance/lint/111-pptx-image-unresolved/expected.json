@@ -1,0 +1,9 @@
+{
+  "diagnostics": [
+    {
+      "code": "image_unresolved",
+      "severity": "warning",
+      "line": 3
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "description": "An opener and a closer always start a new block, even directly after a paragraph line.",
+  "spec": [
+    "§1.3",
+    "C2"
+  ],
+  "oracle": "corrected"
+}

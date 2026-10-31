@@ -1,0 +1,56 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "paragraph",
+        "runs": [
+          {
+            "text": "Some text"
+          }
+        ],
+        "position": {
+          "line": 1,
+          "column": 1
+        }
+      },
+      {
+        "type": "directive",
+        "name": "notes",
+        "args": "",
+        "children": [
+          {
+            "type": "paragraph",
+            "runs": [
+              {
+                "text": "Hello"
+              }
+            ],
+            "position": {
+              "line": 3,
+              "column": 1
+            }
+          }
+        ],
+        "position": {
+          "line": 2,
+          "column": 1
+        }
+      },
+      {
+        "type": "paragraph",
+        "runs": [
+          {
+            "text": "After"
+          }
+        ],
+        "position": {
+          "line": 5,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": []
+}

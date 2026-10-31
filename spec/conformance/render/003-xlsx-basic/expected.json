@@ -1,0 +1,29 @@
+{
+  "diagnostics": [],
+  "output": {
+    "sheets": [
+      {
+        "name": "Sales",
+        "cells": {
+          "A1": {
+            "value": "Region",
+            "type": "s"
+          },
+          "A2": {
+            "value": "APAC",
+            "type": "s"
+          },
+          "B2": {
+            "value": 120000,
+            "type": "n",
+            "numFmt": "\"$\"#,##0.00"
+          },
+          "B4": {
+            "formula": "SUM(B2:B3)",
+            "numFmt": "\"$\"#,##0.00"
+          }
+        }
+      }
+    ]
+  }
+}

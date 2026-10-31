@@ -1,0 +1,34 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "paragraph",
+        "runs": [
+          {
+            "text": "returns Promise<void> and List<String>, but bold loses its tags."
+          }
+        ],
+        "position": {
+          "line": 1,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": [
+    {
+      "code": "unsupported_content",
+      "severity": "warning",
+      "line": 1,
+      "column": 45
+    },
+    {
+      "code": "unsupported_content",
+      "severity": "warning",
+      "line": 1,
+      "column": 52
+    }
+  ]
+}

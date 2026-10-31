@@ -1,0 +1,17 @@
+{
+  "diagnostics": [],
+  "output": {
+    "pages": 1,
+    "outline": [
+      "Report",
+      "Findings"
+    ],
+    "text": [
+      "Report",
+      "Intro.",
+      "Findings",
+      "Detail.",
+      "After."
+    ]
+  }
+}

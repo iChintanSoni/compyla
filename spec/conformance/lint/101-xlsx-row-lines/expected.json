@@ -1,0 +1,19 @@
+{
+  "diagnostics": [
+    {
+      "code": "formula_error",
+      "severity": "warning",
+      "line": 5
+    },
+    {
+      "code": "formula_error",
+      "severity": "warning",
+      "line": 6
+    },
+    {
+      "code": "table_not_rectangular",
+      "severity": "warning",
+      "line": 7
+    }
+  ]
+}

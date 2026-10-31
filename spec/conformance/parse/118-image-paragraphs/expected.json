@@ -1,0 +1,37 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "media",
+        "src": "a.png",
+        "alt": "One",
+        "position": {
+          "line": 1,
+          "column": 1
+        }
+      },
+      {
+        "type": "media",
+        "src": "b.png",
+        "alt": "Two",
+        "position": {
+          "line": 2,
+          "column": 1
+        }
+      },
+      {
+        "type": "media",
+        "src": "badge.svg",
+        "alt": "Badge",
+        "link": "https://ci.example",
+        "position": {
+          "line": 4,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": []
+}

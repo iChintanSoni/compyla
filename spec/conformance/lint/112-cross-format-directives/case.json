@@ -1,0 +1,9 @@
+{
+  "description": "Directives meant for other formats are ignored quietly in docx; notes are omitted.",
+  "spec": [
+    "§1.5",
+    "C20"
+  ],
+  "oracle": "corrected",
+  "format": "docx"
+}

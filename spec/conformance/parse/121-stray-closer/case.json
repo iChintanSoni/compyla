@@ -1,0 +1,8 @@
+{
+  "description": "A closer with nothing open is dropped with directive_malformed and still ends the paragraph.",
+  "spec": [
+    "§1.3",
+    "C21"
+  ],
+  "oracle": "corrected"
+}

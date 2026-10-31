@@ -1,0 +1,9 @@
+{
+  "description": "image width must be an integer from 1 to 100.",
+  "spec": [
+    "§1.6",
+    "C16"
+  ],
+  "oracle": "corrected",
+  "format": "docx"
+}

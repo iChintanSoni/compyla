@@ -1,0 +1,8 @@
+{
+  "description": "Frontmatter becomes meta; unknown keys are preserved; positions stay absolute.",
+  "spec": [
+    "§2",
+    "§4.1"
+  ],
+  "oracle": "prototype"
+}

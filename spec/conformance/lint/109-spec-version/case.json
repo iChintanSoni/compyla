@@ -1,0 +1,9 @@
+{
+  "description": "A spec value other than 0.2 warns at the key's line.",
+  "spec": [
+    "§2",
+    "C7"
+  ],
+  "oracle": "corrected",
+  "format": "docx"
+}

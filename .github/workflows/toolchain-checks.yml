@@ -1,0 +1,50 @@
+name: Toolchain checks
+
+# The Phase A toolchain checks (docs/roadmap.md, spikes/README.md): the Rust toolchain behind
+# architecture decisions D10 and D13 holds on every platform Compyla ships to.
+on:
+  push:
+    branches: [main]
+    paths: ["spikes/**", "spec/**", ".github/workflows/toolchain-checks.yml"]
+  pull_request:
+    branches: [main]
+    paths: ["spikes/**", "spec/**", ".github/workflows/toolchain-checks.yml"]
+
+jobs:
+  checks:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Ubuntu 24.04+ only: wasm-pack's prebuilt wasm-bindgen needs glibc 2.38 (spikes/README.md).
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+        working-directory: spikes
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: spikes
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: "Check 1: comrak reproduces the parse suite's positions"
+        run: cargo run --release -p comrak-positions
+
+      - name: "Check 2: Typst gives byte-identical, sandboxed PDFs"
+        run: bash typst-determinism/verify.sh
+
+      - name: "Check 3: one core builds and runs in Node, Python and WASM"
+        run: bash bindings/verify.sh

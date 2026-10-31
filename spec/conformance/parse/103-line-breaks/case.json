@@ -1,0 +1,8 @@
+{
+  "description": "A soft line break is a space; a hard break and <br> are \\n.",
+  "spec": [
+    "§4.4",
+    "C5"
+  ],
+  "oracle": "corrected"
+}

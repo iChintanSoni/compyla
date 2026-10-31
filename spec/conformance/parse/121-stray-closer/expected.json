@@ -1,0 +1,40 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "paragraph",
+        "runs": [
+          {
+            "text": "para"
+          }
+        ],
+        "position": {
+          "line": 1,
+          "column": 1
+        }
+      },
+      {
+        "type": "paragraph",
+        "runs": [
+          {
+            "text": "more"
+          }
+        ],
+        "position": {
+          "line": 3,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": [
+    {
+      "code": "directive_malformed",
+      "severity": "warning",
+      "line": 2,
+      "column": 1
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "description": "heading_skip compares headings within one heading tree; a directive body starts its own.",
+  "spec": [
+    "§6.3",
+    "§4.2",
+    "C42"
+  ],
+  "oracle": "corrected",
+  "format": "docx"
+}

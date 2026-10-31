@@ -1,0 +1,30 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "media",
+        "src": "charts/revenue.png",
+        "alt": "Revenue chart",
+        "position": {
+          "line": 1,
+          "column": 1
+        }
+      },
+      {
+        "type": "paragraph",
+        "runs": [
+          {
+            "text": "Text after the image."
+          }
+        ],
+        "position": {
+          "line": 3,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": []
+}

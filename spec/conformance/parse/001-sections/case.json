@@ -1,0 +1,7 @@
+{
+  "description": "Headings open sections that govern following blocks until a heading of the same or higher level.",
+  "spec": [
+    "§4.2"
+  ],
+  "oracle": "prototype"
+}

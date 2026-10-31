@@ -1,0 +1,12 @@
+{
+  "description": "Explicit Title and Content with two blocks overflows.",
+  "spec": [
+    "§8.6",
+    "§8.7"
+  ],
+  "oracle": "prototype",
+  "format": "pptx",
+  "assets": [
+    "a.png"
+  ]
+}

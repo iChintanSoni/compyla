@@ -1,0 +1,10 @@
+{
+  "description": "columns keys may be header names; percents may end in %; a typed value that doesn't parse warns.",
+  "spec": [
+    "§9.4",
+    "§9.5",
+    "C39"
+  ],
+  "oracle": "corrected",
+  "format": "xlsx"
+}

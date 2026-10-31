@@ -1,0 +1,32 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "directive",
+        "name": "notes",
+        "args": "",
+        "children": [
+          {
+            "type": "paragraph",
+            "runs": [
+              {
+                "text": "Hello."
+              }
+            ],
+            "position": {
+              "line": 3,
+              "column": 1
+            }
+          }
+        ],
+        "position": {
+          "line": 1,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": []
+}

@@ -1,0 +1,104 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "list",
+        "ordered": false,
+        "position": {
+          "line": 1,
+          "column": 1
+        },
+        "items": [
+          {
+            "checked": null,
+            "position": {
+              "line": 1,
+              "column": 1
+            },
+            "children": [
+              {
+                "type": "paragraph",
+                "runs": [
+                  {
+                    "text": "item"
+                  }
+                ],
+                "position": {
+                  "line": 1,
+                  "column": 3
+                }
+              },
+              {
+                "type": "paragraph",
+                "runs": [
+                  {
+                    "text": "::: notes"
+                  }
+                ],
+                "position": {
+                  "line": 3,
+                  "column": 3
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "quote",
+        "position": {
+          "line": 5,
+          "column": 1
+        },
+        "children": [
+          {
+            "type": "paragraph",
+            "runs": [
+              {
+                "text": "::: notes"
+              }
+            ],
+            "position": {
+              "line": 5,
+              "column": 3
+            }
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "runs": [
+          {
+            "text": "::: {.callout}"
+          }
+        ],
+        "position": {
+          "line": 7,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": [
+    {
+      "code": "directive_malformed",
+      "severity": "warning",
+      "line": 3,
+      "column": 3
+    },
+    {
+      "code": "directive_malformed",
+      "severity": "warning",
+      "line": 5,
+      "column": 3
+    },
+    {
+      "code": "directive_malformed",
+      "severity": "warning",
+      "line": 7,
+      "column": 1
+    }
+  ]
+}

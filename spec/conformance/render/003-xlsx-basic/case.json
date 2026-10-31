@@ -1,0 +1,10 @@
+{
+  "description": "A typed table: text and numeric cells, a currency number format, and a formula.",
+  "spec": [
+    "§9.2",
+    "§9.3",
+    "§9.4"
+  ],
+  "oracle": "prototype",
+  "format": "xlsx"
+}

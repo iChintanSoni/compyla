@@ -1,0 +1,9 @@
+{
+  "description": "Full, collapsed and shortcut reference links resolve; runs are canonical (merged).",
+  "spec": [
+    "§4.5",
+    "C5",
+    "C22"
+  ],
+  "oracle": "corrected"
+}

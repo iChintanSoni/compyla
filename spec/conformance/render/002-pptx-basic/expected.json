@@ -1,0 +1,38 @@
+{
+  "diagnostics": [],
+  "output": {
+    "slides": [
+      {
+        "layout": "Title Slide",
+        "title": "Q3 Review",
+        "texts": [
+          "Strategy offsite"
+        ],
+        "notes": null
+      },
+      {
+        "layout": "Title and Content",
+        "title": "Agenda",
+        "texts": [
+          "Revenue",
+          "Costs"
+        ],
+        "notes": "Mention APAC first."
+      },
+      {
+        "layout": "Two Content",
+        "title": "Comparison",
+        "texts": [
+          "Before.",
+          "After."
+        ],
+        "notes": null
+      }
+    ],
+    "package": {
+      "partsAbsent": [
+        "ppt/vbaProject\\.bin"
+      ]
+    }
+  }
+}

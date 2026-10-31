@@ -1,0 +1,8 @@
+{
+  "description": "Characters XML forbids are replaced with U+FFFD and reported.",
+  "spec": [
+    "§1.1",
+    "C25"
+  ],
+  "oracle": "corrected"
+}

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:compyla:conformance-case:0.2",
+  "title": "Compyla conformance case",
+  "description": "case.json in every fixture directory (see README.md).",
+  "type": "object",
+  "required": [
+    "description",
+    "oracle",
+    "spec"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "description": {
+      "type": "string",
+      "description": "What this fixture pins down."
+    },
+    "spec": {
+      "description": "The spec sections and change IDs this fixture covers, e.g. [\"\u00a79.3\", \"C12\"].",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "oracle": {
+      "description": "prototype: expected.json is generated from the TypeScript prototype and must equal its output. corrected: the spec deliberately corrects the prototype; expected.json is hand-written and the oracle checks the prototype really differs. none: the prototype can't produce this output; hand-written.",
+      "enum": [
+        "prototype",
+        "corrected",
+        "none"
+      ]
+    },
+    "format": {
+      "description": "Target format. Required for lint, compose and render suites.",
+      "enum": [
+        "docx",
+        "pdf",
+        "pptx",
+        "xlsx"
+      ]
+    },
+    "strict": {
+      "type": "boolean",
+      "default": false
+    },
+    "assets": {
+      "description": "Image sources the asset resolver resolves. Omitted: every source resolves (markdown-spec.md \u00a710.3).",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "template": {
+      "type": "string",
+      "description": "Render suite: a template file in the fixture directory, passed as the template option."
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "diagnostics": [
+    {
+      "code": "typed_value_invalid",
+      "severity": "warning",
+      "line": 6
+    }
+  ]
+}

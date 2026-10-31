@@ -1,0 +1,66 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "code",
+        "lang": "python",
+        "value": "print(\"hi\")",
+        "position": {
+          "line": 1,
+          "column": 1
+        }
+      },
+      {
+        "type": "code",
+        "value": "no language",
+        "position": {
+          "line": 5,
+          "column": 1
+        }
+      },
+      {
+        "type": "quote",
+        "children": [
+          {
+            "type": "paragraph",
+            "runs": [
+              {
+                "text": "Quoted text."
+              }
+            ],
+            "position": {
+              "line": 9,
+              "column": 3
+            }
+          }
+        ],
+        "position": {
+          "line": 9,
+          "column": 1
+        }
+      },
+      {
+        "type": "break",
+        "position": {
+          "line": 11,
+          "column": 1
+        }
+      },
+      {
+        "type": "paragraph",
+        "runs": [
+          {
+            "text": "After the break."
+          }
+        ],
+        "position": {
+          "line": 13,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": []
+}

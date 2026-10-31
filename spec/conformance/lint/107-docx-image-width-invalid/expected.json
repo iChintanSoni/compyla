@@ -1,0 +1,9 @@
+{
+  "diagnostics": [
+    {
+      "code": "invalid_directive_args",
+      "severity": "warning",
+      "line": 1
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "description": "Heading trees are built separately inside blockquotes, list items and directive bodies.",
+  "spec": [
+    "§4.2"
+  ],
+  "oracle": "prototype"
+}

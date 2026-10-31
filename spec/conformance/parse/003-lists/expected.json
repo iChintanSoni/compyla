@@ -1,0 +1,217 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "list",
+        "ordered": false,
+        "items": [
+          {
+            "children": [
+              {
+                "type": "paragraph",
+                "runs": [
+                  {
+                    "text": "one"
+                  }
+                ],
+                "position": {
+                  "line": 1,
+                  "column": 3
+                }
+              }
+            ],
+            "checked": null,
+            "position": {
+              "line": 1,
+              "column": 1
+            }
+          },
+          {
+            "children": [
+              {
+                "type": "paragraph",
+                "runs": [
+                  {
+                    "text": "two"
+                  }
+                ],
+                "position": {
+                  "line": 2,
+                  "column": 3
+                }
+              },
+              {
+                "type": "list",
+                "ordered": false,
+                "items": [
+                  {
+                    "children": [
+                      {
+                        "type": "paragraph",
+                        "runs": [
+                          {
+                            "text": "two point one"
+                          }
+                        ],
+                        "position": {
+                          "line": 3,
+                          "column": 5
+                        }
+                      }
+                    ],
+                    "checked": null,
+                    "position": {
+                      "line": 3,
+                      "column": 3
+                    }
+                  }
+                ],
+                "position": {
+                  "line": 3,
+                  "column": 3
+                }
+              }
+            ],
+            "checked": null,
+            "position": {
+              "line": 2,
+              "column": 1
+            }
+          },
+          {
+            "children": [
+              {
+                "type": "paragraph",
+                "runs": [
+                  {
+                    "text": "three"
+                  }
+                ],
+                "position": {
+                  "line": 4,
+                  "column": 3
+                }
+              }
+            ],
+            "checked": null,
+            "position": {
+              "line": 4,
+              "column": 1
+            }
+          }
+        ],
+        "position": {
+          "line": 1,
+          "column": 1
+        }
+      },
+      {
+        "type": "list",
+        "ordered": true,
+        "items": [
+          {
+            "children": [
+              {
+                "type": "paragraph",
+                "runs": [
+                  {
+                    "text": "first"
+                  }
+                ],
+                "position": {
+                  "line": 6,
+                  "column": 4
+                }
+              }
+            ],
+            "checked": null,
+            "position": {
+              "line": 6,
+              "column": 1
+            }
+          },
+          {
+            "children": [
+              {
+                "type": "paragraph",
+                "runs": [
+                  {
+                    "text": "second"
+                  }
+                ],
+                "position": {
+                  "line": 7,
+                  "column": 4
+                }
+              }
+            ],
+            "checked": null,
+            "position": {
+              "line": 7,
+              "column": 1
+            }
+          }
+        ],
+        "position": {
+          "line": 6,
+          "column": 1
+        }
+      },
+      {
+        "type": "list",
+        "ordered": false,
+        "items": [
+          {
+            "children": [
+              {
+                "type": "paragraph",
+                "runs": [
+                  {
+                    "text": "done"
+                  }
+                ],
+                "position": {
+                  "line": 9,
+                  "column": 7
+                }
+              }
+            ],
+            "checked": true,
+            "position": {
+              "line": 9,
+              "column": 1
+            }
+          },
+          {
+            "children": [
+              {
+                "type": "paragraph",
+                "runs": [
+                  {
+                    "text": "todo"
+                  }
+                ],
+                "position": {
+                  "line": 10,
+                  "column": 7
+                }
+              }
+            ],
+            "checked": false,
+            "position": {
+              "line": 10,
+              "column": 1
+            }
+          }
+        ],
+        "position": {
+          "line": 9,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": []
+}

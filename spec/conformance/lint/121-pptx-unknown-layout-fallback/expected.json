@@ -1,0 +1,9 @@
+{
+  "diagnostics": [
+    {
+      "code": "unknown_layout",
+      "severity": "warning",
+      "line": 3
+    }
+  ]
+}

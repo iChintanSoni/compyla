@@ -1,0 +1,10 @@
+{
+  "description": "Headings become PDF outline entries, and --- is a rule rather than a new page.",
+  "spec": [
+    "§7",
+    "§5",
+    "C19"
+  ],
+  "oracle": "corrected",
+  "format": "pdf"
+}

@@ -1,0 +1,9 @@
+{
+  "diagnostics": [
+    {
+      "code": "layout_overflow",
+      "severity": "error",
+      "line": 3
+    }
+  ]
+}

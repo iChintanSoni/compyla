@@ -1,0 +1,8 @@
+{
+  "description": "Fence-like lines that aren't fences stay literal and produce directive_malformed at the first colon.",
+  "spec": [
+    "§1.3",
+    "C21"
+  ],
+  "oracle": "corrected"
+}

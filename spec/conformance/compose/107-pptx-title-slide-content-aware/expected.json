@@ -1,0 +1,21 @@
+{
+  "format": "pptx",
+  "slides": [
+    {
+      "title": "Deck",
+      "layout": "Picture with Caption",
+      "notes": false,
+      "content": [
+        "media"
+      ]
+    },
+    {
+      "title": "Next",
+      "layout": "Title and Content",
+      "notes": false,
+      "content": [
+        "paragraph"
+      ]
+    }
+  ]
+}

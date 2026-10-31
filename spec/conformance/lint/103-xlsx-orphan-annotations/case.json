@@ -1,0 +1,9 @@
+{
+  "description": "Paragraphs and range titles that never attach to a table are reported.",
+  "spec": [
+    "§9.4",
+    "C13"
+  ],
+  "oracle": "corrected",
+  "format": "xlsx"
+}

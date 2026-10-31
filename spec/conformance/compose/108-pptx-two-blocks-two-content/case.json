@@ -1,0 +1,9 @@
+{
+  "description": "Exactly two blocks infer Two Content.",
+  "spec": [
+    "§8.3",
+    "C38"
+  ],
+  "oracle": "corrected",
+  "format": "pptx"
+}

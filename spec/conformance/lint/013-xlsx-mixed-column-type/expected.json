@@ -1,0 +1,9 @@
+{
+  "diagnostics": [
+    {
+      "code": "mixed_column_type",
+      "severity": "warning",
+      "line": 3
+    }
+  ]
+}

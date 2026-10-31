@@ -1,0 +1,7 @@
+{
+  "description": "Backslash escapes and character references are decoded per CommonMark.",
+  "spec": [
+    "§4.4"
+  ],
+  "oracle": "prototype"
+}

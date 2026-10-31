@@ -1,0 +1,8 @@
+{
+  "description": "A marker is complete on its opener line; a closer on the very next line belongs to it.",
+  "spec": [
+    "§1.3",
+    "C21"
+  ],
+  "oracle": "corrected"
+}

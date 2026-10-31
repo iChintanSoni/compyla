@@ -1,0 +1,89 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "section",
+        "level": 1,
+        "title": [
+          {
+            "text": "Sheet"
+          }
+        ],
+        "position": {
+          "line": 1,
+          "column": 1
+        },
+        "children": [
+          {
+            "type": "directive",
+            "name": "columns",
+            "args": "B:currency",
+            "children": [],
+            "position": {
+              "line": 3,
+              "column": 1
+            }
+          },
+          {
+            "type": "table",
+            "header": [
+              {
+                "runs": [
+                  {
+                    "text": "A"
+                  }
+                ],
+                "raw": "A"
+              },
+              {
+                "runs": [
+                  {
+                    "text": "B"
+                  }
+                ],
+                "raw": "B"
+              }
+            ],
+            "align": [
+              null,
+              null
+            ],
+            "rows": [
+              [
+                {
+                  "runs": [
+                    {
+                      "text": "x"
+                    }
+                  ],
+                  "raw": "x"
+                },
+                {
+                  "runs": [
+                    {
+                      "text": "1"
+                    }
+                  ],
+                  "raw": "1"
+                }
+              ]
+            ],
+            "position": {
+              "line": 5,
+              "column": 1
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "diagnostics": [
+    {
+      "code": "directive_unclosed",
+      "severity": "warning",
+      "line": 3
+    }
+  ]
+}

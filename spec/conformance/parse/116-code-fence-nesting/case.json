@@ -1,0 +1,8 @@
+{
+  "description": "A longer code fence contains a shorter one; directive lines inside stay literal code.",
+  "spec": [
+    "§1.3",
+    "C2"
+  ],
+  "oracle": "corrected"
+}

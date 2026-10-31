@@ -1,0 +1,8 @@
+{
+  "description": "Names are case-insensitive (lowercased in the IR), fences may use more than three colons, and one-line directives are complete.",
+  "spec": [
+    "§1.3",
+    "C21"
+  ],
+  "oracle": "corrected"
+}

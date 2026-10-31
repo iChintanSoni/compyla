@@ -1,0 +1,8 @@
+{
+  "description": "An image alone in its paragraph becomes a media node.",
+  "spec": [
+    "§4.3",
+    "§4.7"
+  ],
+  "oracle": "prototype"
+}

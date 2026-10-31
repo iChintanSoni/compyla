@@ -1,0 +1,9 @@
+{
+  "description": "A paragraph of only images yields one media per image; a linked image keeps its link.",
+  "spec": [
+    "§4.3",
+    "§4.7",
+    "C34"
+  ],
+  "oracle": "corrected"
+}

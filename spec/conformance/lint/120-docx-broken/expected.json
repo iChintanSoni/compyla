@@ -1,0 +1,19 @@
+{
+  "diagnostics": [
+    {
+      "code": "heading_skip",
+      "severity": "warning",
+      "line": 3
+    },
+    {
+      "code": "image_unresolved",
+      "severity": "warning",
+      "line": 5
+    },
+    {
+      "code": "unknown_directive",
+      "severity": "warning",
+      "line": 7
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "diagnostics": [
+    {
+      "code": "spec_version_unsupported",
+      "severity": "warning",
+      "line": 2
+    }
+  ]
+}

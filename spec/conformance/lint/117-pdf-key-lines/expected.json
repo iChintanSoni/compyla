@@ -1,0 +1,14 @@
+{
+  "diagnostics": [
+    {
+      "code": "invalid_page_size",
+      "severity": "warning",
+      "line": 3
+    },
+    {
+      "code": "invalid_margins",
+      "severity": "warning",
+      "line": 4
+    }
+  ]
+}

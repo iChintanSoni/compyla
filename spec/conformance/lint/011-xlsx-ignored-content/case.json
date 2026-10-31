@@ -1,0 +1,8 @@
+{
+  "description": "Quotes, code and level-3 sections have no xlsx mapping.",
+  "spec": [
+    "§9.1"
+  ],
+  "oracle": "prototype",
+  "format": "xlsx"
+}

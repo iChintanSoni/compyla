@@ -1,0 +1,9 @@
+{
+  "description": "Paragraphs and demoted headings form one text block.",
+  "spec": [
+    "§8.6",
+    "C10"
+  ],
+  "oracle": "corrected",
+  "format": "pptx"
+}

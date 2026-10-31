@@ -1,0 +1,22 @@
+{
+  "format": "xlsx",
+  "sheets": [
+    {
+      "name": "Data",
+      "ranges": [
+        {
+          "titleRow": null,
+          "noteRow": null,
+          "headerRow": 1,
+          "firstColumn": "A",
+          "lastColumn": "A",
+          "lastRow": 2,
+          "columnTypes": [
+            "number"
+          ],
+          "formulas": {}
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "description": "Fenced code with and without a language, blockquotes, thematic breaks.",
+  "spec": [
+    "\u00a74.3"
+  ],
+  "oracle": "prototype"
+}

@@ -1,0 +1,13 @@
+{
+  "description": "Under strict, layout_overflow escalates to an error.",
+  "spec": [
+    "§8.6",
+    "§11"
+  ],
+  "oracle": "prototype",
+  "format": "pptx",
+  "strict": true,
+  "assets": [
+    "a.png"
+  ]
+}

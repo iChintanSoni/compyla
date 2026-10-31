@@ -1,0 +1,7 @@
+{
+  "description": "Unordered, ordered, nested and task lists.",
+  "spec": [
+    "§4.3"
+  ],
+  "oracle": "prototype"
+}

@@ -1,0 +1,9 @@
+{
+  "diagnostics": [
+    {
+      "code": "unknown_directive",
+      "severity": "warning",
+      "line": 3
+    }
+  ]
+}

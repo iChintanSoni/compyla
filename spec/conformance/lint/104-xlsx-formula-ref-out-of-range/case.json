@@ -1,0 +1,9 @@
+{
+  "description": "References outside the table's own grid, or to missing sheets, warn.",
+  "spec": [
+    "§9.3",
+    "C12"
+  ],
+  "oracle": "corrected",
+  "format": "xlsx"
+}

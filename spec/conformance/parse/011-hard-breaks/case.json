@@ -1,0 +1,7 @@
+{
+  "description": "Hard line breaks (two trailing spaces, or a backslash) become \\n.",
+  "spec": [
+    "§4.4"
+  ],
+  "oracle": "prototype"
+}

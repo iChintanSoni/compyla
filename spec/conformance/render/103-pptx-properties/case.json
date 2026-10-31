@@ -1,0 +1,9 @@
+{
+  "description": "Without title or author in meta, no title or author property is written: never the rendering library's defaults.",
+  "spec": [
+    "\u00a75",
+    "\u00a713"
+  ],
+  "oracle": "corrected",
+  "format": "pptx"
+}

@@ -1,203 +1,837 @@
 # Compyla Markdown Specification
 
-One dialect, four profiles. This document defines the **base syntax** accepted everywhere, the
-**per-format override** mechanism, then the per-format profile that governs how structure maps to each
-output.
+One dialect, four profiles. This document defines the **input** Compyla accepts, how it maps to the
+**IR** (the format-agnostic document model), the **per-format profiles** that govern how that
+structure maps to each output, and the **operations** every host exposes.
 
 **Guiding rule:** a document written in plain CommonMark + GFM with no Compyla extensions MUST produce
-reasonable output in every profile. Extensions and overrides add control; they never gatekeep.
+reasonable output in every profile. Extensions add control; they never gatekeep. When the engine
+can't do exactly what the input says, it applies a **defined fallback** and reports a diagnostic.
+Nothing is dropped or changed silently, and only problems with no safe fallback block output (§11.1).
 
-Spec version: `0.1-draft`
+Spec version: `0.2` · IR version: `0.1` · Status: draft (pre-1.0)
 
 ---
 
-## 1. Base Syntax
+## 0. Status and Conformance
 
-- **CommonMark** core.
-- **GFM extensions:** tables, task lists, strikethrough, autolinks.
-- **YAML frontmatter** delimited by `---` at the very top of the file.
-- **Directive blocks:**
+### 0.1 Conformance
 
-  ```markdown
-  ::: name arg1, arg2
-  ...children (markdown)...
-  :::
-  ```
+The keywords MUST, SHOULD and MAY are used as in RFC 2119.
 
-- **Inline markers** as HTML comments, used where a block form is awkward:
+An implementation conforms to spec `0.2` when it passes every fixture in `spec/conformance/`
+(format described in `spec/conformance/README.md`) and follows every MUST in this document. The
+fixtures are normative. Where this document and a fixture disagree, the fixture wins until the
+conflict is resolved in the next revision.
 
-  ```markdown
-  <!-- col -->        column separator inside a layout
-  <!-- pagebreak -->  explicit page break (docx/pdf), ignored elsewhere
-  ```
+The companion artifacts are part of the spec:
 
-Unknown directives and markers emit a validator **warning** and render as if absent.
+| Artifact | Defines |
+|----------|---------|
+| `spec/ir.schema.json` | The IR (JSON Schema 2020-12) |
+| `spec/diagnostic.schema.json` | The diagnostic object every operation returns |
+| `spec/diagnostics.json` | Every diagnostic code and operation error: severity, stage, strict promotion, position, meaning |
+| `spec/template-report.schema.json` | The output of `inspect_template` |
+| `spec/conformance/` | Executable expectations for parse, lint, compose and render |
 
-## 2. Frontmatter
+**Positions.** Lines are 1-based. Columns are 1-based and count Unicode scalar values from the start
+of the physical line; a tab counts as one. Positions are absolute in the input, including frontmatter
+lines, and are counted after a leading byte-order mark is removed (§1.1). Hosts that talk to editors
+convert columns to the editor's unit (UTF-16 for LSP).
 
-```yaml
+**Diagnostics.** A diagnostic's `code`, `severity`, `line` and `column` are normative. Each code's
+registry entry says where it points (§11.3). Message and hint text are not normative, but SHOULD name
+the offending item and suggest a fix.
+
+### 0.2 Changes from 0.1
+
+0.1 described the dialect loosely, and the TypeScript prototype filled the gaps. Building the
+conformance suite against the prototype, and two independent reviews of the spec, found behavior that
+dropped content silently, gave wrong or unsafe results, or was simply undefined. 0.2 corrects or
+defines each case. Fixtures numbered `1xx` encode a correction; `0xx` fixtures agree with the
+prototype.
+
+| # | 0.2 behavior | Before (0.1 text or prototype) | Fixtures |
+|---|--------------|--------------------------------|----------|
+| C1 | Formula cells are detected and read from the cell's **raw source text** (§4.6, §9.3) | Read from rendered text: `=B2*C2*D2` lost its `*`s to emphasis and became `=B2C2D2`; the documented `\=` escape never worked | parse/101, lint/102 |
+| C2 | A directive opener or closer always starts a new block, and the pre-pass tracks code fences per CommonMark (§1.3) | An opener right after a paragraph line was lost, a longer code fence containing a shorter one broke, and an internal placeholder leaked into the text | parse/108, parse/116 |
+| C3 | `:::name` (no space) opens a directive, like `::: name` (§1.3) | Literal text | parse/104 |
+| C4 | An unclosed opener becomes a leaf directive, with `directive_unclosed` (§1.3) | Literal text | parse/105 |
+| C5 | Reference-style links resolve to links; a soft line break is a space; a hard break or `<br>` is `"\n"` (§4.4, §4.5) | Reference links dropped with their text; soft breaks kept as `"\n"`; `<br>` dropped (`x<br>y` → `xy`) | parse/102, parse/103 |
+| C6 | Content the IR can't represent produces `unsupported_content` (§4.8) | Dropped silently (inline images, footnotes, raw HTML) | parse/106 |
+| C7 | Invalid frontmatter produces `frontmatter_invalid`; an unsupported `spec` produces `spec_version_unsupported` (§2) | The parser threw; `spec` was ignored | parse/107, lint/109 |
+| C8 | Annotation directives apply to the blocks they wrap, or, when empty, to what follows (§1.5) | xlsx dropped wrapped tables; a leaf `layout` emptied its slide | lint/110, compose/102 |
+| C9 | pptx slides split at every `---` in document order (§8.1) | A `---` after a subsection heading didn't split the slide | compose/101 |
+| C10 | pptx fit is checked against the resolved layout, explicit or inferred; demoted headings join text blocks (§8.6) | Explicit layouts only; a demoted heading counted as its own block | lint/108, lint/127 |
+| C11 | `lint` given a template validates layout names against the template's layouts (§8.5) | Built-in names only | render suite (Phase C) |
+| C12 | Unqualified formula references are **table-relative** and translated to placed addresses (§9.3) | Absolute: a range title, note or stacked table silently shifted every reference (including in `examples/budget.md`) | compose/103, lint/104 |
+| C13 | xlsx paragraphs and range titles that never attach to a table produce `xlsx_ignored_content` (§9.4) | Dropped silently | lint/103 |
+| C14 | xlsx sheet names, table names, table headers and table styles are checked and repaired (§9.6, §9.7) | Unchecked: invalid names produced broken workbooks; unknown styles were replaced silently | lint/105, lint/122 |
+| C15 | Diagnostics about a table row or cell report the row's own source line (§9.7) | The table's first line, and cell addresses assumed placement at A1 | lint/101 |
+| C16 | `::: image width=N%` requires an integer 1–100 (§1.6) | `NaN` passed through to the renderer | lint/107 |
+| C17 | Per-format override blocks are **reserved**, not yet specified (§3) | Described in 0.1, never implemented | — |
+| C18 | pptx checks image references like docx and pdf (§8.7) | Unchecked; a missing image failed at render time | lint/111 |
+| C19 | In docx and pdf, `---` is a **horizontal rule**; page breaks are explicit (`::: pagebreak`) (§5) | A page break. LLM-written reports use `---` as a section divider, which produced a page per section | render/101, render/102 |
+| C20 | Dialect directives a profile doesn't use are handled per the directive registry, without `unknown_directive`; `notes` is omitted outside pptx (§1.5) | `unknown_directive` warnings, and speaker notes rendered as body text in docx/pdf | lint/112 |
+| C21 | Directive names are case-insensitive; fences may use 3 or more colons; `::: name args :::` is a one-line directive; markers are complete on their opener line; a fence-like line that isn't one produces `directive_malformed` (§1.3) | Case-sensitive; exactly `:::`; one-line form unsupported; `::: toc` swallowed content up to the next closer; malformed fences silently became text | parse/109, parse/110, parse/121, parse/122 |
+| C22 | Inline runs are canonical: adjacent runs with identical marks merge, empty runs are dropped (§4.4) | Implementation-defined run boundaries | parse/102 |
+| C23 | Link reference definitions apply document-wide, including inside directive bodies (§4.5) | References across a directive boundary didn't resolve | parse/111 |
+| C24 | Link destinations are checked against an allowlist; `#fragment` links resolve to headings (§4.5) | Any destination, including `javascript:` and UNC paths, written into output; fragments unresolved | parse/112, lint/113 |
+| C25 | Characters not allowed in XML are replaced, with `invalid_character` (§1.1) | Passed through, producing corrupt Office files | parse/113 |
+| C26 | pptx placeholder slots define what fits; empty slides are omitted; Two Content distributes blocks without `col` markers (§8.1, §8.6) | Block counts only; empty trailing slides rendered; Two Content without markers put everything left | compose/104, lint/114 |
+| C27 | xlsx value integrity: >15 significant digits, leading zeros and impossible dates stay text; Excel limits, overlapping ranges and empty workbooks are diagnosed (§9.2, §9.5, §9.7) | Silent precision loss, dropped zeros, rolled-over dates, overwritten cells, invalid empty workbooks | compose/105, lint/115, lint/116, lint/119 |
+| C28 | Frontmatter is a JSON-compatible YAML subset; known keys are type-checked; key diagnostics point at the key's line (§2) | Any YAML (aliases expanded); types unchecked; diagnostics at line 1 | parse/114, parse/126, lint/117 |
+| C29 | A paragraph line directly above `---` (which CommonMark makes a heading) produces `ambiguous_break` (§4.9) | Silently a heading instead of a break | parse/115 |
+| C30 | Image bytes are checked by content: PNG, JPEG and GIF are supported; `data:` URIs are decoded by the core (§4.7) | Unsupported formats failed at render time | lint/118 |
+| C31 | Diagnostics may carry an IR `path`; IR input may omit positions; operation outputs are deterministically ordered (§10, §11) | Undefined | — |
+| C32 | **Severity policy:** an error means no safe or faithful output is possible; everything else is a warning with a defined fallback, and `strict` promotes every non-advisory warning (§11.1) | Many plain-markdown problems blocked output (`# Revenue: 2024`, a ragged table, a missing image); `strict` didn't cover dropped content | lint/120–lint/123, lint/101 |
+| C33 | Formulas must parse under a grammar; a name followed by `(` is always a function call; sheet qualifiers are checked; newer functions are stored with `_xlfn.` (§9.3) | `=LOG10(100)` was read as a cell reference, bypassing the allowlist; `=SUM(` and `=` were accepted; `IFS` etc. showed `#NAME?` in Excel | lint/124 |
+| C34 | An image-only paragraph yields one `media` per image, a linked image keeps its link, and empty paragraphs are omitted; empty link text shows the destination (§4.3, §4.4, §4.7) | Two images in a paragraph, or a linked image, were dropped, leaving an empty paragraph | parse/118, parse/124 |
+| C35 | Ordered lists record their start number (§4.3) | Lost; numbering restarted at 1 after a code block between steps | parse/117 |
+| C36 | Inline tags that aren't HTML elements (`Promise<void>`) stay literal text (§4.8) | Dropped as HTML, deleting the word | parse/119 |
+| C37 | `table_malformed` and `document_in_code_fence` flag common LLM table and wrapping mistakes (§4.9) | Silently a paragraph of pipes, or one big code block | parse/120, parse/123 |
+| C38 | pptx inference only picks layouts the content fits; the title-slide rule applies only when the content fits it; layouts bind by name, then by OOXML layout type; the house set has the standard Office layouts (§8.3, §8.5) | Inferred layouts its own check rejected; titles slides held tables; localized templates never matched | compose/107, compose/108, lint/121 |
+| C39 | xlsx: tables under level-3+ headings are kept; `columns` keys may be header names; percent values may end in `%`; typed values that don't parse warn; number formats and recalculation are defined (§9) | Tables under `###` dropped; formats undefined; silent text fallback | compose/106, compose/109, lint/125 |
+| C40 | `layout_not_in_template` and `font_unresolved` are validate-stage when their inputs are available, so `lint --strict` agrees with `convert --strict` (§11) | Render-stage only | render suite (Phase C) |
+| C41 | Hosts' resolvers are confined (§10.3); templates are stripped of macros, ActiveX, OLE, external references and orphaned parts; template XML may not contain a DTD; Typst runs sandboxed (§10.4, §12.2) | Unspecified | render suite (Phase C) |
+| C42 | `heading_skip` compares headings within one heading tree (§6.3) | A heading in a directive body was compared with the outer section | lint/126 |
+| C43 | An indented code block's position is the first character of its content (§4.1) | Column 1 of its line | parse/125 |
+| C44 | Document properties come only from `meta`: a title or author it lacks is not written (§5) | The rendering library's defaults (`PptxGenJS Presentation`, `Unknown`) | render/103 |
+
+0.2 also corrects 0.1's *text* in one place where the prototype was right: `---` in xlsx is ignored
+without a diagnostic (§5).
+
 ---
-format: pptx            # optional; the engine/CLI may also set it (explicit call wins)
-template: acme-brand-v2 # template ID or path
-title: Q3 Review        # document / deck / workbook title
-author: J. Doe
-lang: en
----
-```
 
-Unknown keys are preserved in token `meta` and available to renderers (e.g. custom template
-variables). **Fonts are never specified here or anywhere in the markdown** — see §3.
+## 1. Input and Base Syntax
 
-## 3. Base tokens, per-format overrides, and fonts
+### 1.1 Input text *(C25)*
 
-Compyla parses markdown into **base tokens** (format-agnostic intent) plus optional **per-format
-override tokens** that refine a single target. This is how one file renders to all four formats while
-still allowing format-specific styling.
+- Input is Unicode text. Hosts decode input bytes as UTF-8; bytes that aren't valid UTF-8 are the
+  operation error `input_not_utf8` (§10.6). Hosts that receive strings rather than bytes (JavaScript,
+  Python) MUST replace unpaired surrogates with U+FFFD, and each produces `invalid_character`.
+- A leading U+FEFF (byte-order mark) is removed before anything else.
+- LF, CRLF and CR each end a line. Every string value in the IR uses LF.
+- Characters XML 1.0 forbids (U+0000–U+0008, U+000B, U+000C, U+000E–U+001F, U+FFFE, U+FFFF) are
+  replaced with U+FFFD before parsing. Each replacement produces `invalid_character` (warning) at its
+  position. Without this, they would corrupt docx/pptx/xlsx output.
+- Every pattern in this spec is ASCII-only: `[0-9]` means ASCII digits and `[A-Za-z]` ASCII letters.
 
-Overrides are scoped by format, either as a directive block or a format-scoped frontmatter key:
+### 1.2 Markdown
+
+- **CommonMark** 0.31.2, with these **GFM** extensions as specified in GFM 0.29-gfm: tables, task list
+  items, strikethrough (`~text~` and `~~text~~`) and autolinks, including extended autolinks. A
+  `www.` autolink's destination gets an `http://` prefix and an email autolink's gets `mailto:`.
+- GFM footnote syntax is recognized but not supported (§4.8). There is no smart punctuation.
+- **YAML frontmatter** (§2) and **Compyla directives**: fences (§1.3) and markers (§1.4).
+
+Wherever this spec says "per CommonMark", the CommonMark 0.31.2 specification is normative.
+
+### 1.3 Directive fences *(C2, C3, C4, C21)*
 
 ```markdown
-::: pptx
-layout: Two Content
-accent: theme.color2
+::: name args
+...children (markdown)...
 :::
 ```
 
-A renderer consumes only the overrides for its own format; others ignore them. Plain markdown with no
-overrides always renders in every profile (graceful degradation).
+Fences are recognized line by line, before markdown parsing, over every line except frontmatter
+(§2):
 
-**Fonts.** Markdown never names a font. The **template** declares font families; the engine resolves
-each family through a fallback chain: (1) font embedded in the template → use it; (2) family name
-matches **Google Fonts** → download + embed + subset; (3) user-supplied font file; (4) substitute +
-**fidelity warning**. This keeps input LLM-friendly and avoids bundling licensed corporate fonts.
+```
+opener = colons [ws] name [ws args] [[ws] colons] ; the line starts at column 1
+closer = colons [ws]                              ; the line starts at column 1
+colons = 3*":"
+name   = ALPHA *( ALPHA / DIGIT / "_" / "-" )      ; ASCII, case-insensitive
+args   = the rest of the line, with surrounding whitespace trimmed
+ws     = 1*( SP / HTAB )
+```
 
-## 4. Thematic Break (`---`)
+1. Openers and closers are recognized **only at column 1** and **only outside fenced code blocks**.
+   Fenced code blocks are tracked per CommonMark: an opening run of three or more backticks or tildes,
+   indented at most three spaces, closed by a run of the same character at least as long, indented at
+   most three spaces, with nothing else on the line. A code fence still open at the end of the
+   document runs to the end, so any `:::` lines after it are literal.
+2. **Names are case-insensitive.** The IR records them in lowercase.
+3. Fences nest. A closer closes the most recently opened fence; colon counts don't need to match.
+4. An opener ending with a run of three or more colons (`::: toc :::`, `:::pagebreak:::`) is a
+   **one-line directive**: complete on its own, with no children and no closer.
+5. An opener whose name is a **marker** (`toc`, `pagebreak`, `col`; §1.5) is complete on its line. If
+   the very next line is a closer, that closer belongs to it. So `::: toc` and `::: toc` + `:::` mean
+   the same.
+6. The lines between an opener and its closer are the directive's **children**. They are parsed as
+   markdown on their own, keeping their absolute source positions. Sections inside a directive form
+   their own heading tree (§4.2). Link reference definitions are document-wide (§4.5).
+7. An opener or closer **always starts a new block and ends the previous one**: no paragraph
+   continuation, setext underline or table row crosses it, even directly after a paragraph line.
+8. An opener still open at the end of the document is **unclosed**. It becomes a directive with no
+   children, a `directive_unclosed` warning is reported at the opener, and the lines after it are
+   parsed as ordinary content of the enclosing context.
+9. These lines produce `directive_malformed` (warning, at the line's first colon):
+   - a column-1 line starting with three or more colons that matches neither the opener nor the
+     closer grammar (Pandoc's `::: {.note}`, `:::note{.x}`), or a closer with no open fence. The line
+     stays literal text, except that a closer with no open fence is dropped (it still ends the
+     previous block).
+   - a line that would be an opener or closer but is indented by 1–3 spaces, or follows blockquote
+     markers (`>`), e.g. inside a list item or a quote. It stays literal text.
 
-The `---` line (outside frontmatter) is a semantic **Break**. Its meaning is assigned by profile:
+   Lines inside fenced code blocks never produce this.
 
-| Profile | Meaning of `---` |
-|---------|------------------|
-| docx    | Page break |
-| pdf     | Page break |
-| pptx    | **Slide break** |
-| xlsx    | Ignored (warning) |
+A directive's position is its opener line, column 1.
 
----
+### 1.4 Markers
 
-## 5. Profile: docx *(Phase-0 / first renderer)*
-
-The natural-fit profile. Mapping:
-
-| Markdown | Word output |
-|----------|-------------|
-| `#`…`######` | Styles `Heading 1`–`Heading 6` |
-| Paragraph | `Normal` style |
-| Bold / italic / code / links | Character formatting / `Hyperlink` style |
-| `>` blockquote | `Quote` style |
-| GFM table | Table with template's default table style; header row styled |
-| Fenced code block | `Code` style (monospace block); language ignored |
-| Image | Inline picture, sized to fit page width unless sized (see 5.1) |
-| `---` | Page break |
-| Task list | Checkbox glyphs (☐ / ☒) — not interactive controls |
-
-### 5.1 Directives (docx)
+An HTML block consisting of a single comment whose content is exactly a name (`<!-- name -->`,
+whitespace, including line breaks, allowed inside the delimiters) is a **marker directive**: no args,
+no children, positioned at the `<`. Names are case-insensitive, as in §1.3.
 
 ```markdown
-::: toc              → insert table of contents field
-::: pagebreak        → explicit page break (same as ---)
-::: image width=50%  → wraps following image, sizing hint
+<!-- col -->        column separator inside a pptx slide
+<!-- pagebreak -->  explicit page break (docx/pdf)
 ```
 
-### 5.2 Validation (docx)
+Any other HTML block consisting only of a comment is ignored without a diagnostic. An HTML block that
+starts with a comment and has other content (`<!-- col --> more text`) is an HTML block (§4.8).
 
-- Heading levels should not skip (H1 → H3): **warning**.
-- Images must resolve: **error**.
-- Font family unresolved after the fallback chain: **warning** (**error** under `--strict`).
+### 1.5 Directive registry *(C8, C20)*
 
-## 6. Profile: pdf
+Every directive the dialect defines, with its kind and its effect in each profile. "Ignored" means no
+diagnostic: an ignored **annotation**'s children render in its place, an ignored **marker** produces
+nothing, and an ignored **container** is omitted with its children. This lets one document target all
+four formats without warnings for directives meant for another format.
 
-Identical authoring surface to docx (§5), but **rendered by the native PDF renderer**
-(`@compyla/pdf`) — not converted from docx. Additional frontmatter keys:
+| Name | Kind | docx / pdf | pptx | xlsx |
+|------|------|------------|------|------|
+| `toc` | Marker | Table of contents (§6.1) | Ignored | Ignored |
+| `pagebreak` | Marker | Page break | Ignored | Ignored |
+| `col` | Marker | Ignored | Column break (§8.4) | Ignored |
+| `image` | Annotation | Image width (§6.1) | Image fit (§8.4) | Ignored |
+| `layout` | Annotation | Ignored | Slide layout (§8.3) | Ignored |
+| `columns` | Annotation | Ignored | Ignored | Column types (§9.4) |
+| `anchor` | Annotation | Ignored | Ignored | Table placement (§9.4) |
+| `table` | Annotation | Ignored | Ignored | Excel table (§9.4) |
+| `notes` | Container | Ignored | Speaker notes (§8.2) | Ignored |
+
+- **Container**: its content is its children only.
+- **Annotation**: applies to the blocks it wraps. When it has no children (an empty fence, a one-line
+  directive, or an unclosed opener), it applies to the content that follows, as defined by its
+  profile.
+- **Marker**: has no content.
+
+A name outside this table produces `unknown_directive` (warning), and its children render in its
+place. The names `docx`, `pdf`, `pptx` and `xlsx` are reserved (§3) and are unknown in 0.2.
+
+"Render in its place" means the children are rendered where the directive is, keeping the tree as
+parsed: sections inside the body stay in the body's own heading tree and never adopt content that
+follows the directive. Profiles that walk the document in order (pptx slides §8.1, xlsx sheets §9.1)
+enter the bodies of ignored and unknown directives, but not of containers.
+
+A directive the profile uses, in a position where it can have no effect, produces
+`directive_misplaced` (warning) and is then treated as ignored. Examples: a `layout` that isn't the
+first block of a slide, a `col` inside a list, an `image` with no image to apply to. Each profile lists
+its cases.
+
+### 1.6 Directive arguments
+
+| Directive | Arguments |
+|-----------|-----------|
+| `toc`, `pagebreak`, `notes`, `col` | None |
+| `layout` | Free text: the layout name (§8.3) |
+| `image` | Options: `width=N` or `width=N%` (docx, pdf), where `N` is an integer 1–100 with no leading zero, giving the percentage of the text width *(C16)*; `fit=contain` or `fit=cover` (pptx) |
+| `columns` | A comma-separated list of entries (§9.4) |
+| `anchor` | One cell reference (§9.4) |
+| `table` | Options: `name=…`, `style=striped\|plain`, and the flag `autofilter` (§9.4) |
+
+**Options** are separated by commas and/or whitespace. Each is `key=value` or a bare flag. Keys and
+flags are case-insensitive. A value runs to the next separator, and there is no quoting in 0.2.
+Options for another profile are ignored quietly, for the same reason as §1.5 (`fit=` in docx).
+
+These produce `unknown_directive_option` (warning), and the option is ignored, so its default applies:
+- an unknown key or flag
+- a value outside an option's enumerated values (`style=fancy`, `fit=stretch`)
+- arguments given to a directive that takes none
+
+These produce `invalid_directive_args` (warning), and the directive or option falls back as its
+profile defines:
+- a repeated key
+- a malformed or out-of-range value (`width=150%`)
+- a missing required argument (`::: layout` with no name)
+
+## 2. Frontmatter *(C7, C28)*
 
 ```yaml
-page_size: A4 | Letter   # default A4
-margins: normal | narrow
+---
+format: pptx            # optional; an explicit format from the caller wins
+template: acme-brand-v2 # template reference, resolved by the host (§10.3)
+title: Q3 Review        # document properties; default xlsx sheet name
+author: J. Doe
+lang: en
+spec: "0.2"             # optional; the spec version the document was written for
+---
 ```
+
+- Frontmatter starts with a line that is exactly `---` (trailing spaces or tabs allowed) on line 1,
+  and ends at the next such line. `...` does not end it. Without a closing line there is no
+  frontmatter, and line 1 is ordinary markdown. A document whose first line is `---` as a break, and
+  which contains a later `---` line, is read as frontmatter: start such a document with a blank line.
+- Its content is a **JSON-compatible subset of YAML 1.2** (core schema): a mapping with string keys,
+  whose values are mappings, sequences, strings, finite numbers (integers within ±(2⁵³−1)), booleans
+  or null. **Not allowed:** anchors and aliases, explicit tags, merge keys (`<<`), complex keys,
+  duplicate keys and multiple documents. Frontmatter longer than 64 KiB is not allowed. Empty
+  frontmatter is an empty mapping.
+- Content that isn't valid YAML, isn't a mapping, or uses a disallowed feature produces
+  `frontmatter_invalid` (warning, at line 1), and `meta` is empty.
+- Frontmatter lines are excluded from markdown parsing and from directive recognition. `meta` keeps
+  the source order of keys.
+
+**Known keys.** Values are checked and normalized:
+- A number or boolean given for a string key is converted to its shortest decimal or `true`/`false`
+  text (so `spec: 0.10` becomes `"0.1"`; quote versions).
+- Enumerated values are matched case-insensitively and stored in canonical case (`format: PPTX` →
+  `"pptx"`).
+- A value of the wrong type or form produces `meta_value_invalid` (warning, at the key's line), and
+  the key is removed from `meta`.
+
+Unknown keys are preserved verbatim.
+
+| Key | Type | Meaning |
+|-----|------|---------|
+| `format` | `docx` \| `pdf` \| `pptx` \| `xlsx` | Target format when the caller gives none (§10.2) |
+| `template` | string | Template reference for the host's template resolver (§10.3) |
+| `title` | string | Document title property; default xlsx sheet name. Not rendered as visible content |
+| `author` | string, or a list of strings (joined with `, `) | Document author property |
+| `lang` | BCP 47 tag (`[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*`) | Document language: language metadata and hyphenation. When absent, the template's language, else `en` |
+| `spec` | string | A value other than `0.2` produces `spec_version_unsupported` (warning), and the document is processed under 0.2 |
+| `page_size`, `margins` | string | Page geometry for docx and pdf (§7), validated by those profiles |
+
+Diagnostics about a key are reported at the line where that key appears.
+
+**Fonts are never specified here or anywhere in the markdown** (§3).
+
+## 3. Base Tokens, Per-Format Overrides, and Fonts
+
+Markdown parses into the IR's **base tokens** (§4): format-agnostic intent that every profile can
+render.
+
+**Per-format overrides are reserved.** 0.1 sketched override blocks (`::: pptx` containing
+`layout: Two Content`), but they were never implemented, and their semantics are not specified in
+0.2. *(C17)* Until a later version specifies them, the directive names `docx`, `pdf`, `pptx` and
+`xlsx` behave as unknown directives.
+
+**Fonts.** Markdown never names a font. The **template** declares font families. Families are
+resolved ahead of rendering through a fallback chain: (1) font embedded in the template, (2) a
+user-supplied file, (3) **Google Fonts**. Results are pinned in a lockfile (architecture.md D14), and
+renders read fonts only through the font resolver (§10.3).
+- The families checked are the theme's major and minor fonts, plus the fonts of every style the
+  output uses. Symbol fonts used only for bullets (e.g. Wingdings) are not checked.
+- A family that can't be resolved produces `font_unresolved` (warning, strict-promotable), and the
+  viewer substitutes a font.
+- The house templates use only fonts the engine bundles, so rendering without a template never depends
+  on font resolution.
+
+## 4. IR Mapping
+
+The IR is defined by `spec/ir.schema.json`. This section defines how markdown maps to it. The IR
+produced by `parse` is fully determined by the input: two conforming implementations produce equal
+IR JSON (key order aside).
+
+### 4.1 Document
+
+```json
+{ "irVersion": "0.1", "meta": { }, "body": [ ] }
+```
+
+`meta` is the normalized frontmatter mapping (§2). `body` is a list of block nodes. Every node except
+a list item has a `type`. Every node produced by `parse` has a `position` (`{ "line", "column" }`); IR
+supplied as input may omit positions (§10.7).
+
+**Where a position points.** Columns are counted from the start of the physical line, so container
+prefixes (`> `, list indentation) are included:
+
+| Node | Position |
+|------|----------|
+| `section` | The first `#` of an ATX heading; the first character of a setext heading's text |
+| `paragraph` | Its first character. In a task-list item, the first character after the checkbox and its following whitespace |
+| `media` | The image's `!`, or the `[` of the link around it |
+| `table` | The first character of the header row |
+| `list` | Its first item's marker |
+| list item | Its marker |
+| `code` | The first character of the opening fence; for indented code, the first character of its content (an indented block has no opening delimiter) |
+| `quote` | The first `>` |
+| `break` | The first character of the break line |
+| `directive` | Column 1 of the opener line; for a marker, the `<` |
+
+### 4.2 Sections
+
+A heading (ATX or setext) opens a `section` with its `level` (1–6) and `title` (inline runs). A
+section's `children` are the blocks that follow it up to the next heading of the same or a higher
+level (smaller or equal number). Deeper headings nest as child sections. Heading trees are built
+separately inside each list item, blockquote and directive body, and never cross out of it. An empty
+heading (`#`) has an empty `title`.
+
+### 4.3 Blocks
+
+| Markdown | IR node | Notes |
+|----------|---------|-------|
+| Paragraph | `paragraph` (`runs`) | A paragraph whose runs end up empty (after §4.8 drops) is omitted |
+| Paragraph made only of images (each optionally linked), separated by whitespace | one `media` (`src`, `alt`, `link`?) per image | §4.7 *(C34)* |
+| GFM table | `table` (`header`, `align`, `rows`) | §4.6 |
+| List | `list` (`ordered`, `start`?, `items`) | `start` is present for an ordered list whose first number isn't 1 *(C35)*. Each item has `children`, `checked` (`true`/`false` for a task-list item, else `null`) and `position`. Not represented: bullet characters, delimiters, tight/loose spacing |
+| Fenced or indented code | `code` (`lang`?, `value`) | `lang` is the first word of the info string after CommonMark decoding, split on ASCII whitespace, omitted when empty. Other info-string words are not represented. `value` is the content with exactly one final line ending removed |
+| Blockquote | `quote` (`children`) | — |
+| Thematic break (`---`, `***`, `___`) | `break` | Meaning per profile (§5) |
+| Directive fence or marker | `directive` (`name`, `args`, `children`) | `name` lowercase; `args` the unsplit argument string, `""` when absent |
+| Link reference definition | — | Consumed: it resolves references (§4.5) and produces no node |
+
+### 4.4 Inline runs *(C5, C22, C34)*
+
+Inline content becomes a flat list of **runs**: `{ "text", "bold"?, "italic"?, "code"?, "strike"?,
+"link"? }`.
+
+- `**strong**` → `bold`; `*emphasis*` → `italic`; `~~strike~~` → `strike`; `` `code` `` → `code`.
+  Marks nest: `***x***` is one run with both `bold` and `italic`. Delimiter rules, entity and numeric
+  character references, backslash escapes and code-span content all follow CommonMark.
+- Links set `link` (§4.5) on the runs of their text. A link with no text gets its destination as its
+  text.
+- A **soft line break** becomes a single space. A **hard line break** (two or more trailing spaces,
+  or a trailing backslash) becomes `"\n"`. Inline `<br>`, `<br/>` and `<br />` (any case) also become
+  `"\n"`.
+- **Canonical form:** a mark that isn't set is absent, never `false`. Adjacent runs with identical
+  marks and identical `link` are merged, and runs with empty text are dropped. This makes run
+  boundaries independent of the parser.
+
+### 4.5 Links *(C23, C24)*
+
+- A link's `link` value is its destination after CommonMark processing (backslash escapes and
+  character references decoded, no percent-encoding normalization). Link titles are not represented.
+- **Reference-style links and images** (`[text][ref]`, `[text][]`, `[text]`) resolve per CommonMark.
+  Definitions apply **document-wide**: a definition anywhere in the document, including inside a
+  directive body, resolves references anywhere else. The first definition of a label wins.
+- **Allowed destinations:**
+  - `http:`, `https:`, `mailto:` and `tel:` URLs
+  - fragment links (`#…`)
+  - relative references that don't start with `/` or `\` and contain no `\`
+
+  A scheme is `[A-Za-z][A-Za-z0-9+.-]*:` at the start of the destination, compared
+  case-insensitively. Anything else produces `link_scheme_blocked` (warning), the link is removed,
+  and its text is kept. That covers other schemes (`javascript:`, `data:`, `file:`, `ms-msdt:`, …),
+  protocol-relative `//host` and UNC `\\host` paths, and absolute paths.
+- **Fragment links** (`[see costs](#costs)`) target a heading or another per-format target (§6.2,
+  §8.7, §9.5). A target's **slug** is computed from its plain text:
+  1. Convert to lowercase (Unicode default case conversion).
+  2. Remove every character that isn't a letter, mark or number (Unicode categories L, M, N), `_`,
+     `-` or a space.
+  3. Replace each space with `-`.
+  4. If the slug is already taken by an earlier heading, append `-1`, `-2`, … (the smallest unused
+     suffix).
+
+  Heading slugs are assigned to every section in document order, matching GitHub's anchors for
+  typical headings. A fragment is compared to slugs after percent-decoding.
+
+### 4.6 Tables *(C1)*
+
+- A table is recognized per GFM 0.29: cells are split on unescaped `|`, the outer pipes are optional,
+  and `\|` is a literal pipe, even inside code spans.
+- `header` is the header row's cells. `align` has one entry per header column: `"left"`, `"center"`,
+  `"right"` or `null`.
+- `rows` keeps **the number of cells each row actually has in the source**. GFM's display
+  normalization (padding short rows, truncating long ones) is not applied in the IR, so profiles can
+  report and repair ragged tables (§5). *Implementation note: parsers that normalize rows in their
+  syntax tree must re-split each row line from the source, as the comrak check does
+  (spikes/README.md).*
+- Each cell has `runs` (its inline content, §4.4) and `raw`: **the cell's source text between its
+  delimiting pipes, with surrounding spaces and tabs trimmed and `\|` unescaped to `|`**. Formula
+  detection uses `raw` (§9.3); everything else uses `runs`.
+
+### 4.7 Images *(C30, C34)*
+
+- Images in a paragraph made only of images (each optionally inside a link, separated by whitespace)
+  become one `media` node each, in order. `src` is the destination, processed as in §4.5. `alt` is
+  the plain text of the description, per CommonMark. `link` is the surrounding link's destination,
+  when there is one and it is allowed (§4.5). Image titles are not represented.
+- Image bytes come from the asset resolver (§10.3), except `data:` URIs with base64 content, which the
+  core decodes itself. An image `src` is not subject to the link allowlist.
+- An image's format is determined from its **bytes**, not its extension. PNG, JPEG and GIF are
+  supported in docx, pdf and pptx. Any other format produces `image_unsupported` (warning,
+  strict-promotable) when its bytes are available, and the image is rendered as an unresolved image
+  (§5).
+
+### 4.8 Unsupported content *(C6, C36)*
+
+These constructs are recognized but have no IR representation in 0.2. Each produces one
+`unsupported_content` warning at its position, and the construct is dropped:
+
+- an image in a paragraph that also contains text
+- a footnote reference and a footnote definition (GFM footnotes)
+- an HTML block other than a comment or a marker (§1.4)
+- an inline HTML tag, open or close, whose name is a **known HTML element** (below), other than `<br>`.
+  The text between tags is kept as ordinary runs.
+
+An inline tag whose name isn't a known HTML element (`Promise<void>`, `List<String>`, `Vec<T>`) is
+**literal text**, not HTML. Known HTML elements (case-insensitive): `a abbr address area article
+aside audio b base bdi bdo big blockquote body br button canvas caption center cite code col colgroup
+data datalist dd del details dfn dialog div dl dt em embed fieldset figcaption figure font footer
+form h1 h2 h3 h4 h5 h6 head header hgroup hr html i iframe img input ins kbd label legend li link
+main map mark menu meta meter nav noscript object ol optgroup option output p picture pre progress q
+rp rt ruby s samp script search section select slot small source span strike strong style sub
+summary sup table tbody td template textarea tfoot th thead time title tr track tt u ul var video
+wbr`.
+
+### 4.9 Parse diagnostics *(C29, C37)*
+
+Besides the codes above, parsing reports:
+
+- `ambiguous_break` (warning, advisory) when a setext heading is underlined with `-` characters,
+  reported at the underline's line. CommonMark makes a paragraph line directly above `---` a level-2
+  heading, and in LLM output this is almost always meant as a break. The hint says to add a blank
+  line before `---` for a break, or to use `## ` for a heading.
+- `table_malformed` (warning) when a paragraph's first line contains `|` and its second line is a
+  delimiter row (`[ |:-]+` containing `-`) with a different cell count, so it isn't recognized as a
+  table. The paragraph is kept as text.
+- `document_in_code_fence` (warning, advisory) when the whole body (after frontmatter) is one fenced
+  code block whose language is `markdown` or `md`, which LLMs produce when asked for markdown. The
+  hint says to remove the fence.
+- `limit_exceeded` (error) when the input exceeds a limit in §12.1.
 
 ---
 
-## 7. Profile: pptx *(Phase-1)*
+## 5. Rendering Rules Common to All Formats
 
-### 7.1 Slide segmentation
+| IR | docx | pdf | pptx | xlsx |
+|----|------|-----|------|------|
+| `break` | Horizontal rule *(C19)* | Horizontal rule *(C19)* | **Slide break** (§8.1) | Ignored, no diagnostic |
+| `"\n"` in run text | Line break | Line break | Line break | Line break in the cell, with wrap text on |
+| `link` | Hyperlink | Link annotation | Hyperlink | Cell hyperlink (§9.5) |
+| `media` | Picture | Image | Picture | Ignored (§9.1) |
+| `media.alt` | Picture description | Alternative text | Picture description | — |
+| `meta.title` / `author` / `lang` | Document properties, language | Document metadata, language | Document properties, language | Workbook properties |
 
-- `---` starts a new slide.
-- Content before the first `---` is the **title slide**: first H1 → deck title, following paragraph →
-  subtitle.
+- Page breaks in docx and pdf are explicit: `::: pagebreak` or `<!-- pagebreak -->`.
+- **Unresolved images.** An image that doesn't resolve (`image_unresolved`) or isn't supported
+  (`image_unsupported`) is rendered as its alt text in italics, in brackets (`[alt]`), or `[image]`
+  when the alt text is empty. Both diagnostics are strict-promotable.
+- **Ragged tables.** In every profile, a row with fewer cells than the header is padded with empty
+  cells, and a row with more cells widens the table: the extra columns get empty header cells. Either
+  produces `table_not_rectangular` (warning, strict-promotable) at the row's line.
+- **Images are sized** at their intrinsic size (96 DPI unless the image declares a resolution, with
+  JPEG EXIF orientation applied), scaled down to fit the available width and never scaled up, unless
+  `::: image` says otherwise.
+- **Document properties:** title, author and language come from `meta`, and are not written when `meta`
+  lacks them. Everything else (application, dates) is a fixed value (§13). They are never copied from the
+  template (§10.4) or from the rendering library's defaults. *(C44)*
+- Sections inside list items and quotes are rendered as emphasized paragraphs, not headings. They
+  don't appear in a table of contents or outline, and are not link targets.
 
-### 7.2 Per-slide structure
+---
 
-- First heading on the slide (any level) → slide **title** placeholder.
-- Remaining content → body placeholder(s).
+## 6. Profile: docx
 
-### 7.3 Layout selection
+Output is written **into the template** (architecture.md D12). IR nodes map to the template's styles
+by **style name**, compared case-insensitively against the names stored in the template. Word stores
+built-in style names in English (e.g. `heading 1`) whatever the user's language. A style missing from
+the template is added from the house template.
+
+| IR | Word output |
+|----|-------------|
+| `section` level n title | Paragraph style `Heading n`; the template's heading numbering, if any, applies |
+| `paragraph` | `Normal` |
+| bold / italic / strike runs | Character formatting |
+| code runs | Character style `Inline Code` |
+| link runs | The `Hyperlink` character style |
+| `quote` | Paragraphs inside it use `Quote`; other blocks inside it render normally, indented |
+| `table` | The template's default table style; the header row repeats across pages |
+| `code` | Paragraph style `Code`; no syntax highlighting |
+| `media` | Inline picture (§5) |
+| `list` | The template's bullet and numbering definitions. Each IR list is its own numbering instance (restarting at `start`). Nesting beyond 9 levels renders at the 9th level |
+| task-list item | Checkbox glyph (☐ / ☒), not an interactive control |
+
+Headers, footers, page size and margins come from the template. `page_size` and `margins` in
+frontmatter override the page geometry (§7).
+
+### 6.1 Directives
+
+| Directive | Effect |
+|-----------|--------|
+| `::: toc` | Table-of-contents field covering heading levels 1–3 (§5), updated when the file is opened |
+| `::: pagebreak` / `<!-- pagebreak -->` | Page break |
+| `::: image width=N%` | Sizes the images it wraps, or, when empty, the immediately following block if it is a `media` block; otherwise `directive_misplaced` |
+
+Other directives: see §1.5.
+
+### 6.2 Fragment links
+
+Every heading (§5) gets a bookmark named after its slug (§4.5). A fragment link resolving to a slug
+becomes an internal hyperlink. A fragment that matches no slug produces `link_anchor_unresolved`
+(warning), and the text is kept without a link.
+
+### 6.3 Validation
+
+| Code | Severity | When |
+|------|----------|------|
+| `heading_skip` | warning, advisory | A heading skips a level relative to its parent section in the same heading tree (H1 → H3) *(C42)* |
+| `image_unresolved` | warning | A `media` source doesn't resolve through the asset resolver |
+| `image_unsupported` | warning | §4.7 |
+| `table_not_rectangular` | warning | §5 |
+| `link_anchor_unresolved` | warning | §6.2 |
+| `invalid_page_size` / `invalid_margins` | warning | §7 |
+| `invalid_directive_args` / `unknown_directive_option` | warning | §1.6 |
+| `unknown_directive` / `directive_misplaced` | warning | §1.5 |
+| `font_unresolved` | warning | §3; validate stage when a template and font resolver are available |
+
+## 7. Profile: pdf
+
+Same authoring surface, mapping and validation as docx (§6), rendered by the native PDF renderer via
+Typst (architecture.md D13), not converted from docx. Fragment links become internal links, and
+headings become PDF outline entries (bookmarks).
+
+```yaml
+page_size: A4 | Letter   # case-insensitive
+margins: normal | narrow # normal: 72 pt on every side; narrow: 36 pt on every side
+```
+
+Page geometry precedence, for docx and pdf alike: frontmatter, then a supplied docx template's page
+setup, then A4 / normal. In pdf, fonts and colors come from the template's theme tokens.
+
+| Code | Severity | When |
+|------|----------|------|
+| `invalid_page_size` | warning | `page_size` isn't `A4` or `Letter`; the template's or A4 is used. At the key's line |
+| `invalid_margins` | warning | `margins` isn't `normal` or `narrow`; the template's or normal is used. At the key's line |
+| `glyph_missing` | warning | Render stage: text contains characters no available font can display (CJK, emoji, ☐/☒ without a font that has them). Typst doesn't report these. Implementations find glyphs laid out as `.notdef` (glyph id 0) in the laid-out document |
+
+Plus every code in §6.3.
+
+---
+
+## 8. Profile: pptx
+
+### 8.1 Slide segmentation *(C9, C26)*
+
+Slides are formed by walking the body **in document order**, entering every section (its heading,
+then its children) and the bodies of ignored and unknown directives (§1.5). Every `break` reached this
+way ends the current slide and starts a new one, however deeply it is nested under headings. List
+items, quotes and `notes` bodies are not entered, so a `break` inside them has no effect. A slide with
+no title, no content and no notes is **omitted**: consecutive breaks, or a break at the start or end,
+don't make empty slides.
+
+### 8.2 Slide structure
+
+- The slide **title** is the first heading reached in the slide, including inside a leading `layout`
+  directive (§8.3).
+- The slide's **content** is every other block reached, in order, after unwrapping a leading `layout`
+  directive. Later headings become **demoted headings** in the content.
+- `notes` directives among the content's top-level blocks are removed from the content. Their
+  children, concatenated in order, become the speaker notes. Paragraphs, lists and headings keep their
+  text formatting. Tables, media and code are rendered as plain text (table rows tab-separated, media
+  as their alt text). A `notes` directive anywhere else produces `directive_misplaced`.
+
+### 8.3 Layout selection *(C38)*
 
 Priority order:
 
-1. Explicit directive: `::: layout <name>` as the first block of the slide.
-2. **Inference** from content shape:
+1. **Explicit**: a `::: layout <name>` directive that is the first content block. `<name>` is the args
+   string, trimmed, with internal whitespace collapsed to single spaces. If the directive has children,
+   those are the content. If it has none (empty, one-line or unclosed), the blocks after it are the
+   content. *(C8)* A `layout` directive anywhere else produces `directive_misplaced`. A name that
+   doesn't resolve (§8.5) produces `unknown_layout` (warning), and the layout is inferred instead.
+2. **Title slide**: the first slide of a deck with more than one slide (after omission, §8.1) is
+   `Title Slide`, **if its content fits Title Slide** (§8.6). Otherwise it is inferred.
+3. **Inferred** from the content, first match wins:
 
-| Content shape | Inferred layout |
-|---------------|-----------------|
-| Title only | Section header |
-| Title + one content block | Title and Content |
-| Content split by `<!-- col -->` | Two Content |
-| Table as sole body content | Title and Content (table fills body) |
-| Image as sole body content | Picture with Caption |
-| Blockquote as sole body content | Quote layout if template has one, else Title and Content |
+| Content | Inferred layout |
+|---------|-----------------|
+| Empty (title only) | Section Header |
+| Contains a `col` marker | Two Content |
+| Exactly one block, a table | Title and Content |
+| One media block, optionally with one text block | Picture with Caption |
+| Exactly one block, a quote | Quote |
+| Exactly two blocks | Two Content |
+| Anything else | Title and Content |
 
-Layout names bind to template layouts by (a) explicit alias map provided at template upload, then
-(b) case-insensitive name match against the template's layout names.
+### 8.4 Directives
 
-### 7.4 Directives (pptx)
+| Directive | Effect |
+|-----------|--------|
+| `::: layout <name>` | Chooses the layout (§8.3) |
+| `::: notes` | Speaker notes (§8.2) |
+| `::: image fit=contain\|cover` | How the images it wraps (or, when empty, the immediately following media block) fill their placeholder (render stage) |
+| `<!-- col -->` | Starts the next column. Meaningful only among a slide's top-level content in a layout with two or more content slots; elsewhere it produces `directive_misplaced` |
 
-```markdown
-::: layout Two Content      → pick layout
-::: notes                   → children become speaker notes (any markdown)
-::: image fit=contain       → image sizing within its placeholder
-```
+Other directives: see §1.5.
 
-Column separation inside multi-content layouts uses `<!-- col -->`.
+### 8.5 Layout binding *(C11, C38)*
 
-### 7.5 Validation (pptx)
+The **house set** is the standard Office layout set plus Quote: `Title Slide`, `Title and Content`,
+`Section Header`, `Two Content`, `Comparison`, `Title Only`, `Blank`, `Content with Caption`,
+`Picture with Caption`, `Quote`. The house template is 16:9.
 
-- Layout directive names must resolve against the template: **error**, message lists available layouts.
-- More content than the layout has placeholders: **warning**, overflow flows into the last placeholder
-  (**error** under `--strict`).
-- H4+ headings inside a slide body: **warning** (likely a docx-oriented document).
+A layout name resolves, in order, to:
+1. an explicit alias (`layoutAliases`, §10.2) naming a template layout;
+2. a template layout with the same name (compared after Unicode simple case folding; on duplicates
+   across masters, the first in master order wins);
+3. for a house-set name, the template's first layout whose OOXML type (`p:sldLayout/@type`) matches:
+   `title` (Title Slide), `obj` (Title and Content), `secHead` (Section Header), `twoObj` (Two
+   Content), `twoTxTwoObj` (Comparison), `titleOnly` (Title Only), `blank` (Blank), `objTx` (Content
+   with Caption), `picTx` (Picture with Caption). This binds localized templates
+   ("Titel und Inhalt");
+4. otherwise, for a house-set name, the template's Title and Content layout (type `obj`), else its
+   first layout, with `layout_not_in_template` (warning). No second master is imported.
+
+Without a template, every house-set name binds to the house template. With a template, the valid
+names are the house set plus the template's own layout names and aliases. A name outside these
+produces `unknown_layout`. Slide size, footers, dates and slide numbers follow the bound master.
+
+### 8.6 Placeholders and fit *(C10, C26, C38)*
+
+Content is measured in **blocks**:
+- Consecutive paragraphs, lists and demoted headings form one **text block**.
+- Every other node (table, media, code, quote) is one block.
+- The children of ignored and unknown directives count in their place. Markers other than `col` count
+  nothing. A `col` marker ends the current text block and separates columns.
+
+| House layout | Content slots | Fits when |
+|--------------|---------------|-----------|
+| Title Slide | subtitle (text) | The content is at most one text block |
+| Section Header, Title Only | none | There is no content |
+| Blank | none, and no title | There is no title and no content |
+| Title and Content | body (any) | At most one block |
+| Two Content | left, right (any) | With `col` markers: at most two columns of at most one block each. Without: at most two blocks; the first goes left, the second right |
+| Comparison | left heading (text), left (any), right heading (text), right (any) | With `col` markers: at most two columns, each an optional text block followed by at most one block (the text block fills the column's heading). Without: as Two Content |
+| Content with Caption | content (any), caption (text) | At most one non-text block and at most one text block |
+| Picture with Caption | picture (media), caption (text) | At most one media block and at most one text block, in either order |
+| Quote | quote (quote or text) | At most one block |
+
+A template layout outside the house set provides one slot per content placeholder (types `body`,
+`obj`, `pic`, `tbl`, `chart`, `media`, in placeholder order), each holding one block.
+
+Content that doesn't fit produces `layout_overflow` (warning) against the **resolved** layout,
+explicit or inferred. With an explicit layout it is positioned at the layout directive; otherwise at
+the first block that doesn't fit. When the layout wasn't chosen explicitly, the hint suggests
+splitting the slide. Content beyond the last slot is placed in the last slot. Text that measures
+larger than its placeholder produces `content_overflow` (warning, render stage).
+
+### 8.7 Validation
+
+| Code | Severity | When |
+|------|----------|------|
+| `unknown_layout` | warning | §8.3, §8.5. The message lists the valid names |
+| `layout_overflow` | warning | §8.6 |
+| `layout_not_in_template` | warning | §8.5; validate stage when a template is available |
+| `heading_too_deep` | warning, advisory | A demoted heading of level 4 or deeper (likely a docx-oriented document) |
+| `image_unresolved` / `image_unsupported` | warning | §4.7, §5 *(C18)* |
+| `table_not_rectangular` | warning | §5 |
+| `link_anchor_unresolved` | warning | A fragment link matches no **slide title**'s slug. Matches become links to that slide |
+| `invalid_directive_args` / `unknown_directive_option` | warning | §1.6 |
+| `unknown_directive` / `directive_misplaced` | warning | §1.5, §8.2–§8.4 |
+| `content_overflow` | warning | Render stage, §8.6 |
+| `font_unresolved` | warning | §3 |
 
 ---
 
-## 8. Profile: xlsx
+## 9. Profile: xlsx
 
-The novel profile. A workbook is authored as sheets of tables.
+A workbook is authored as sheets of tables.
 
-### 8.1 Structure mapping
+### 9.1 Structure mapping *(C39)*
 
-| Markdown | xlsx output |
-|----------|-------------|
-| `# Heading` (H1) | **Sheet** named after the heading |
-| GFM table | Data range placed at the current anchor (default `A1`, subsequent tables stacked with one blank row) |
-| Table header row | Styled header row (bold, fill from template preset) |
-| `## Heading` (H2) | Range title: a styled label cell above the next table |
-| Paragraph | A note cell above the next table (single merged cell) |
-| Everything else (quotes, code, images) | **Ignored with warning** |
+The body is walked in document order, entering sections, wrapping annotations, and the bodies of
+ignored and unknown directives (§1.5).
 
-Content before the first H1 belongs to a default sheet named `Sheet1` (or `meta.title`).
+| IR | xlsx output |
+|----|-------------|
+| `section` level 1 | Starts a **sheet** named after its title (§9.6) |
+| `table` | A data range (§9.2) |
+| `section` level 2 | **Range title** for the next table |
+| `section` level 3+ | Its heading is ignored with `xlsx_ignored_content`; its children are processed in place |
+| `paragraph` | **Note** for the next table |
+| `columns` / `anchor` / `table` directives | Annotations for a table (§9.4) |
+| `break` | Ignored |
+| Anything else (quotes, code, media, lists) | Ignored, with `xlsx_ignored_content` |
 
-### 8.2 Formulas — parsed and allowlisted
+Sheets appear in document order. Content before the first H1 forms a default sheet named after
+`meta.title`, else `Sheet1`. It exists only if it contains at least one table or produces
+`xlsx_ignored_content`. A document that yields no sheets gets one empty sheet named the same way, with
+`xlsx_empty_workbook` (warning, advisory). *(C27)*
 
-A cell whose content starts with `=` is a **formula cell**. Formulas are **parsed and checked against a
-function allowlist** before being written:
+### 9.2 Placement (normative)
+
+Each sheet keeps a stacking cursor, starting at row 1, column A. Tables are placed in document order:
+
+1. The table's top-left is the `anchor` cell if it has one, else column A at the cursor row.
+2. The range title (if any) takes the next row, merged across the table's columns (not merged when
+   the table has one column), in bold.
+3. The note (if any) takes the next row, merged the same way, in italics.
+4. The header row comes next, followed by one row per data row.
+5. An unanchored table moves the cursor to *header row + data rows + 2* (one blank row between
+   tables). An anchored table does not move the cursor.
+
+The placed address of data cell (row *r*, column *c*), both 0-based, is column *firstColumn + c* and
+row *headerRow + 1 + r*. A table's **placed range** runs from its first row (title, note or header)
+to its last data row, across its columns.
+- **Overlap.** Placed ranges on a sheet MUST NOT overlap. A table whose range would overlap an earlier
+  one is placed at the cursor instead (below everything placed so far), with `xlsx_range_overlap`
+  (warning) at its line. *(C27)*
+- **Off the grid.** An anchor whose range would extend past row 1,048,576 or column XFD is ignored,
+  with `invalid_directive_args`. Stacking past row 1,048,576 produces `xlsx_limit_exceeded` (error).
+
+### 9.3 Formulas *(C1, C12, C33)*
+
+A data cell is a **formula cell** when its `raw` source text (§4.6) starts with `=`. Its formula is
+`raw` without the leading `=`. Header cells are always literal text. To write a literal string that
+starts with `=`, escape it: `\=`. The cell's `raw` then starts with `\`, so it isn't a formula, and
+its value is the run text (`=…`).
+
+**Grammar.** A formula must match:
+
+```
+formula   = expr
+expr      = concat *( cmp-op concat )
+concat    = sum *( "&" sum )
+sum       = term *( ( "+" / "-" ) term )
+term      = power *( ( "*" / "/" ) power )
+power     = unary *( "^" unary )
+unary     = *( "+" / "-" ) postfix
+postfix   = primary *( "%" )
+primary   = number / string / boolean / call / reference / "(" expr ")"
+call      = fname [ws] "(" [ arg *( "," arg ) ] ")"      ; empty arguments allowed: IF(A1,,1)
+arg       = [ expr ]
+reference = [ sheet "!" ] cell [ ":" [ sheet "!" ] cell ]
+cell      = ["$"] col ["$"] row                        ; col A..XFD, row 1..1048576
+sheet     = uname / "'" 1*( qchar / "''" ) "'"
+uname     = ( ALPHA / "_" ) *( ALPHA / DIGIT / "_" )    ; must not itself be a valid cell
+qchar     = any character except ' : \ / ? * [ ]
+fname     = ALPHA *( ALPHA / DIGIT / "." )
+number    = ( 1*DIGIT [ "." *DIGIT ] / "." 1*DIGIT ) [ ( "e" / "E" ) [ "+" / "-" ] 1*DIGIT ]
+string    = DQUOTE *( any character except DQUOTE / 2DQUOTE ) DQUOTE
+boolean   = "TRUE" / "FALSE"                           ; case-insensitive
+cmp-op    = "=" / "<>" / "<=" / ">=" / "<" / ">"
+```
+
+- Whitespace is allowed between tokens, but not between two operands, so the intersection operator
+  is not supported. Names, functions and booleans are case-insensitive.
+- A name followed (optionally after whitespace) by `(` is **always a function call**, even if it looks
+  like a cell (`LOG10(`).
+- Not supported, so a formula error: defined names, structured references (`Table1[Col]`), error
+  literals (`#N/A`), array constants (`{1,2}`), whole-column and whole-row ranges (`B:B`, `2:5`), and
+  3-D references.
+- A formula that doesn't match, calls a function not on the allowlist, or qualifies a sheet the
+  workbook doesn't have produces `formula_error` (warning). The cell is then written as **literal
+  text**, never as a formula.
+
+**Allowlist.** Pure spreadsheet functions only:
+
+```
+SUM SUMIF SUMIFS AVERAGE AVERAGEIF AVERAGEIFS COUNT COUNTA COUNTBLANK COUNTIF COUNTIFS
+MIN MAX MEDIAN IF IFS IFERROR IFNA AND OR NOT XOR VLOOKUP HLOOKUP INDEX MATCH LOOKUP
+ROUND ROUNDUP ROUNDDOWN ABS SQRT POWER MOD INT TRUNC CONCATENATE CONCAT TEXT LEFT RIGHT MID
+LEN TRIM UPPER LOWER SUBSTITUTE DATE YEAR MONTH DAY TODAY NOW DATEDIF
+ISBLANK ISNUMBER ISTEXT ISERROR ISNA
+```
+
+That closes the network, command and DDE vectors (`WEBSERVICE`, `RTD`, `DDE`, external `HYPERLINK`)
+by construction. A non-formula cell is always written as a literal value.
+
+**References are table-relative.** Write formulas **as if the table's header row were row 1 and its
+first column were column A**, which is how a markdown table reads on its own:
 
 ```markdown
 | Region | Revenue     |
@@ -207,53 +841,426 @@ function allowlist** before being written:
 | Total  | =SUM(B2:B3) |
 ```
 
-- **Allowed:** pure spreadsheet functions (SUM, AVERAGE, IF, VLOOKUP, INDEX/MATCH, arithmetic, …).
-- **Blocked (error):** network/command/DDE vectors — `WEBSERVICE`, `RTD`, `HYPERLINK` to external
-  targets, `DDE`, and any cell that would be interpreted as a command (leading `=`,`+`,`-`,`@` used to
-  smuggle payloads). This closes the formula/CSV-injection hole for whoever opens the sheet.
-- Cell references are workbook coordinates after placement. The validator checks references fall inside
-  the sheet's populated range (out-of-range → **warning**; cross-sheet `SheetName!A1` allowed).
+- An **unqualified** reference (`B2`, `$B$2`, `B2:B3`) is translated to the placed address (§9.2):
+  each column is shifted by the table's first column and each row by *headerRow − 1*. `$` markers
+  are kept. If this table is placed under a range title and a note (header at row 3), the formula is
+  written as `=SUM(B4:B5)`. References inside string literals are not references and are not
+  translated.
+- A **sheet-qualified** reference (`Revenue!B5`, `'Q3 Data'!A1:B2`) is an absolute sheet address,
+  even to the same sheet, and is written unchanged. Referencing another table therefore requires
+  knowing its placed address (§9.2).
+- An unqualified reference outside the table's own grid (columns A to the table's last column, rows
+  1 to *1 + data rows*) produces `formula_ref_out_of_range` (warning) and is still translated. A
+  translation past the sheet limits produces `xlsx_limit_exceeded`.
 
-To render a literal string beginning with `=`, escape it: `\=`.
+**Written form.** The written formula is the source text with references translated, and function
+names and cell references in uppercase. `IFS`, `IFNA`, `XOR` and `CONCAT` are stored with Excel's
+`_xlfn.` prefix, as Excel requires for functions newer than 2010.
 
-### 8.3 Directives (xlsx)
+### 9.4 Directives and attachment *(C8, C13, C39)*
+
+| Directive | Effect |
+|-----------|--------|
+| `::: columns B:currency, Growth:percent` | Column types (§9.5) for every table it applies to |
+| `::: anchor C5` | Places the table at this cell (`$` allowed, case-insensitive, within A1:XFD1048576) instead of stacking it |
+| `::: table name=sales_q3, style=striped, autofilter` | Registers an Excel table (§9.6) |
+
+All three are **annotations** (§1.5):
+- `columns` applies to every table it wraps, or, when empty, to the next table in the same sheet.
+- `anchor` and `table` apply to exactly one table: the first table they wrap, or, when empty, the
+  next one in the same sheet. Any further wrapped tables produce `directive_misplaced`.
+- An annotation never crosses a sheet boundary: an H1 inside or after it ends its effect.
+- Wrapping is the canonical form:
 
 ```markdown
-::: columns B:currency, C:percent, D:date(iso)
-    → number formats + sensible widths for the NEXT table
-
-::: anchor C5
-    → place the next table at C5 instead of stacking
-
-::: table name=sales_q3, style=striped, autofilter
-    → register the next table as a named Excel table
+::: columns B:currency, C:percent
+| Region | Revenue | Growth |
+|--------|---------|--------|
+| APAC   | 120000  | 14%    |
+:::
 ```
 
-### 8.4 Type inference
+**Attachment.** Annotations waiting for the next table (an H2 range title, a paragraph note, an empty
+directive) attach to the next table in the same sheet, including a table inside a wrapping
+annotation.
+- An H2 or paragraph that is replaced by another of its kind before a table arrives, or is still
+  waiting at the end of the sheet, produces `xlsx_ignored_content`.
+- An empty directive in the same situation produces `directive_misplaced`.
+- A wrapping annotation overrides a waiting empty one of the same name.
 
-Without a `columns` directive, cell types are inferred per column: all-numeric → number; ISO dates →
-date; `true/false` → boolean; else text. A column with mixed inferred types becomes text (**warning**).
+**`columns` entries** are `KEY:type` or `KEY:type(param)`. `KEY` is a header cell's text
+(case-insensitive) if one matches, else a column letter (1–3 letters, A = the table's first column).
 
-### 8.5 Validation (xlsx)
+| Type | Param | Number format |
+|------|-------|---------------|
+| `number` | decimal places, 0–10 | `General`; with a param, `#,##0` plus that many decimals |
+| `currency` | ISO 4217 code (default `USD`) | The currency symbol (`$` USD, `€` EUR, `£` GBP, `¥` JPY, `₹` INR; else the code and a space) before `#,##0.00` (`#,##0` for JPY) |
+| `percent` | decimal places, 0–10 (default 0) | `0%`, plus that many decimals |
+| `date` | `iso` (the default and only value) | `yyyy-mm-dd` |
+| `text` | — | `@` |
+| `boolean` | — | `General` |
 
-- Non-rectangular table (ragged rows): **error** with row/line reference.
-- Duplicate or >31-char sheet names: **error** with suggested truncation.
-- Formula parse failure or disallowed function: **error** pointing at the cell.
+- An unknown type or param produces `unknown_directive_option`. An unknown type ignores the entry;
+  an unknown param uses the type's default.
+- A key matching no column also produces `unknown_directive_option`, and the entry is ignored.
+- A malformed entry, or a column named twice in one directive, produces `invalid_directive_args`.
+
+### 9.5 Values *(C27, C39)*
+
+**Literal tests** (ASCII only):
+- **Number**: `-?[0-9]+(\.[0-9]+)?` with at most 15 significant digits and no leading zero before
+  other digits (`007` and `02134` are text; `0.5` is a number). Long IDs and zero-padded codes stay
+  intact.
+- **Percent**: a number followed by `%`. Its value is the number divided by 100 (`14%` → 0.14).
+- **Date**: `[0-9]{4}-[0-9]{2}-[0-9]{2}`, a real Gregorian date from 1900-03-01 to 9999-12-31, written
+  as a date serial in the 1900 date system with no time zone involved. `2026-02-30` is text.
+- **Boolean**: `true` or `false`, any case.
+
+**Inference.** Without a `columns` entry, a column's type is inferred from the plain text of its data
+cells, skipping formula cells and blank cells. All numbers → `number`; all numbers or percents with at
+least one percent → `percent`; all dates → `date`; all booleans → `boolean`; otherwise `text`. A
+column whose cells matched different tests also produces `mixed_column_type` (warning, advisory). A
+column with no literal values at all is `text`.
+
+**Conversion.** A literal in a typed column converts with its type's test. Numeric types accept
+numbers, and percent also accepts percents. A value that fails is written as text, with
+`typed_value_invalid` (warning) at its row's line. A column's number format also applies to its
+formula cells. Markdown numeric literals always use `.` as the decimal separator with no grouping,
+whatever `lang` is.
+
+**Rich text and links.**
+- A cell's bold, italic and strike runs become rich text. `code` runs are plain text.
+- A cell whose runs carry one link destination gets that hyperlink. Further distinct links in the same
+  cell produce `xlsx_ignored_content`, and only the first is kept.
+- Fragment links resolve against **sheet names'** slugs and link to cell A1 of that sheet.
+
+**Recalculation.** Formula results are not cached in the file, and the workbook requests full
+recalculation when opened. Viewers that don't calculate (some previewers) show these cells empty.
+
+### 9.6 Sheet names and Excel tables *(C14)*
+
+**Sheet names** come from the heading's plain text, with line breaks turned into spaces and the
+result trimmed. They are repaired, never rejected:
+
+| Problem | Repair | Code |
+|---------|--------|------|
+| Contains `: \ / ? * [ ]` | Each replaced with `-` | `sheet_name_invalid` |
+| Starts or ends with `'` | Removed | `sheet_name_invalid` |
+| Empty | `Sheet{n}` (n = its position) | `sheet_name_invalid` |
+| Longer than 31 UTF-16 code units | Truncated | `sheet_name_too_long` |
+| Equal to an earlier name or to `History` (Unicode simple case folding) | ` (2)`, ` (3)`, … appended, truncating first to stay within 31 | `duplicate_sheet_name` |
+
+All three codes are warnings and strict-promotable, reported at the heading's line (or at the `title`
+key for a default sheet). Formulas refer to sheets by their repaired names.
+
+**Excel tables** (`::: table`):
+- **Headers.** Excel requires header cells to be non-empty and unique (case-insensitive). An empty
+  header becomes `Column{n}`, and a repeated one gets `2`, `3`, … appended, with `table_header_invalid`
+  (warning) at the directive.
+- **Name.** It must be a valid Excel table name: `[A-Za-z_\\][A-Za-z0-9_.]*`, at most 255 characters,
+  not a cell reference, and not `R`, `C` or an R1C1 reference (`R[0-9]*C[0-9]*`, `R[0-9]+`,
+  `C[0-9]+`). It must also be unique in the workbook (case-insensitive). An invalid or repeated name
+  produces `invalid_directive_args`, and the table gets an automatic name.
+- **Automatic names** are `Table1`, `Table2`, … in workbook order, skipping names already used.
+- **Style.** `striped` maps to `TableStyleMedium2` (the default), `plain` to `TableStyleLight1`.
+- **`autofilter`** shows filter buttons on the table's header row.
+
+### 9.7 Validation
+
+Diagnostics about a table row or cell report **that row's source line**, and cell addresses in
+messages are placed addresses (§9.2). *(C15)*
+
+| Code | Severity | When |
+|------|----------|------|
+| `table_not_rectangular` | warning | §5 |
+| `sheet_name_invalid` / `sheet_name_too_long` / `duplicate_sheet_name` | warning | §9.6 |
+| `formula_error` | warning | §9.3 |
+| `formula_ref_out_of_range` | warning | §9.3 |
+| `typed_value_invalid` | warning | §9.5 |
+| `mixed_column_type` | warning, advisory | §9.5. Reported at the table's line |
+| `table_header_invalid` | warning | §9.6 |
+| `xlsx_range_overlap` | warning | §9.2 |
+| `xlsx_limit_exceeded` | error | Stacking past row 1,048,576 or translation past the grid (§9.2, §9.3); cell text longer than 32,767 characters; a formula longer than 8,192 characters |
+| `xlsx_empty_workbook` | warning, advisory | §9.1 |
+| `xlsx_ignored_content` | warning | §9.1, §9.4, §9.5 |
+| `link_anchor_unresolved` | warning | A fragment link matches no sheet name's slug |
+| `invalid_directive_args` / `unknown_directive_option` | warning | §1.6, §9.4, §9.6 |
+| `unknown_directive` / `directive_misplaced` | warning | §1.5, §9.4 |
+| `xlsx_template_unsupported` | warning | An `.xlsx`/`.xltx` template was supplied (§10.4) |
 
 ---
 
-## 9. Versioning
+## 10. Operations
 
-Documents may pin a spec version in frontmatter (`spec: 0.1`). The engine defaults to the latest and
-warns when behavior differs across pinned versions. Breaking changes to profile mappings bump the
-minor version pre-1.0, major after.
+### 10.1 The operations
 
-## 10. Open Questions
+Every host exposes the same four operations (architecture.md, "Operations"):
 
-- pptx/xlsx: chart generation from tables (`::: chart bar` over a table) — high value, deferred past
-  MVP.
-- xlsx: multi-table relationships / named ranges referenced across sheets.
-- Shared: footnotes and how each profile should treat them (docx footnotes are natural; pptx/xlsx have
-  no equivalent).
-- Override syntax: `::: pptx` blocks vs. attribute syntax (`{.two-col}`) — fenced form chosen for
-  LLM-friendliness, revisit on user feedback.
+| Operation | Input | Output |
+|-----------|-------|--------|
+| `parse` | markdown | `{ ir, diagnostics }` (parse-stage diagnostics) |
+| `lint` | markdown or IR, options | `{ diagnostics }` (parse and validate stages) |
+| `convert` | markdown or IR, options | `{ bytes?, diagnostics }` (all stages); `bytes` absent when blocked (§11.1) |
+| `inspect_template` | template bytes | a template report (`spec/template-report.schema.json`) |
+
+An operation either returns its output, or fails with an **operation error** (§10.6), which is a
+problem with the call rather than with the document. Diagnostics never cause an operation error, and
+no input may make an operation crash or hang (§12.1).
+
+### 10.2 Options
+
+| Option | Type | Default | Meaning |
+|--------|------|---------|---------|
+| `format` | `docx` \| `pdf` \| `pptx` \| `xlsx` | `meta.format` | Target format. Precedence: this option, then `meta.format`, else the operation error `format_missing` |
+| `strict` | boolean | `false` | Escalation (§11.1) |
+| `template` | bytes | — | Template package. Precedence: this option, then `meta.template` through the template resolver, then the house template |
+| `layoutAliases` | map: layout name → template layout name | `{}` | pptx layout binding (§8.5) |
+
+### 10.3 Resolvers *(C41)*
+
+The core performs no I/O (architecture.md D11). Hosts supply resolvers:
+
+| Resolver | Called with | Returns |
+|----------|-------------|---------|
+| Asset | an image `src`, verbatim | the bytes, or *exists* (without bytes, permitted for `lint` only), or *not found* |
+| Template | a `meta.template` reference, verbatim | the bytes, or *not found* |
+| Font | a family and style (regular, bold, italic, bold italic) | the bytes from the font cache, or *not found* |
+
+- A host that supplies no asset resolver behaves as if every image source exists without bytes, in
+  `lint` only. In `convert`, an image without bytes is unresolved (§5).
+- A `meta.template` that can't be resolved (not found, or no template resolver) produces
+  `template_unresolved` (error, at the `template` key's line). A brand template that can't be applied
+  never silently becomes the house style.
+
+**Host resolver requirements:**
+- **Server and MCP hosts:** by default, resolvers touch neither the filesystem nor the network.
+  Assets and templates come only from the request, or from roots configured explicitly by the
+  operator.
+- **Any configured root:** references resolve only inside it, after normalization. References with
+  `..` segments, absolute paths, symlinks leaving the root, `file:` URLs and UNC paths are *not
+  found*.
+- **Remote fetching** is opt-in: `https:` only, with private, loopback and link-local addresses
+  blocked, plus size and time limits.
+- **The CLI** resolves relative references against the input file's directory.
+- In every host, the bytes a resolver returns are checked by content (§4.7), never trusted by
+  extension.
+
+### 10.4 Templates *(C41)*
+
+| Format | Accepted templates |
+|--------|--------------------|
+| docx | `.docx`, `.dotx` |
+| pdf | `.docx`, `.dotx` (page setup and theme tokens) or `.pptx`, `.potx` (theme tokens) |
+| pptx | `.pptx`, `.potx` |
+| xlsx | `.docx`, `.dotx`, `.pptx`, `.potx` (theme tokens). `.xlsx`/`.xltx` produce `xlsx_template_unsupported` (warning) and are not used |
+
+A template's kind is determined from its package's main content type, not its file name. These
+produce `template_invalid` (error):
+- a package that isn't a well-formed OOXML package of an accepted kind
+- a macro-enabled package (`.docm`, `.dotm`, `.pptm`, `.potm`, or any package containing a VBA project)
+- an encrypted or password-protected package
+- package XML containing a DTD
+- a package that violates the limits in §12.1, or has entries with absolute paths or `..` segments
+
+A template without a theme part produces `no_theme` (warning; defaults are used). A docx template
+without a styles part produces `no_styles_xml` (warning; house styles are used).
+
+**Template-first output** (architecture.md D12) keeps the template's styles, numbering, theme,
+masters, layouts, headers and footers, and replaces its content. In addition:
+- The template's own body content (docx) and slides (pptx) are removed, together with every part no
+  longer referenced (such as sample-slide media).
+- Document properties (title, author, dates, application, company) are written from `meta` and fixed
+  values (§13), never copied from the template.
+- These are removed from the kept parts: relationships with an external target other than hyperlinks
+  (remote attached templates, linked images, linked OLE objects), ActiveX controls, and embedded OLE
+  objects. Each removal produces `template_content_removed` (warning, advisory, render stage).
+
+### 10.5 `inspect_template`
+
+Returns the template report:
+- kind, theme fonts and colors, and referenced fonts (with whether each is embedded)
+- for docx: styles and page setup
+- for pptx: slide size, and layouts with their placeholders
+- template-level issues: diagnostics without a line, including `template_invalid`
+
+Agents use the report to write markdown against a template's real layouts and styles.
+
+### 10.6 Operation errors
+
+Operation errors have stable codes, registered under `operationErrors` in `spec/diagnostics.json`:
+
+| Code | When |
+|------|------|
+| `input_not_utf8` | The input bytes aren't valid UTF-8 (host decoding) |
+| `format_missing` | No format from the options or `meta.format` |
+| `format_unknown` | The `format` option isn't one of the four |
+| `renderer_unavailable` | This build doesn't include the requested renderer (e.g. the core-only WASM build) |
+| `ir_invalid` | IR input fails `spec/ir.schema.json` or an IR invariant (§10.7); the error carries the JSON Pointer of the first failure |
+| `ir_version_unsupported` | IR input has an `irVersion` this implementation doesn't support |
+
+### 10.7 IR input
+
+`lint` and `convert` accept IR JSON in place of markdown. It must validate against
+`spec/ir.schema.json` and satisfy these invariants:
+- each table's `align` has as many entries as its `header`
+- a section's child sections have greater levels than it
+- `start` appears only on ordered lists
+
+`position` is optional on every node. Diagnostics about a node without a position carry its `path`
+(§11.3) and no `line`. IR input goes through the same text rules as parsed text: §1.1's character
+replacement, §4.4's canonical runs, §4.5's link allowlist, and §2's normalization of known `meta`
+keys.
+
+An implementation supporting IR `X.Y` accepts `X.Z` for every `Z ≤ Y` and rejects anything else with
+`ir_version_unsupported`. Adding an optional field bumps the minor version.
+
+### 10.8 Host conventions
+
+| Host | Success | Blocked by error diagnostics | Operation error |
+|------|---------|------------------------------|-----------------|
+| CLI | exit 0 | exit 1 | exit 2 |
+| HTTP | `200` | `422` | `400`; `501` for `renderer_unavailable`; `413` when the request exceeds the input size limit |
+| MCP | tool result with diagnostics as structured content | the same, with `isError: true` | a tool error naming the code |
+
+Every host returns the full diagnostics list in the shape of `spec/diagnostic.schema.json`.
+
+---
+
+## 11. Diagnostics *(C31, C32)*
+
+Every diagnostic matches `spec/diagnostic.schema.json`: a registered `code`, a `severity` (`error` or
+`warning`), an optional `line` and `column`, an optional `path` (JSON Pointer into the IR, e.g.
+`/body/2/rows/0/3`), a `message` and an optional `hint`. Document-level diagnostics (template issues,
+fonts, an empty workbook) have no `line`.
+
+### 11.1 Severity policy and strict
+
+- **Errors** are reserved for problems with **no safe or faithful output**:
+  - `limit_exceeded`, `xlsx_limit_exceeded`
+  - `template_unresolved`, `template_invalid`
+  - `render_failed`, a catch-all for any other failure while rendering
+- Every other problem is a **warning** with a defined fallback, so plain markdown always renders.
+- A warning is either **advisory** (registered with `strictPromotable: false`), meaning a style
+  observation where the output is still faithful (`heading_skip`, `mixed_column_type`), or
+  **strict-promotable**, meaning the output differs from what the input asked for.
+- Under `strict`, every strict-promotable warning becomes an error. So `strict` means: nothing was
+  dropped, guessed or substituted.
+- **Blocking.** `convert` returns no bytes if any diagnostic, from any stage, is an error after
+  escalation.
+
+### 11.2 Stages and order
+
+- **Stages.** `parse` diagnostics come from §1–§4 and are format-independent. `validate` diagnostics
+  come from a profile. `render` diagnostics come from composing and serializing. `lint` returns parse
+  and validate diagnostics. `convert` returns all three.
+- `layout_not_in_template` and `font_unresolved` are validate-stage whenever their inputs (a template;
+  a font resolver) are available, so `lint` and `convert` agree.
+- **Order.** Operations return diagnostics sorted by line (diagnostics without a line first), then
+  column (absent first), then code, then path.
+- **Cap.** An implementation MAY stop after 1,000 diagnostics, ending the list with
+  `diagnostics_truncated` (warning, advisory). The cap applies after sorting.
+
+### 11.3 Positions
+
+Each code's registry entry has a `position` naming where it points:
+
+| `position` | Points at | Column |
+|------------|-----------|--------|
+| `node` | The IR node's position (§4.1) | no |
+| `row` | The source line of the table row | no |
+| `table` | The table's line | no |
+| `key` | The frontmatter key's line | no |
+| `frontmatter` | Line 1 | no |
+| `underline` | A setext heading's underline line | no |
+| `construct` | The construct's first character (`[`, `<`, `!`, or a block's first character) | yes |
+| `char` | The replaced character | yes |
+| `fence` | The fence line's first colon | yes |
+| `none` | No line: a document-level diagnostic | no |
+
+Every diagnostic SHOULD also carry the `path` of the IR node it concerns.
+
+**Conformance comparison.** Expected and actual diagnostics are compared as lists of
+`(code, severity, line, column)` in the order above, keeping duplicates. `line` is always compared
+(absent must match absent). `column` and `path` are compared only when the expected diagnostic has
+them.
+
+## 12. Limits and Security
+
+### 12.1 Limits
+
+Every implementation MUST accept input up to these defaults. Hosts MAY configure other values, and
+every host uses the same defaults. Input beyond the effective limit produces `limit_exceeded` (error)
+at the first offending construct and is not processed further. The implementation MUST NOT crash,
+hang or exhaust memory on any input.
+
+| Limit | Default |
+|-------|---------|
+| Input size | 10 MiB of UTF-8 |
+| Frontmatter size | 64 KiB |
+| Nesting depth (blockquotes, lists and directives combined) | 32 |
+| Table cells per document; cells per row | 1,000,000; 16,384 |
+| Slides; sheets | 10,000; 1,000 |
+| Image size, encoded / decoded | 50 MiB / 100 megapixels |
+| Template package, compressed / uncompressed / entries / compression ratio | 50 MiB / 256 MiB / 10,000 / 100:1 |
+
+### 12.2 Security
+
+The engine processes untrusted input: LLM output, and anything submitted to the HTTP server.
+- **No I/O in the core** (architecture.md D11), and confined resolvers in hosts (§10.3).
+- **No code execution from documents.** Formulas are parsed and allowlisted (§9.3). Link destinations
+  are allowlisted (§4.5). HTML is never rendered (§4.8). Templates are macro-free and stripped of
+  active and external content (§10.4).
+- **No injection into target formats.** Renderers MUST NOT let IR text be interpreted as markup or
+  code in any target language. XML text is escaped. Text reaches Typst only as data (Typst inputs)
+  or through an escape function proven by fixtures with hostile content, never spliced into markup.
+- **Typst sandbox.** Typst's file access exposes only the generated document, resolved assets and
+  fonts: no filesystem, no package downloads, and a fixed document date.
+- **Bounded work** (§12.1). Template packages are checked for path traversal, decompression bombs and
+  DTDs (§10.4).
+- **No leaks.** Output metadata comes from `meta` and fixed values, never from the template, the
+  host's environment, file paths or the current time (§13).
+
+## 13. Determinism
+
+- `parse` and `lint` are pure functions of their input, options and resolver results. `convert` is a
+  pure function of its input, options, template bytes, the font bytes the resolver returns, and the
+  asset bytes.
+- **Reproducible bytes:** the same input, options, template, fonts, assets and implementation version
+  MUST produce byte-identical output. Byte equality across implementations or versions is not
+  required. Across implementations, the render suite compares semantic projections and package
+  assertions, never bytes (spec/conformance/README.md); within one implementation it renders every
+  fixture twice and requires identical bytes.
+- Renderers MUST NOT read the clock, the environment, random sources or the locale. Document
+  timestamps are fixed (`1980-01-01T00:00:00Z`), zip entries are ordered, and identifiers are
+  assigned in document order.
+- Operation outputs, including diagnostics (§11.2), are deterministically ordered.
+
+## 14. Versioning
+
+- A document may pin the spec version it targets with `spec:` in frontmatter (§2).
+- Before 1.0, any behavior change bumps the minor version (0.1 → 0.2). From 1.0, breaking changes
+  bump the major version.
+- The IR has its own version (`irVersion`, §10.7). IR 0.1 is the first published IR; the prototype's
+  internal token model was never public. Adding an optional field is a minor change. Renaming or
+  removing a field, or changing a field's meaning, is a breaking change.
+- Diagnostic codes and operation error codes are public API. A code is never reused for a different
+  meaning. Retired codes stay in the registry marked `retired`.
+- Every behavior change ships with fixtures that encode it (spec/README.md).
+
+## 15. Open Questions (candidates for 0.3)
+
+- **Override blocks** (§3): scoped YAML inside `::: pptx` vs. attribute syntax (`{.two-col}`).
+- **Callouts:** map GitHub alerts (`> [!NOTE]`, `> [!WARNING]`, …), which LLMs emit often, to a
+  callout node rendered natively in each format.
+- **Heading IDs:** Pandoc-style `## Intro {#intro}` as an explicit slug.
+- **Math:** `$…$` / `$$…$$` → native equations (OMML in docx/pptx, Typst math in pdf).
+- **Footnotes:** native footnotes in docx/pdf; pptx/xlsx have no equivalent.
+- **Charts:** `::: chart bar` over a table → native editable charts in pptx/xlsx.
+- **Subscript/superscript** (`<sub>`, `<sup>`) as marks, and **SVG** images.
+- **Accessibility:** a warning for images without alt text; tagged PDF.
+- **End positions** on IR nodes (useful for editor diagnostics).
+- **Lenient typed values:** accept `$120,000` in currency columns.
+- **Whole-column ranges** (`SUM(B:B)`) translated to the table's own rows.
+- **Directive attributes:** whether to also accept `:::name{key=value}` (remark-directive style)
+  alongside free-text args.
+- **`toc` options** (depth, title), and cached formula values for simple aggregates.

@@ -1,0 +1,70 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "paragraph",
+        "runs": [
+          {
+            "text": "Inline  image and a note."
+          }
+        ],
+        "position": {
+          "line": 1,
+          "column": 1
+        }
+      },
+      {
+        "type": "paragraph",
+        "runs": [
+          {
+            "text": "Text with inline html and a ."
+          }
+        ],
+        "position": {
+          "line": 7,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": [
+    {
+      "code": "unsupported_content",
+      "severity": "warning",
+      "line": 1,
+      "column": 8
+    },
+    {
+      "code": "unsupported_content",
+      "severity": "warning",
+      "line": 1,
+      "column": 38
+    },
+    {
+      "code": "unsupported_content",
+      "severity": "warning",
+      "line": 3,
+      "column": 1
+    },
+    {
+      "code": "unsupported_content",
+      "severity": "warning",
+      "line": 5,
+      "column": 1
+    },
+    {
+      "code": "unsupported_content",
+      "severity": "warning",
+      "line": 7,
+      "column": 11
+    },
+    {
+      "code": "unsupported_content",
+      "severity": "warning",
+      "line": 7,
+      "column": 23
+    }
+  ]
+}

@@ -5,3 +5,6 @@ dist/
 .DS_Store
 coverage/
 *.log
+
+# Rust (spikes/, and crates/ from Phase B)
+target/

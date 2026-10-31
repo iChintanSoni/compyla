@@ -1,0 +1,12 @@
+{
+  "description": "Heading skip, unresolved image and an unknown directive are all warnings; the document still renders.",
+  "spec": [
+    "§6.3",
+    "§1.5",
+    "§11.1",
+    "C32"
+  ],
+  "oracle": "corrected",
+  "format": "docx",
+  "assets": []
+}

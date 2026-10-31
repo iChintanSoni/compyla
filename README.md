@@ -81,14 +81,17 @@ Mention the APAC numbers first.
 ```markdown
 # Sales
 
-::: columns B:currency, C:percent
-
+::: columns Revenue:currency, Growth:percent
 | Region | Revenue | Growth      |
 |--------|---------|-------------|
-| APAC   | 120000  | 0.14        |
-| EMEA   | 98000   | 0.09        |
+| APAC   | 120000  | 14%         |
+| EMEA   | 98000   | 9%          |
 | Total  | =SUM(B2:B3) | =AVERAGE(C2:C3) |
+:::
 ```
+
+Formulas are written as if the table started at A1; Compyla translates them to wherever the table
+lands on the sheet.
 
 ## Documentation
 
@@ -106,8 +109,13 @@ source files directly:
 
 ## Project Status
 
-**Phase 0** (engine core + docx) and the docx/pdf/pptx/xlsx renderers, SDK, CLI, self-hostable server,
-and web lint UI of **Phase 1** are done. See the [roadmap](docs/roadmap.md) for what's left.
+**Re-founding on a Rust core** (architecture.md D10). A TypeScript prototype of the whole pipeline
+(the four renderers, SDK, CLI, server and web lint UI) is complete and lives in `packages/` as the
+reference implementation. Its renderers only partly apply a supplied template, which the new
+architecture fixes by writing into the template itself (D12). **Phase A is complete.** The spec, IR
+schema, diagnostics registry and conformance suite in [`spec/`](spec/README.md) are the source of truth,
+and the toolchain checks in [`spikes/`](spikes/README.md) passed. **Phase B**, the Rust core, is next.
+See the [roadmap](docs/roadmap.md).
 
 ## Design Principles
 

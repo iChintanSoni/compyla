@@ -1,0 +1,11 @@
+{
+  "description": "A well-formed report produces no diagnostics.",
+  "spec": [
+    "§6"
+  ],
+  "oracle": "prototype",
+  "format": "docx",
+  "assets": [
+    "chart.png"
+  ]
+}

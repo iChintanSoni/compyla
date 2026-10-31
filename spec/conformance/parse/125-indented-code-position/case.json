@@ -1,0 +1,8 @@
+{
+  "description": "An indented code block's position is the first character of its content.",
+  "spec": [
+    "\u00a74.1",
+    "C43"
+  ],
+  "oracle": "corrected"
+}

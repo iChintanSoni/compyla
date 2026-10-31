@@ -1,0 +1,23 @@
+{
+  "diagnostics": [],
+  "output": {
+    "pages": 1,
+    "pageSize": [
+      595.28,
+      841.89
+    ],
+    "text": [
+      "Report",
+      "Intro paragraph.",
+      "Findings",
+      "See the docs."
+    ],
+    "links": [
+      "https://example.com/docs"
+    ],
+    "metadata": {
+      "title": "Quarterly Report",
+      "author": "Strategy Team"
+    }
+  }
+}
