@@ -730,19 +730,19 @@ const PADDING: usize = 2;
 /// The width of each column that needs more than the default, by 0-based column.
 fn widths(sheet: &compyla_core::validate::xlsx::Sheet) -> BTreeMap<u32, usize> {
     let mut widest: BTreeMap<u32, usize> = BTreeMap::new();
-    // The widest number in each column, and each formula with the widest number in its range: a
-    // formula's result isn't known, and can outgrow the numbers it is computed from.
-    let mut numbers: HashMap<u32, usize> = HashMap::new();
-    let mut formulas: Vec<(&Cell, usize)> = Vec::new();
     for range in &sheet.ranges {
         let filter = range.excel_table.as_ref().is_some_and(|t| t.autofilter);
-        let (first_formula, mut range_numbers) = (formulas.len(), 0);
+        // The widest number in each of the table's columns, and in the whole table, for its
+        // formulas: a formula's result isn't known, and can outgrow the numbers it is computed from.
+        let mut numbers: HashMap<u32, usize> = HashMap::new();
+        let mut range_numbers = 0;
+        let mut formulas: Vec<&Cell> = Vec::new();
         for cell in &range.cells {
             let width = match (&cell.role, &cell.value) {
                 // Titles and notes are merged across their range, and widen nothing.
                 (Role::Title | Role::Note, _) => continue,
                 (_, CellValue::Formula(_)) => {
-                    formulas.push((cell, 0));
+                    formulas.push(cell);
                     continue;
                 }
                 (_, CellValue::Text(runs)) => {
@@ -768,19 +768,16 @@ fn widths(sheet: &compyla_core::validate::xlsx::Sheet) -> BTreeMap<u32, usize> {
             let entry = widest.entry(cell.column).or_default();
             *entry = (*entry).max(width);
         }
-        for formula in &mut formulas[first_formula..] {
-            formula.1 = range_numbers;
+        for cell in formulas {
+            let width = if cell.format == DATE_FORMAT {
+                10
+            } else {
+                let known = numbers.get(&cell.column).copied().unwrap_or(range_numbers);
+                known.max(number_width("0", &cell.format)) + 2
+            };
+            let entry = widest.entry(cell.column).or_default();
+            *entry = (*entry).max(width);
         }
-    }
-    for (cell, range_numbers) in formulas {
-        let width = if cell.format == DATE_FORMAT {
-            10
-        } else {
-            let known = numbers.get(&cell.column).copied().unwrap_or(range_numbers);
-            known.max(number_width("0", &cell.format)) + 2
-        };
-        let entry = widest.entry(cell.column).or_default();
-        *entry = (*entry).max(width);
     }
     widest
         .into_iter()
@@ -795,19 +792,13 @@ fn number_width(number: &str, format: &str) -> usize {
     if format == DATE_FORMAT {
         return 10;
     }
-    let value: f64 = number.parse().unwrap_or(0.0);
-    let sign = usize::from(value < 0.0);
+    let sign = usize::from(number.starts_with('-'));
     let decimals = format
         .rsplit_once('.')
         .map_or(0, |(_, f)| f.chars().take_while(|&c| c == '0').count());
     let fraction = if decimals > 0 { decimals + 1 } else { 0 };
-    // Integer digits once rounded to the format's decimals (999.995 shows as 1,000.00).
-    let digits = |value: f64| {
-        let shown = format!("{:.*}", decimals, value.abs());
-        shown.split('.').next().map_or(1, str::len)
-    };
     if format.ends_with('%') {
-        return sign + digits(value * 100.0) + fraction + 1;
+        return sign + integer_digits(number, 2, decimals) + fraction + 1;
     }
     if format.contains("#,##0") {
         let prefix = format
@@ -815,11 +806,35 @@ fn number_width(number: &str, format: &str) -> usize {
             .nth(1)
             .filter(|_| format.starts_with('"'))
             .map_or(0, display_width);
-        let digits = digits(value);
+        let digits = integer_digits(number, 0, decimals);
         return sign + prefix + digits + (digits - 1) / 3 + fraction;
     }
     // General: as written, which Excel shows in at most 11 characters.
     number.chars().count().min(11)
+}
+
+/// The integer digits a number shows once its decimal point moves `shift` places right (a percent)
+/// and it is rounded half up to `decimals` places, as Excel rounds the decimal it holds: `9.995`
+/// at 2 places shows `10.00`. `number` is a plain decimal (`-?[0-9]+(\.[0-9]+)?`).
+fn integer_digits(number: &str, shift: usize, decimals: usize) -> usize {
+    let unsigned = number.trim_start_matches('-');
+    let (integer, fraction) = unsigned.split_once('.').unwrap_or((unsigned, ""));
+    let fraction = format!("{fraction:0<shift$}");
+    let (moved, fraction) = fraction.split_at(shift);
+    let integer = format!("{integer}{moved}");
+    let integer = integer.trim_start_matches('0');
+    // Rounding carries into the integer part when the first dropped digit is 5 or more and every
+    // kept decimal is 9; it adds a digit when the integer part is all 9s too.
+    let carries = fraction
+        .as_bytes()
+        .get(decimals)
+        .is_some_and(|&d| d >= b'5')
+        && fraction.as_bytes()[..decimals].iter().all(|&d| d == b'9');
+    match integer.len() {
+        0 => 1,
+        n if carries && integer.bytes().all(|d| d == b'9') => n + 1,
+        n => n,
+    }
 }
 
 /// A text's width in characters: East Asian wide and fullwidth characters take two.
