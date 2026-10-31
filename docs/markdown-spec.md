@@ -110,7 +110,8 @@ prototype.
 | C55 | From opening the output in PowerPoint and Excel: columns are as wide as what they display, so numbers and dates don't show as `####`; a link in an Excel table keeps the table's text color (contrast); text that reads as a number isn't flagged as a number stored as text; slide shapes are written in reading order; a title on Blank is a title placeholder (§8.8, §9.2, §9.5) | Unreadable numbers; accessibility checks failing on contrast, reading order and slide titles; error flags on intended text | render/104, render/116–118 |
 | C56 | Supplied pptx templates: the `template` option and `meta.template` through the resolver, with `template_unresolved`, `template_invalid`, `no_theme` and `xlsx_template_unsupported`; layout binding by alias, name and type, with `layout_not_in_template` once per layout; a template's own layouts; `layoutAliases` checked (`option_invalid`); slots past a bound layout's placeholders share its last (§8.5, §8.6, §8.8, §10.2, §10.6) | Templates not used; aliases unchecked; content drawn over a placeholder | lint/139–143, render/119 |
 | C57 | A workbook takes a docx or pptx template's theme tokens: its colors and heading and body fonts as the workbook's theme, cells and titles in its fonts, the header fill and links in its colors, and a striped Excel table's dark header where white wouldn't read on its accent (§9.2, §9.6, §10.4) | Templates not used for xlsx | render/120 |
-| C58 | Active and external content is removed from a supplied template's kept parts: external relationships other than hyperlinks (with `TargetMode` and targets that leave the package read fail-closed), hyperlinks §4.5 doesn't allow and actions that run something, OLE objects, ActiveX controls and their legacy drawings, with what refers to them (a blip loses only the attribute; anything else goes with its alternates, extension, graphic frame, animations or transition), what only they used, and the parts only they reached; one `template_content_removed` per object, action or other removed relationship (§4.5, §10.4) | Which elements go with a removed relationship, what counts as one removal, and which hyperlinks a template may keep were unspecified | render/121 |
+| C58 | Active and external content is removed from a supplied template's kept parts: external relationships other than hyperlinks (with `TargetMode` and targets that leave the package read fail-closed), hyperlinks §4.5 doesn't allow and actions that run something, OLE objects, ActiveX controls and their legacy drawings, Office add-ins, with what refers to them (a blip loses only the attribute; anything else goes with its alternates, extension, graphic frame, animations or transition), what only they used, and the parts only they reached; one `template_content_removed` per object, action or other removed relationship (§4.5, §10.4) | Which elements go with a removed relationship, what counts as one removal, and which hyperlinks a template may keep were unspecified | render/121 |
+| C59 | A link destination is checked as a browser reads it: leading and trailing spaces and controls, and tabs and line breaks inside it, don't hide its scheme, and other control characters are refused; it must pass percent-decoded too (§4.5) | ` file:///…` and `\tms-msdt:…` in IR input or a template's hyperlinks, and `%5C%5Chost` anywhere, passed the allowlist as relative references | parse/130, render/121 |
 
 0.2 also corrects 0.1's *text* in one place where the prototype was right: `---` in xlsx is ignored
 without a diagnostic (§5).
@@ -434,6 +435,12 @@ Inline content becomes a flat list of **runs**: `{ "text", "bold"?, "italic"?, "
   case-insensitively. Anything else produces `link_scheme_blocked` (warning), the link is removed,
   and its text is kept. That covers other schemes (`javascript:`, `data:`, `file:`, `ms-msdt:`, …),
   protocol-relative `//host` and UNC `\\host` paths, and absolute paths.
+
+  A destination is checked as a browser reads it *(C59)*: without leading and trailing spaces and
+  control characters, and without tabs and line breaks anywhere in it, so ` file:///…` (in IR input,
+  §10.7, or a template's hyperlink, §10.4) is a `file:` link. A destination with any other control
+  character is refused. A destination must also pass once percent-decoded, so `%5C%5Chost` is a
+  UNC path.
 - **Fragment links** (`[see costs](#costs)`) target a heading or another per-format target (§6.2,
   §8.7, §9.5). A target's **slug** is computed from its plain text:
   1. Convert to lowercase (Unicode default case conversion).
@@ -1252,13 +1259,16 @@ masters, layouts, headers and footers, and replaces its content. In addition:
   - each hyperlink whose destination §4.5 doesn't allow (`file:`, `ms-msdt:`, UNC paths, …), and
     each hyperlink (`a:hlinkClick`, `a:hlinkHover`, `a:hlinkMouseOver`) whose `action` runs
     something instead of navigating: anything but `ppaction://` followed by `noaction`,
-    `hlinkshowjump`, `hlinksldjump`, `hlinkpres`, `hlinkfile`, `customshow` or `media`. A
+    `hlinkshowjump`, `hlinksldjump`, `hlinkpres`, `hlinkfile`, `customshow` or `media`, then
+    nothing or a query (`?…`), compared without case. A
     relationship of the hyperlink type (its type compared exactly, Transitional or Strict) is a
     hyperlink only where hyperlinks refer to it: if anything else refers to it, it is external
     content like any other;
   - each OLE object, embedded or linked: in pptx, the graphic frame holding a `p:oleObj`;
   - each ActiveX control (`p:control`), and a `p:controls` left with nothing else in it;
   - each relationship of type `oleObject` or `control` that remains;
+  - each Office add-in (a `webextension` relationship), which runs code from wherever its manifest
+    names;
   - each `vmlDrawing` relationship: in a deck, legacy VML only draws OLE objects and ActiveX
     controls.
 
@@ -1276,14 +1286,16 @@ masters, layouts, headers and footers, and replaces its content. In addition:
   refers to. A part that only removed relationships reached isn't kept: an embedded object's file, a
   control's parts, a legacy drawing. Elements are read by namespace, Transitional and Strict alike.
 
-  Each OLE object, ActiveX control and refused action produces one `template_content_removed`
-  (warning, advisory, render stage, without a line). So does each other removed relationship of
-  the first two kinds, or of type `oleObject` or `control`, that none of them refers to, such as a
-  linked image. Like every code, these stop at the cap (§11.2). Text from the template appears in
-  messages shortened, with its control characters escaped. A part that relates to nothing can't
-  embed, link to or run anything, and a part with nothing to remove is kept byte for byte. A kept
-  part that has something to remove but isn't well-formed XML makes the render fail
-  (`render_failed`).
+  Each OLE object, ActiveX control, Office add-in and refused action produces one
+  `template_content_removed` (warning, advisory, render stage, without a line). So does each other
+  removed relationship of the first two kinds (an external `vmlDrawing` among them), or of type
+  `oleObject` or `control`, that none of them refers to, such as a linked image. Like every code,
+  these stop at the cap (§11.2). A part with nothing to remove is kept byte for byte. A kept part
+  that may hold something to remove but isn't well-formed XML, or whose root element would be
+  removed, makes the render fail (`render_failed`).
+
+  Text from a template (a target, a type, a part name, a parser's reason) appears in any message
+  shortened, with its control and bidi formatting characters escaped.
 
 ### 10.5 `inspect_template`
 

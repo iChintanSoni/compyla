@@ -137,6 +137,61 @@ fn many_excel_tables_convert() {
 
 #[test]
 #[cfg(feature = "pptx")]
+fn a_picture_naming_one_link_in_many_attributes_converts() {
+    // Every attribute of one blip names the same external link; each goes, in one linear pass
+    // (§10.4, §12.1), not one search of the others per attribute.
+    const BRAND: &[u8] =
+        include_bytes!("../../../spec/conformance/lint/139-pptx-template-binding/brand.potx");
+    const R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+    let attributes: String = (0..60_000).map(|i| format!(r#" r:l{i}="rIdX""#)).collect();
+    let picture = format!(
+        r#"<p:pic><p:nvPicPr><p:cNvPr id="90" name=""/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip{attributes}/></p:blipFill><p:spPr/></p:pic>"#
+    );
+    let link = format!(
+        r#"<Relationship Id="rIdX" Type="{R}/image" Target="https://tracker.example/x.png" TargetMode="External"/></Relationships>"#
+    );
+    let entries: Vec<(String, Vec<u8>)> = compyla_ooxml::read::entries(BRAND)
+        .unwrap()
+        .into_iter()
+        .map(|(name, data)| {
+            let text = String::from_utf8_lossy(&data);
+            let data = match name.as_str() {
+                "ppt/slideMasters/slideMaster1.xml" => text
+                    .replacen(
+                        "</p:spTree></p:cSld>",
+                        &format!("{picture}</p:spTree></p:cSld>"),
+                        1,
+                    )
+                    .into_bytes(),
+                "ppt/slideMasters/_rels/slideMaster1.xml.rels" => {
+                    text.replacen("</Relationships>", &link, 1).into_bytes()
+                }
+                _ => data,
+            };
+            (name, data)
+        })
+        .collect();
+    let options = compyla::Options {
+        format: Some(compyla::Format::Pptx),
+        template: Some(compyla_ooxml::zip::write(&entries)),
+        ..Default::default()
+    };
+    let start = Instant::now();
+    let result = compyla::convert("# A\n", &options, &compyla::no_assets).unwrap();
+    assert!(start.elapsed() < BOUND, "took {:?}", start.elapsed());
+    assert!(result.bytes.is_some());
+    assert_eq!(
+        result
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == "template_content_removed")
+            .count(),
+        1
+    );
+}
+
+#[test]
+#[cfg(feature = "pptx")]
 fn a_template_full_of_active_content_converts() {
     // Each linked picture and OLE object is found, removed and reported in one pass (§10.4); the
     // reports are capped like any others (§11.2).

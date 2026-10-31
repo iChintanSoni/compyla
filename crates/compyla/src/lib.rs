@@ -379,7 +379,7 @@ fn template(
         Ok(template) => template,
         Err(why) => {
             out.push(
-                Diagnostic::new("template_invalid", format!("The template {}.", why.0))
+                Diagnostic::new("template_invalid", format!("The template {}.", reason(&why.0)))
                     .hint("Use a .docx, .dotx, .pptx or .potx file saved by Office, without macros or a password."),
             );
             return Ok(None);
@@ -422,7 +422,12 @@ fn template(
         );
         return Ok(None);
     }
-    let invalid = |why: String| Diagnostic::new("template_invalid", format!("The template {why}."));
+    let invalid = |why: String| {
+        Diagnostic::new(
+            "template_invalid",
+            format!("The template {}.", reason(&why)),
+        )
+    };
     match compyla_ooxml::inspect::warnings(&template) {
         // Styles matter to docx output only (§10.4).
         Ok(warnings) => out.extend(
@@ -546,7 +551,7 @@ fn render(
                         "render_failed",
                         format!(
                             "The document couldn't be rendered: the template {}.",
-                            escaped(&why.0)
+                            reason(&why.0)
                         ),
                     ));
                     None
@@ -585,8 +590,11 @@ fn content_removed(part: &str, what: &compyla_ooxml::sanitize::Removed) -> Diagn
         Removed::ActiveX => format!(
             "An ActiveX control in the template's `{part}` was removed: output keeps no active content."
         ),
-        Removed::External { kind, target } if kind.eq_ignore_ascii_case("hyperlink") => format!(
-            "The template's `{part}` refers to `{}` through a hyperlink relationship but not from a hyperlink; it was removed: output keeps no external links but hyperlinks.",
+        Removed::AddIn => format!(
+            "An Office add-in in the template's `{part}` was removed: output keeps no active content."
+        ),
+        Removed::Misused { target } => format!(
+            "The template's `{part}` uses a hyperlink relationship to `{}` for something other than a hyperlink; it was removed: output keeps no external links but hyperlinks.",
             shown(target)
         ),
         Removed::External { kind, target } => format!(
@@ -607,23 +615,22 @@ fn content_removed(part: &str, what: &compyla_ooxml::sanitize::Removed) -> Diagn
         .hint("Remove it from the template, and this warning goes away.")
 }
 
-/// Text from a template, as a message shows it: at most 100 characters, escaped.
+/// A value from a template (a target, a type, an action, a part name), as a message shows it.
 #[cfg(feature = "pptx")]
 fn shown(text: &str) -> String {
-    const MOST: usize = 100;
-    let mut out = escaped(&text.chars().take(MOST).collect::<String>());
-    if text.chars().nth(MOST).is_some() {
-        out.push('…');
-    }
-    out
+    clipped(text, 100)
 }
 
-/// `text` with control and bidi formatting characters escaped, so a template's text can't write
-/// to a terminal or reorder a message's line.
-#[cfg(feature = "pptx")]
-fn escaped(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for c in text.chars() {
+/// Template text as a message shows it: at most `most` characters, with control and bidi
+/// formatting characters escaped, so a template can't write to a terminal or reorder a message's
+/// line (§10.4).
+fn clipped(text: &str, most: usize) -> String {
+    let mut out = String::with_capacity(text.len().min(most * 4));
+    for (count, c) in text.chars().enumerate() {
+        if count == most {
+            out.push('…');
+            break;
+        }
         let formatting = matches!(c, '\u{200E}' | '\u{200F}' | '\u{061C}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}');
         if c.is_control() || formatting {
             out.extend(c.escape_unicode());
@@ -632,6 +639,12 @@ fn escaped(text: &str) -> String {
         }
     }
     out
+}
+
+/// Why a template is unusable, as `template_invalid` and `render_failed` show it: the reason quotes
+/// the template's own text (part names, parser errors).
+fn reason(why: &str) -> String {
+    clipped(why, 300)
 }
 
 fn properties(meta: &serde_json::Map<String, serde_json::Value>) -> Properties {

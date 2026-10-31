@@ -1,8 +1,10 @@
 {
-  "description": "A supplied template whose kept parts hold active and external content (§10.4): the master's linked picture loses its link and keeps its hyperlink, a picture linked through a hyperlink relationship loses its link, and a hyperlink §4.5 refuses and an action that runs a program go while their shapes stay; the layout loses its embedded OLE object with its alternate, preview and animation, its linked OLE object, its ActiveX control and its legacy VML drawing (never parsed), so the embedded document, the control's parts and the drawing aren't in the package; external relationships nothing refers to are dropped from the presentation (one with its target mode in lower case) and the theme. One `template_content_removed` per object, action or other removed relationship.",
+  "description": "A supplied template whose kept parts hold active and external content (§10.4): the master's linked picture loses its link and keeps its hyperlink, a picture linked through a hyperlink relationship loses its link, and two hyperlinks §4.5 refuses (one behind a leading space, C59) and an action that runs a program go while their shapes stay; a layout loses its embedded OLE object with its alternate, preview and animation, its linked OLE object, its ActiveX control, its Office add-in and its legacy VML drawing (never parsed), so the embedded document, the control's parts, the add-in and the drawing aren't in the package; another layout, related to nothing but its master, loses an action that runs a macro; external relationships nothing refers to are dropped from the presentation (one with its target mode in lower case) and the theme. One `template_content_removed` per object, add-in, action or other removed relationship.",
   "spec": [
+    "§4.5",
     "§10.4",
-    "C58"
+    "C58",
+    "C59"
   ],
   "oracle": "none",
   "format": "pptx"

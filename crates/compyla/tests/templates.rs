@@ -313,3 +313,30 @@ fn a_templates_text_reaches_messages_escaped() {
         "{message}"
     );
 }
+
+#[test]
+fn an_invalid_templates_reason_is_escaped() {
+    // An entry name written to clear the screen and retitle the terminal (§10.4).
+    let mut entries: Vec<(String, Vec<u8>)> = compyla_ooxml::read::entries(BRAND).unwrap();
+    entries.push((
+        "ppt/\u{1b}]0;pwned\u{7}\u{1b}[2J.xml".into(),
+        b"<x/>".to_vec(),
+    ));
+    let template = compyla_ooxml::zip::write(&entries);
+    let diagnostics =
+        compyla::lint("# A\n", &pptx(Some(&template), &[]), &compyla::no_assets).unwrap();
+    let invalid = diagnostics
+        .iter()
+        .find(|d| d.code == "template_invalid")
+        .expect("the template is refused");
+    assert!(
+        !invalid.message.contains(['\u{1b}', '\u{7}']),
+        "{:?}",
+        invalid.message
+    );
+    assert!(
+        invalid.message.contains(r"\u{1b}]0;pwned\u{7}"),
+        "{}",
+        invalid.message
+    );
+}
