@@ -155,9 +155,12 @@ Goal: output that is faithful to a real corporate template, and identical bytes 
 - [ ] pdf via Typst with a theme derived from the template (D13)
 - [ ] Render conformance suite passing for all four formats. The Rust runner (`render_suite`) renders
       each fixture twice for byte identity and checks it with `render_check.py`; xlsx and pptx pass
-      (render/002, 003, 103–116), docx and pdf are pending
+      (render/002, 003, 103–118), docx and pdf are pending
 - [ ] `convert` locates render-stage diagnostics through the same `locate` renumbering as `lint`
-- [ ] Real-viewer verification in CI (test only, D4): OOXML schema validation + LibreOffice → PNG visual diffs
+- [ ] Real-viewer verification in CI (test only, D4): OOXML schema validation + LibreOffice → PNG visual diffs.
+      Done by hand on 2026-10-31 in PowerPoint and Excel for Mac: every pptx and xlsx render fixture
+      opens without a repair prompt and passes the apps' accessibility checks, after the fixes the
+      check found (C55)
 
 Exit criterion: a real corporate `.potx` and `.dotx` round-trip with masters, logos and headers/footers
 intact, rendered twice with identical bytes.

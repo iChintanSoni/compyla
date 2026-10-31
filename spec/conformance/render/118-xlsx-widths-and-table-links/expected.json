@@ -1,0 +1,67 @@
+{
+  "diagnostics": [],
+  "output": {
+    "sheets": [
+      {
+        "name": "Sales",
+        "cells": {
+          "B2": {
+            "value": 120000,
+            "type": "n",
+            "numFmt": "\"$\"#,##0.00"
+          },
+          "C2": {
+            "value": 46053,
+            "type": "n",
+            "numFmt": "yyyy-mm-dd"
+          },
+          "B4": {
+            "formula": "SUM(B2:B3)",
+            "numFmt": "\"$\"#,##0.00"
+          },
+          "A7": {
+            "value": "home",
+            "type": "s",
+            "numFmt": "@"
+          }
+        }
+      }
+    ],
+    "excelTables": [
+      {
+        "name": "links",
+        "ref": "A6:B7",
+        "style": "TableStyleMedium2"
+      }
+    ],
+    "package": {
+      "xpath": [
+        {
+          "part": "xl/worksheets/sheet1.xml",
+          "expr": "count(//x:cols/x:col[@min='1'])",
+          "equals": 0
+        },
+        {
+          "part": "xl/worksheets/sheet1.xml",
+          "expr": "string(//x:cols/x:col[@min='2' and @max='2' and @customWidth='1']/@width)",
+          "equals": "15"
+        },
+        {
+          "part": "xl/worksheets/sheet1.xml",
+          "expr": "string(//x:cols/x:col[@min='3']/@width)",
+          "equals": "12"
+        },
+        {
+          "part": "xl/styles.xml",
+          "expr": "count(//x:font[x:u][not(x:color)])",
+          "equals": 1
+        },
+        {
+          "part": "xl/styles.xml",
+          "expr": "count(//x:font[x:color])",
+          "equals": 0
+        }
+      ]
+    }
+  }
+}

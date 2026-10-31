@@ -38,6 +38,11 @@ fn attribute(xml: &str, from: usize, attribute: &str) -> Option<String> {
 
 /// Whether cell `address` of the first sheet is in a bold font.
 fn bold(bytes: &[u8], address: &str) -> bool {
+    font(bytes, address).starts_with("<b/>")
+}
+
+/// The `<font>` contents of cell `address` of the first sheet.
+fn font(bytes: &[u8], address: &str) -> String {
     let sheet = part(bytes, "xl/worksheets/sheet1.xml");
     let styles = part(bytes, "xl/styles.xml");
     let cell = sheet.find(&format!("<c r=\"{address}\"")).unwrap();
@@ -50,11 +55,8 @@ fn bold(bytes: &[u8], address: &str) -> bool {
         .unwrap();
     let font: usize = attribute(&styles, xf, "fontId").unwrap().parse().unwrap();
     let fonts = &styles[styles.find("<fonts").unwrap()..styles.find("</fonts>").unwrap()];
-    fonts
-        .split("<font>")
-        .nth(font + 1)
-        .unwrap()
-        .starts_with("<b/>")
+    let font = fonts.split("<font>").nth(font + 1).unwrap();
+    font[..font.find("</font>").unwrap()].to_string()
 }
 
 #[test]
@@ -73,4 +75,81 @@ fn rich_runs_carry_the_cells_font() {
         strings.contains("<r><rPr><rFont val=\"Calibri\"/><b/><i/><sz val=\"11\"/></rPr><t>b</t>"),
         "{strings}"
     );
+}
+
+#[test]
+fn a_link_in_an_excel_table_takes_the_tables_text_color() {
+    // The table's fills are designed for its own text color; the link color on them is hard to
+    // read (Excel's accessibility check). Outside a table, a link keeps the link color.
+    let bytes = render(
+        "# S\n\n::: table\n| A |\n|---|\n| [x](https://e.example) |\n| [**y** z](https://e.example) |\n:::\n\n\
+         | B |\n|---|\n| [w](https://e.example) |\n",
+    );
+    let inside = font(&bytes, "A2");
+    assert!(
+        inside.contains("<u/>") && !inside.contains("<color"),
+        "{inside}"
+    );
+    let outside = font(&bytes, "A6");
+    assert!(
+        outside.contains("<u/>") && outside.contains("<color"),
+        "{outside}"
+    );
+    let strings = part(&bytes, "xl/sharedStrings.xml");
+    assert!(
+        strings.contains("<r><rPr><rFont val=\"Calibri\"/><b/><sz val=\"11\"/><u/></rPr><t>y</t>"),
+        "{strings}"
+    );
+}
+
+#[test]
+fn columns_are_as_wide_as_what_they_show() {
+    let bytes = render(
+        "# S\n\n::: columns B:currency\n:::\n\n| Region | Revenue | When | Notes |\n|---|---|---|---|\n\
+         | APAC | 120000 | 2026-01-31 | short |\n| EMEA | 98000 | 2026-02-28 | 日本語のメモ |\n\
+         | Total | =SUM(B2:B3) | | |\n",
+    );
+    let sheet = part(&bytes, "xl/worksheets/sheet1.xml");
+    let cols = &sheet[sheet.find("<cols>").unwrap()..sheet.find("</cols>").unwrap()];
+    // Region needs no more than the default. Revenue: `$120,000.00` (11), and its total may grow
+    // by 2, plus 2 of padding. When: a date (10) plus padding. Notes: six wide characters.
+    assert_eq!(
+        cols,
+        "<cols><col min=\"2\" max=\"2\" width=\"15\" customWidth=\"1\"/>\
+         <col min=\"3\" max=\"3\" width=\"12\" customWidth=\"1\"/>\
+         <col min=\"4\" max=\"4\" width=\"14\" customWidth=\"1\"/>"
+    );
+    assert!(sheet.find("<cols>").unwrap() < sheet.find("<sheetData>").unwrap());
+}
+
+#[test]
+fn titles_widen_nothing_and_widths_stop_at_60() {
+    let long = "x".repeat(100);
+    let bytes = render(&format!(
+        "# S\n\n## A title much longer than any column it sits over\n\n| A |\n|---|\n| {long} |\n"
+    ));
+    let sheet = part(&bytes, "xl/worksheets/sheet1.xml");
+    assert!(
+        sheet.contains("<cols><col min=\"1\" max=\"1\" width=\"60\" customWidth=\"1\"/></cols>"),
+        "{sheet}"
+    );
+    let bytes = render(
+        "# S\n\n## A title much longer than any column it sits over\n\n| A |\n|---|\n| 1 |\n",
+    );
+    assert!(!part(&bytes, "xl/worksheets/sheet1.xml").contains("<cols>"));
+}
+
+#[test]
+fn text_that_reads_as_a_number_isnt_flagged() {
+    // Leading zeros and a `text` column keep numbers as text (§9.5); Excel would flag each one as
+    // a number stored as text, and offer to convert it.
+    let bytes = render(
+        "# S\n\n::: columns B:text\n:::\n\n| Code | Id | Name |\n|---|---|---|\n| 007 | 42 | Ana |\n| 1.5 | 7 | 12a |\n",
+    );
+    let sheet = part(&bytes, "xl/worksheets/sheet1.xml");
+    assert!(
+        sheet.contains("<ignoredErrors><ignoredError sqref=\"A2 B2 B3\" numberStoredAsText=\"1\"/></ignoredErrors>"),
+        "{sheet}"
+    );
+    assert!(sheet.find("<pageMargins").unwrap() < sheet.find("<ignoredErrors>").unwrap());
 }

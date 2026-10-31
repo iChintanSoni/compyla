@@ -1,0 +1,12 @@
+{
+  "description": "Shapes are written in reading order: by their areas' left edges, then top edges, so a caption beside a picture or a table is read after the title above it. A title on Blank is a title placeholder of its own. Both found by PowerPoint's accessibility check.",
+  "spec": [
+    "§8.8",
+    "C55"
+  ],
+  "oracle": "corrected",
+  "format": "pptx",
+  "assets": [
+    "chart.png"
+  ]
+}

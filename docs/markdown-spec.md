@@ -107,6 +107,7 @@ prototype.
 | C52 | From review of the pptx renderer: images over §12.1's limits are `limit_exceeded`, and unreadable ones `image_unsupported`; nested images and tables are `pptx_ignored_content`; numbering outside DrawingML's range is text; notes are plain; `lang` reaches the output (§5, §8.8, §12.1) | Unchecked, silent, or schema-invalid output | render/115, lint/136 |
 | C53 | Nothing a slide holds is dropped: content on a layout without slots goes into its first content placeholder or over the master's body area, and a title on Blank over the master's title area; EXIF orientation is honored, with the tag set to 1 in the image written; show and view settings naming removed slides are dropped (§8.6, §8.8) | Dropped content, sideways photos, a show of missing slides | render/116 |
 | C54 | xlsx leftovers: a cell's diagnostics carry its path; table names `TRUE`, `FALSE` and anything shaped like a cell reference are invalid; more than 65,530 hyperlinks on a sheet or 200 custom number formats in a workbook are `xlsx_limit_exceeded`; conformance compares `path` where the expectation has one; an empty Excel table stacked onto the last row is reported at the table (§9.6, §9.7, §11.3) | Row-level paths only; names and files Excel may reject or repair; a position no node has | lint/137, lint/138 |
+| C55 | From opening the output in PowerPoint and Excel: columns are as wide as what they display, so numbers and dates don't show as `####`; a link in an Excel table keeps the table's text color (contrast); text that reads as a number isn't flagged as a number stored as text; slide shapes are written in reading order; a title on Blank is a title placeholder (§8.8, §9.2, §9.5) | Unreadable numbers; accessibility checks failing on contrast, reading order and slide titles; error flags on intended text | render/104, render/116–118 |
 
 0.2 also corrects 0.1's *text* in one place where the prototype was right: `---` in xlsx is ignored
 without a diagnostic (§5).
@@ -748,17 +749,19 @@ larger than its placeholder produces `content_overflow` (warning, render stage).
 | `content_overflow` | warning | Render stage, §8.6 |
 | `font_unresolved` | warning | §3 |
 
-### 8.8 Rendering *(C51, C53)*
+### 8.8 Rendering *(C51, C53, C55)*
 
 Each slide is written into its bound layout (§8.5). The title goes into the layout's title
-placeholder; on a layout without one (Blank) it is a text box of its own over the master's title
-area. Slot `i` (§8.6) goes into the layout's `i`-th content placeholder, in shape order: any
+placeholder; on a layout without one (Blank) it is a title placeholder of its own, placed over the
+master's title area, so it is still the slide's title. *(C55)* Slot `i` (§8.6) goes into the layout's `i`-th content placeholder, in shape order: any
 placeholder but the title, date, footer, header and slide number. An empty slot's placeholder is
 left out. Content on a layout without slots (`layout_overflow`, §8.6) goes into the layout's first
 content placeholder if it has one (Section Header's text). Otherwise it is laid out over the
 master's body area with no placeholder: text shares one text box, and other content divides the
 area among its blocks in order, each a shape of its own. Where the master has no title or body
-placeholder, the 16:9 house areas apply. Placeholders carry no geometry or formatting of
+placeholder, the 16:9 house areas apply. Shapes are written in reading order: the title, then the
+slots' shapes, slots ordered by their areas' left edges and then their top edges, so a caption beside
+a picture or a table is read before it, after the title above it. *(C55)* Placeholders carry no geometry or formatting of
 their own except where their content needs it, so they inherit the layout's.
 
 - **Text** (a text block, code, a quote) shares one text body:
@@ -837,6 +840,19 @@ Each sheet keeps a stacking cursor, starting at row 1, column A. Tables are plac
    data row. In an Excel table (§9.6), the table's style formats the header instead. *(C48)*
 5. An unanchored table moves the cursor to *header row + data rows + 2* (one blank row between
    tables). An anchored table does not move the cursor.
+
+**Column widths.** A column is as wide as the widest header or data cell in it displays, in
+characters, plus 2 for padding, at most 60, and never narrower than Excel's default. *(C55)*
+- Text displays its longest line. Characters in U+1100–115F, U+2E80–303E, U+3041–33FF,
+  U+3400–4DBF, U+4E00–9FFF, U+A000–A4CF, U+AC00–D7A3, U+F900–FAFF, U+FE30–FE4F, U+FF00–FF60,
+  U+FFE0–FFE6 and U+20000–3FFFD (East Asian wide and fullwidth) count 2.
+- A number displays as its format writes it: sign, currency prefix, digits with thousands separators,
+  decimals, `%`. A `General` number displays as written, at most 11 characters, and a date 10.
+  A boolean counts 5.
+- A formula's result isn't known, but it can outgrow the rows it totals: a column with a formula is
+  at least as wide as its widest number plus 2.
+- An Excel table's header cell with a filter button counts 2 more. Range titles and notes, merged
+  across their range, widen nothing.
 
 The placed address of data cell (row *r*, column *c*), both 0-based, is column *firstColumn + c* and
 row *headerRow + 1 + r*. A table's **placed range** runs from its first row (title, note or header)
@@ -1034,10 +1050,14 @@ whatever `lang` is.
   cell produce `xlsx_ignored_content`, and only the first is kept.
 - Range titles and notes are written to cells, so this rule and the cell text limit (§9.7) apply to
   them too.
-- A cell with a hyperlink shows its text underlined, in the link color. A cell whose text has a line
-  break wraps its text. *(C48)*
+- A cell with a hyperlink shows its text underlined, in the link color, except in an Excel table,
+  where it keeps the table style's text color, which the style's fills contrast with. *(C55)* A cell
+  whose text has a line break wraps its text. *(C48)*
 - A number or boolean whose text is bold, italic or struck through keeps that emphasis as the cell's
   font. Rich text keeps the cell's own styling (a bold title, a link's underline) in every run.
+- A text cell whose text is a decimal number, optionally signed and with an exponent (`007`, a
+  `text` column's `42`), is text on purpose: it is marked so Excel doesn't flag it as a number stored
+  as text. *(C55)*
 - Text reads back exactly as written, including text that looks like a SpreadsheetML character
   escape (`_x0041_` is written as `_x005F_x0041_`), in cells, sheet names and table names. *(C49)*
 - Fragment links resolve against the slugs of the **repaired** sheet names (§9.6), and link to cell
