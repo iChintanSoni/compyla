@@ -1,0 +1,8 @@
+{
+  "diagnostics": [
+    {
+      "code": "xlsx_template_unsupported",
+      "severity": "warning"
+    }
+  ]
+}

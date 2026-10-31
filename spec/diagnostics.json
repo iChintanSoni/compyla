@@ -769,6 +769,13 @@
       "status": "active",
       "spec": "§10.6, §10.7",
       "summary": "IR input has an irVersion this implementation doesn't support."
+    },
+    {
+      "code": "option_invalid",
+      "since": "0.2",
+      "status": "active",
+      "spec": "§8.5, §10.2, §10.6",
+      "summary": "An option's value can't be used: a layoutAliases entry naming no layout of the supplied template, or layoutAliases without a supplied pptx template."
     }
   ]
 }

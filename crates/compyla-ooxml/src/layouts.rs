@@ -3,8 +3,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use compyla_ooxml::dom::{Element, MAIN_A, MAIN_P, REL_NS};
-use compyla_ooxml::template::{Invalid, Template};
+use crate::dom::{Element, MAIN_A, MAIN_P, REL_NS};
+use crate::template::{Invalid, Template};
 
 /// A rectangle in EMU.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -242,7 +242,7 @@ mod tests {
 
     #[test]
     fn geometry_is_held_to_the_schemas_bounds() {
-        let xfrm = compyla_ooxml::dom::parse(
+        let xfrm = crate::dom::parse(
             br#"<a:xfrm xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:off x="92233720368547758070" y="-9223372036854775808"/><a:ext cx="-5" cy="9223372036854775807"/></a:xfrm>"#,
         )
         .unwrap();

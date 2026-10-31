@@ -1,0 +1,9 @@
+{
+  "description": "A `template` in the frontmatter that can't be resolved is template_unresolved at the key: a brand template that can't be applied never silently becomes the house style (§10.3).",
+  "spec": [
+    "§10.3",
+    "C56"
+  ],
+  "oracle": "none",
+  "format": "pptx"
+}

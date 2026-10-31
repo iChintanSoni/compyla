@@ -1,0 +1,8 @@
+{
+  "diagnostics": [
+    {
+      "code": "template_invalid",
+      "severity": "error"
+    }
+  ]
+}

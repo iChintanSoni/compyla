@@ -11,7 +11,8 @@ use compyla::{Asset, Diagnostic, Format, Options, Severity};
 const USAGE: &str = "\
 usage: compyla parse <file.md>
        compyla lint <file> [--ir] [--format docx|pdf|pptx|xlsx] [--strict] [--json]
-       compyla convert <file> [--ir] [--format ...] [--strict] [--json] [-o <output>]
+                    [--template <file>] [--layout-alias <name>=<layout>]...
+       compyla convert <file> [lint's options] [-o <output>]
        compyla template inspect <template>
 
   parse     print the document's IR and parse diagnostics as JSON
@@ -22,6 +23,9 @@ usage: compyla parse <file.md>
   --ir       the input is IR JSON (markdown-spec.md §10.7) instead of markdown
   --strict   escalate every non-advisory warning to an error
   --json     print diagnostics as JSON instead of text
+  --template the template package to use; otherwise the frontmatter's `template`, resolved
+             against the input file's directory, else the house template
+  --layout-alias  bind a pptx layout name to a layout of the template (repeatable)
   -o         where convert writes its output";
 
 fn main() -> ExitCode {
@@ -95,6 +99,19 @@ fn arguments(args: &[String], output_allowed: bool) -> Result<Args, String> {
                     format!("format_unknown: `{name}` isn't docx, pdf, pptx or xlsx")
                 })?);
             }
+            "--template" => {
+                let path = args.next().ok_or("--template needs a path")?;
+                options.template = Some(read_template(Path::new(path))?);
+            }
+            "--layout-alias" => {
+                let alias = args.next().ok_or("--layout-alias needs <name>=<layout>")?;
+                let (name, layout) = alias
+                    .split_once('=')
+                    .ok_or("--layout-alias needs <name>=<layout>")?;
+                options
+                    .layout_aliases
+                    .push((name.trim().to_string(), layout.trim().to_string()));
+            }
             "-o" | "--output" if output_allowed => {
                 output = Some(PathBuf::from(args.next().ok_or("-o needs a path")?));
             }
@@ -122,11 +139,16 @@ fn lint(args: &[String]) -> Result<ExitCode, String> {
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_default();
-    let assets = move |src: &str| resolve_asset(&base, src);
+    let assets = |src: &str| resolve_asset(&base, src);
+    let templates = |reference: &str| read_template(&base.join(reference)).ok();
+    let resolvers = compyla::Resolvers {
+        assets: &assets,
+        templates: Some(&templates),
+    };
     let result = if args.ir {
-        compyla::lint_ir(&source, &args.options, &assets)
+        compyla::lint_ir(&source, &args.options, resolvers)
     } else {
-        compyla::lint(&source, &args.options, &assets)
+        compyla::lint(&source, &args.options, resolvers)
     };
     let diagnostics = result.map_err(|e| format!("{}: {}", e.code, e.message))?;
     report(&args, &diagnostics);
@@ -141,11 +163,16 @@ fn convert(args: &[String]) -> Result<ExitCode, String> {
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_default();
-    let assets = move |src: &str| resolve_asset(&base, src);
+    let assets = |src: &str| resolve_asset(&base, src);
+    let templates = |reference: &str| read_template(&base.join(reference)).ok();
+    let resolvers = compyla::Resolvers {
+        assets: &assets,
+        templates: Some(&templates),
+    };
     let result = if args.ir {
-        compyla::convert_ir(&source, &args.options, &assets)
+        compyla::convert_ir(&source, &args.options, resolvers)
     } else {
-        compyla::convert(&source, &args.options, &assets)
+        compyla::convert(&source, &args.options, resolvers)
     };
     let result = result.map_err(|e| format!("{}: {}", e.code, e.message))?;
     report(&args, &result.diagnostics);
@@ -193,15 +220,7 @@ fn report(args: &Args, diagnostics: &[Diagnostic]) {
 }
 
 fn inspect(file: &Path) -> Result<ExitCode, String> {
-    // Read no more than one byte past the size limit (§12.1): the report refuses larger packages,
-    // and a huge file shouldn't be read into memory to learn that.
-    use std::io::Read;
-    let limit = compyla::TEMPLATE_SIZE_LIMIT as u64 + 1;
-    let mut bytes = Vec::new();
-    std::fs::File::open(file)
-        .and_then(|f| f.take(limit).read_to_end(&mut bytes))
-        .map_err(|e| format!("can't read {}: {e}", file.display()))?;
-    let report = compyla::inspect_template(&bytes);
+    let report = compyla::inspect_template(&read_template(file)?);
     println!(
         "{}",
         serde_json::to_string_pretty(&report).expect("the report serializes")
@@ -212,6 +231,18 @@ fn inspect(file: &Path) -> Result<ExitCode, String> {
     } else {
         ExitCode::SUCCESS
     })
+}
+
+/// Reads a template package, no more than one byte past the size limit (§12.1): a larger package is
+/// refused anyway, and a huge file shouldn't be read into memory to learn that.
+fn read_template(path: &Path) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    let limit = compyla::TEMPLATE_SIZE_LIMIT as u64 + 1;
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)
+        .and_then(|f| f.take(limit).read_to_end(&mut bytes))
+        .map_err(|e| format!("can't read {}: {e}", path.display()))?;
+    Ok(bytes)
 }
 
 /// Reads the input as UTF-8 (markdown-spec.md §1.1); invalid bytes are the `input_not_utf8` error.

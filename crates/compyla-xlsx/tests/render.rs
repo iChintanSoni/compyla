@@ -8,6 +8,7 @@ fn render(source: &str) -> Vec<u8> {
         document: &parsed.document,
         sidecar: &parsed.sidecar,
         assets: &|_| compyla_core::Asset::Exists,
+        template: None,
     };
     let mut sink = compyla_core::diagnostic::Sink::new();
     let compyla_core::validate::Composed::Xlsx(workbook) =

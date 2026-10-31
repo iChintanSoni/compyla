@@ -13,6 +13,7 @@ fn lint_within_bound(
     let options = compyla::Options {
         format: Some(format),
         strict: false,
+        ..Default::default()
     };
     let start = Instant::now();
     let diagnostics = compyla::lint(source, &options, &compyla::no_assets).unwrap();
@@ -80,6 +81,7 @@ fn a_huge_ir_position_doesnt_overflow() {
     let options = compyla::Options {
         format: Some(compyla::Format::Xlsx),
         strict: false,
+        ..Default::default()
     };
     let diagnostics = compyla::lint_ir(&ir.to_string(), &options, &compyla::no_assets).unwrap();
     assert!(diagnostics.iter().any(|d| d.code == "formula_error"));
@@ -97,6 +99,7 @@ fn a_blocked_convert_reports_its_error_past_the_cap() {
     let options = compyla::Options {
         format: Some(compyla::Format::Xlsx),
         strict: false,
+        ..Default::default()
     };
     let result = compyla::convert(&source, &options, &compyla::no_assets).unwrap();
     assert!(result.bytes.is_none());
@@ -122,6 +125,7 @@ fn many_excel_tables_convert() {
     let options = compyla::Options {
         format: Some(compyla::Format::Xlsx),
         strict: false,
+        ..Default::default()
     };
     let start = Instant::now();
     let result = compyla::convert(&source, &options, &compyla::no_assets).unwrap();

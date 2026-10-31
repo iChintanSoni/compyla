@@ -1,0 +1,10 @@
+{
+  "description": "A deck can't use a docx template: template_invalid (§10.4).",
+  "spec": [
+    "§10.4",
+    "C56"
+  ],
+  "oracle": "none",
+  "format": "pptx",
+  "template": "brand.dotx"
+}

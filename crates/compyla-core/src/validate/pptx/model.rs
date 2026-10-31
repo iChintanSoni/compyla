@@ -21,6 +21,9 @@ pub struct Deck {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Slide {
     pub layout: Layout,
+    /// The supplied template's layout the slide is written into (§8.5), by its index in the
+    /// template's layouts; `None` with the house template, which the renderer binds itself.
+    pub template: Option<usize>,
     pub title: Option<Vec<Run>>,
     /// The content, slot by slot in the layout's order (§8.6). Content that fits no slot is in the
     /// last one; a layout without slots gets one slot for content it can't hold (§8.8).
@@ -68,6 +71,7 @@ pub(super) fn deck(composed: &[Composed<'_>], body: &[Block]) -> Deck {
         }
         slides.push(Slide {
             layout: composed.layout,
+            template: composed.bound.template,
             title: slide.title.map(|section| section.title.clone()),
             slots: slots(composed, &fits),
             notes: slide

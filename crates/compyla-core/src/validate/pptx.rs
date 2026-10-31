@@ -12,7 +12,7 @@ use std::ptr;
 
 use serde_json::{Value, json};
 
-use self::layout::{Layout, Measure, Misfit};
+use self::layout::{Bound, Layout, Measure, Misfit, TemplateLayouts};
 use self::slides::{Item, Slide};
 use super::{Input, Slugger, at, for_each_block, fragment_links, options, title};
 use crate::diagnostic::{Diagnostic, Sink};
@@ -36,9 +36,12 @@ pub fn validate(input: &Input<'_>, out: &mut Sink) -> model::Deck {
         }
     }
     let overflow = deck.overflow;
-    let composed = compose(deck.slides);
+    let composed = compose(deck.slides, input.template);
     for slide in &composed {
-        slide_rules(slide, &mut settled, out);
+        slide_rules(slide, input.template, &mut settled, out);
+    }
+    if let Some(template) = input.template {
+        not_in_template(&composed, template, out);
     }
     if let Some(position) = overflow {
         // §12.1: the rest of the document is not processed.
@@ -64,13 +67,13 @@ pub fn validate(input: &Input<'_>, out: &mut Sink) -> model::Deck {
 /// The compose summary (spec/conformance/compose.schema.json): slides with their titles, resolved
 /// layouts, notes, and content block types.
 pub fn summary(document: &Document) -> Value {
-    let slides: Vec<Value> = compose(slides::deck(&document.body).slides)
+    let slides: Vec<Value> = compose(slides::deck(&document.body).slides, None)
         .iter()
         .map(|composed| {
             let slide = &composed.slide;
             json!({
                 "title": slide.title.map(|section| title(&section.title)),
-                "layout": composed.layout.name(),
+                "layout": composed.bound.name,
                 "notes": slide.has_notes(),
                 "content": slide.content.iter().map(content_type).collect::<Vec<_>>(),
             })
@@ -110,6 +113,8 @@ struct Composed<'a> {
     slide: Slide<'a>,
     request: Request<'a>,
     layout: Layout,
+    /// The layout as bound to the template (§8.5).
+    bound: Bound,
     /// The content measured against `layout`: `col` markers count only when it has two or more
     /// content slots (§8.4).
     measure: Measure,
@@ -122,11 +127,11 @@ enum Request<'a> {
     Missing(&'a Directive),
     /// A name that doesn't resolve (§8.5), normalized.
     Unknown(&'a Directive, String),
-    Explicit(&'a Directive, Layout),
+    Explicit(&'a Directive, Bound),
 }
 
 impl<'a> Request<'a> {
-    fn of(slide: &Slide<'a>) -> Self {
+    fn of(slide: &Slide<'a>, template: Option<&TemplateLayouts>) -> Self {
         let Some(directive) = slide.layout else {
             return Request::None;
         };
@@ -134,24 +139,29 @@ impl<'a> Request<'a> {
         if name.is_empty() {
             return Request::Missing(directive);
         }
-        match Layout::resolve(&name) {
-            Some(layout) => Request::Explicit(directive, layout),
+        let bound = match template {
+            Some(template) => template.resolve(&name),
+            None => Layout::resolve(&name).map(Bound::house),
+        };
+        match bound {
+            Some(bound) => Request::Explicit(directive, bound),
             None => Request::Unknown(directive, name),
         }
     }
 }
 
 /// §8.3, in priority order: explicit; the title slide, when the content fits it; inferred. A name
-/// that is missing or doesn't resolve is selected as if there were no layout directive.
-fn compose(slides: Vec<Slide<'_>>) -> Vec<Composed<'_>> {
+/// that is missing or doesn't resolve is selected as if there were no layout directive. A selected
+/// house layout is bound to the template, if one is supplied (§8.5).
+fn compose<'a>(slides: Vec<Slide<'a>>, template: Option<&TemplateLayouts>) -> Vec<Composed<'a>> {
     let count = slides.len();
     slides
         .into_iter()
         .enumerate()
         .map(|(index, slide)| {
-            let request = Request::of(&slide);
-            let layout = match request {
-                Request::Explicit(_, layout) => layout,
+            let request = Request::of(&slide, template);
+            let bound = match &request {
+                Request::Explicit(_, bound) => bound.clone(),
                 _ => {
                     let written = Measure::new(&slide.content, true);
                     let title_slide = !matches!(request, Request::Explicit(..))
@@ -160,18 +170,24 @@ fn compose(slides: Vec<Slide<'_>>) -> Vec<Composed<'_>> {
                         && Layout::TitleSlide
                             .misfit(slide.title.is_some(), &written)
                             .is_none();
-                    if title_slide {
+                    let layout = if title_slide {
                         Layout::TitleSlide
                     } else {
                         Layout::infer(&written)
+                    };
+                    match template {
+                        Some(template) => template.bind(layout),
+                        None => Bound::house(layout),
                     }
                 }
             };
+            let layout = bound.layout;
             let measure = Measure::new(&slide.content, layout.slots() >= 2);
             Composed {
                 slide,
                 request,
                 layout,
+                bound,
                 measure,
             }
         })
@@ -183,7 +199,13 @@ fn compose(slides: Vec<Slide<'_>>) -> Vec<Composed<'_>> {
 
 /// A slide's own rules: its layout name, misplaced `col` markers, demoted headings and fit. A
 /// misplaced `layout` is entered by the slide walk (§8.1) and reported with the nested directives.
-fn slide_rules(composed: &Composed<'_>, settled: &mut HashSet<*const Directive>, out: &mut Sink) {
+fn slide_rules(
+    composed: &Composed<'_>,
+    template: Option<&TemplateLayouts>,
+    settled: &mut HashSet<*const Directive>,
+    out: &mut Sink,
+) {
+    let names = || template.map_or_else(layout::names, TemplateLayouts::names);
     let slide = &composed.slide;
     match &composed.request {
         Request::Missing(directive) => out.push(at(
@@ -191,7 +213,7 @@ fn slide_rules(composed: &Composed<'_>, settled: &mut HashSet<*const Directive>,
                 "invalid_directive_args",
                 "`::: layout` names no layout; the layout is inferred from the content instead.",
             )
-            .hint(format!("Name one of: {}.", layout::names())),
+            .hint(format!("Name one of: {}.", names())),
             line(directive.position),
         )),
         Request::Unknown(directive, name) => out.push(at(
@@ -199,7 +221,7 @@ fn slide_rules(composed: &Composed<'_>, settled: &mut HashSet<*const Directive>,
                 "unknown_layout",
                 format!(
                     "Unknown layout `{name}`; the layout is inferred from the content instead. Valid layouts: {}.",
-                    layout::names()
+                    names()
                 ),
             )
             .hint("Use one of the valid layout names."),
@@ -220,7 +242,7 @@ fn slide_rules(composed: &Composed<'_>, settled: &mut HashSet<*const Directive>,
                         col,
                         &format!(
                             "`col` has no effect in the {} layout, which has fewer than two content slots; it is ignored.",
-                            composed.layout.name()
+                            composed.bound.name
                         ),
                         "Use a layout with two content slots, such as `::: layout Two Content`, or remove the marker.",
                     ));
@@ -250,7 +272,7 @@ fn slide_rules(composed: &Composed<'_>, settled: &mut HashSet<*const Directive>,
         .layout
         .misfit(slide.title.is_some(), &composed.measure)
     {
-        let name = composed.layout.name();
+        let name = &composed.bound.name;
         let message = format!(
             "This slide's content doesn't fit the {name} layout, which holds {}.",
             composed.layout.capacity()
@@ -273,6 +295,29 @@ fn slide_rules(composed: &Composed<'_>, settled: &mut HashSet<*const Directive>,
                 }),
             ),
         });
+    }
+}
+
+/// §8.5: each house layout the template has no layout for, once, with the layout used instead.
+fn not_in_template(composed: &[Composed<'_>], template: &TemplateLayouts, out: &mut Sink) {
+    let mut reported = HashSet::new();
+    for composed in composed.iter().filter(|c| c.bound.fallback) {
+        if reported.insert(composed.bound.name.clone()) {
+            out.push(
+                Diagnostic::new(
+                    "layout_not_in_template",
+                    format!(
+                        "The template has no {} layout (by name or by type); its slides use the template's `{}` layout instead.",
+                        composed.bound.name,
+                        composed
+                            .bound
+                            .template
+                            .map_or("", |index| template.layouts[index].name.as_str()),
+                    ),
+                )
+                .hint("Add the layout to the template, or map the name to one of its layouts with `layoutAliases`."),
+            );
+        }
     }
 }
 
@@ -430,6 +475,7 @@ mod tests {
             document: &parsed.document,
             sidecar: &parsed.sidecar,
             assets: &|_| Asset::Exists,
+            template: None,
         };
         let mut out = crate::diagnostic::Sink::new();
         validate(&input, Format::Pptx, &mut out);

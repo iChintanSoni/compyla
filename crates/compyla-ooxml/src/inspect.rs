@@ -60,25 +60,53 @@ impl Fonts {
     }
 }
 
-fn report(template: &Template) -> Result<Value, Invalid> {
-    let mut issues = Vec::new();
-    let mut fonts = Fonts::default();
-    let main = template.main.clone();
-    let theme_part = match template.related(&main, "theme")? {
+/// The warnings a template earns wherever it is used (markdown-spec.md §10.4): `no_theme` without
+/// a theme part, and, for a docx template, `no_styles_xml` without a styles part.
+pub fn warnings(template: &Template) -> Result<Vec<Diagnostic>, Invalid> {
+    let mut out = Vec::new();
+    if theme(template)?.is_none() {
+        out.push(no_theme());
+    }
+    if template.kind == Kind::Docx && template.related(&template.main, "styles")?.is_none() {
+        out.push(no_styles_xml());
+    }
+    Ok(out)
+}
+
+/// The template's theme: the main part's, or a pptx's first slide master's.
+fn theme(template: &Template) -> Result<Option<Element>, Invalid> {
+    let part = match template.related(&template.main, "theme")? {
         Some(part) => Some(part),
-        // pptx: the theme hangs off the first slide master.
         None => match masters(template)?.first() {
             Some(master) => template.related(master, "theme")?,
             None => None,
         },
     };
-    let theme = match theme_part.as_deref().map(|p| template.xml(p)).transpose()? {
-        Some(Some(theme)) => theme_json(&theme, &mut fonts),
-        _ => {
-            issues.push(issue(Diagnostic::new(
-                "no_theme",
-                "The template has no theme part; default fonts and colors are used.",
-            )));
+    Ok(part.map(|p| template.xml(&p)).transpose()?.flatten())
+}
+
+fn no_theme() -> Diagnostic {
+    Diagnostic::new(
+        "no_theme",
+        "The template has no theme part; default fonts and colors are used.",
+    )
+}
+
+fn no_styles_xml() -> Diagnostic {
+    Diagnostic::new(
+        "no_styles_xml",
+        "The template has no styles part; the house styles are used.",
+    )
+}
+
+fn report(template: &Template) -> Result<Value, Invalid> {
+    let mut issues = Vec::new();
+    let mut fonts = Fonts::default();
+    let main = template.main.clone();
+    let theme = match theme(template)? {
+        Some(theme) => theme_json(&theme, &mut fonts),
+        None => {
+            issues.push(issue(no_theme()));
             json!({ "fonts": {}, "colors": {} })
         }
     };
@@ -214,10 +242,7 @@ fn docx(
                 }
             }
         }
-        None => issues.push(issue(Diagnostic::new(
-            "no_styles_xml",
-            "The template has no styles part; the house styles are used.",
-        ))),
+        None => issues.push(issue(no_styles_xml())),
     }
     if let Some(part) = template.related(main, "fontTable")?
         && let Some(table) = template.xml(&part)?

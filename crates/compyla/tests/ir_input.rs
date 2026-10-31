@@ -9,6 +9,7 @@ fn options() -> compyla::Options {
     compyla::Options {
         format: Some(compyla::Format::Docx),
         strict: false,
+        ..Default::default()
     }
 }
 
@@ -172,6 +173,7 @@ fn lint_ir(ir: &Value, format: compyla::Format) -> Vec<compyla::Diagnostic> {
     let options = compyla::Options {
         format: Some(format),
         strict: false,
+        ..Default::default()
     };
     compyla::lint_ir(&ir.to_string(), &options, &compyla::no_assets).unwrap()
 }

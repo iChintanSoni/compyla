@@ -3,6 +3,7 @@
 
 use super::slides::Item;
 use crate::ir::{Block, Position};
+use crate::validate::fold;
 
 /// A layout of the house set (§8.5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,6 +18,11 @@ pub enum Layout {
     ContentWithCaption,
     PictureWithCaption,
     Quote,
+    /// A supplied template's own layout, outside the house set (§8.5): one slot per content
+    /// placeholder, each holding one block (§8.6).
+    Own {
+        slots: usize,
+    },
 }
 
 impl Layout {
@@ -46,6 +52,8 @@ impl Layout {
             Layout::ContentWithCaption => "Content with Caption",
             Layout::PictureWithCaption => "Picture with Caption",
             Layout::Quote => "Quote",
+            // Named by the template: messages use the bound layout's name ([`Bound`]).
+            Layout::Own { .. } => "template",
         }
     }
 
@@ -58,6 +66,22 @@ impl Layout {
             .find(|layout| fold(layout.name()) == wanted)
     }
 
+    /// The OOXML layout type a house layout binds to in a template without its name (§8.5).
+    pub fn kind(self) -> Option<&'static str> {
+        match self {
+            Layout::TitleSlide => Some("title"),
+            Layout::TitleAndContent => Some("obj"),
+            Layout::SectionHeader => Some("secHead"),
+            Layout::TwoContent => Some("twoObj"),
+            Layout::Comparison => Some("twoTxTwoObj"),
+            Layout::TitleOnly => Some("titleOnly"),
+            Layout::Blank => Some("blank"),
+            Layout::ContentWithCaption => Some("objTx"),
+            Layout::PictureWithCaption => Some("picTx"),
+            Layout::Quote | Layout::Own { .. } => None,
+        }
+    }
+
     /// The number of content slots (§8.6). `col` is meaningful only with two or more (§8.4).
     pub fn slots(self) -> usize {
         match self {
@@ -65,20 +89,24 @@ impl Layout {
             Layout::TitleSlide | Layout::TitleAndContent | Layout::Quote => 1,
             Layout::TwoContent | Layout::ContentWithCaption | Layout::PictureWithCaption => 2,
             Layout::Comparison => 4,
+            Layout::Own { slots } => slots,
         }
     }
 
     /// What the layout holds, for messages.
-    pub fn capacity(self) -> &'static str {
+    pub fn capacity(self) -> String {
         match self {
-            Layout::TitleSlide => "a title and a subtitle of at most one text block",
-            Layout::SectionHeader | Layout::TitleOnly => "a title and no content",
-            Layout::Blank => "no title and no content",
-            Layout::TitleAndContent | Layout::Quote => "a title and one block",
-            Layout::TwoContent => "two blocks, or two columns of one block each",
-            Layout::Comparison => "two columns, each an optional heading text and one block",
-            Layout::ContentWithCaption => "one content block and one text caption",
-            Layout::PictureWithCaption => "one image and one text caption",
+            Layout::TitleSlide => "a title and a subtitle of at most one text block".into(),
+            Layout::SectionHeader | Layout::TitleOnly => "a title and no content".into(),
+            Layout::Blank => "no title and no content".into(),
+            Layout::TitleAndContent | Layout::Quote => "a title and one block".into(),
+            Layout::TwoContent => "two blocks, or two columns of one block each".into(),
+            Layout::Comparison => "two columns, each an optional heading text and one block".into(),
+            Layout::ContentWithCaption => "one content block and one text caption".into(),
+            Layout::PictureWithCaption => "one image and one text caption".into(),
+            Layout::Own { slots: 0 } => "a title and no content".into(),
+            Layout::Own { slots: 1 } => "a title and one block".into(),
+            Layout::Own { slots } => format!("a title and {slots} blocks, one per placeholder"),
         }
     }
 
@@ -124,6 +152,126 @@ impl Layout {
     }
 }
 
+/// A supplied template's layouts, as binding sees them (§8.5): in master order, each once.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TemplateLayouts {
+    pub layouts: Vec<TemplateLayout>,
+    /// `layoutAliases` (§10.2): each a layout name, and the index of the template layout it names.
+    pub aliases: Vec<(String, usize)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TemplateLayout {
+    pub name: String,
+    /// Its OOXML type (`p:sldLayout/@type`).
+    pub kind: Option<String>,
+    /// Its content placeholders (§8.8): any but the title, date, footer, header and slide number.
+    pub content: usize,
+}
+
+/// A layout as bound (§8.5): the slots it fills, the name messages give it, and the template
+/// layout it is written into (none with the house template).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Bound {
+    pub layout: Layout,
+    pub name: String,
+    pub template: Option<usize>,
+    /// Bound by the last fallback, the template having no layout for it (`layout_not_in_template`).
+    pub fallback: bool,
+}
+
+impl Bound {
+    /// A house layout with the house template.
+    pub fn house(layout: Layout) -> Bound {
+        Bound {
+            layout,
+            name: layout.name().into(),
+            template: None,
+            fallback: false,
+        }
+    }
+}
+
+impl TemplateLayouts {
+    /// A requested layout name (normalized) as bound (§8.5): an alias, a template layout's own
+    /// name, or a house-set name; `None` for any other name (`unknown_layout`).
+    pub fn resolve(&self, name: &str) -> Option<Bound> {
+        let wanted = fold(name);
+        let house = Layout::resolve(name);
+        if let Some(index) = self.alias(&wanted) {
+            return Some(self.bound(house, index, false));
+        }
+        if let Some(index) = self.layouts.iter().position(|l| fold(&l.name) == wanted) {
+            return Some(self.bound(house, index, false));
+        }
+        house.map(|layout| self.bind(layout))
+    }
+
+    /// A house layout as bound (§8.5): by alias, by name, by OOXML type, else the template's Title
+    /// and Content layout (type `obj`) or its first, as a fallback.
+    pub fn bind(&self, layout: Layout) -> Bound {
+        let wanted = fold(layout.name());
+        let of_kind = |kind: &str| {
+            self.layouts
+                .iter()
+                .position(|l| l.kind.as_deref() == Some(kind))
+        };
+        let found = self
+            .alias(&wanted)
+            .or_else(|| self.layouts.iter().position(|l| fold(&l.name) == wanted))
+            .or_else(|| layout.kind().and_then(of_kind));
+        match found {
+            Some(index) => self.bound(Some(layout), index, false),
+            None => self.bound(Some(layout), of_kind("obj").unwrap_or(0), true),
+        }
+    }
+
+    fn alias(&self, wanted: &str) -> Option<usize> {
+        self.aliases
+            .iter()
+            .find(|(alias, _)| fold(alias) == wanted)
+            .map(|&(_, index)| index)
+    }
+
+    /// The template layout at `index`, filled as `house` when the name is in the house set, and
+    /// otherwise as the template layout's own (§8.6).
+    fn bound(&self, house: Option<Layout>, index: usize, fallback: bool) -> Bound {
+        let template = &self.layouts[index];
+        match house {
+            Some(layout) => Bound {
+                layout,
+                name: layout.name().into(),
+                template: Some(index),
+                fallback,
+            },
+            None => Bound {
+                layout: Layout::Own {
+                    slots: template.content,
+                },
+                name: template.name.clone(),
+                template: Some(index),
+                fallback,
+            },
+        }
+    }
+
+    /// The valid layout names, for messages: the house set, then the template's own and aliases.
+    pub fn names(&self) -> String {
+        let mut names: Vec<&str> = Layout::HOUSE.iter().map(|l| l.name()).collect();
+        for name in self
+            .layouts
+            .iter()
+            .map(|l| l.name.as_str())
+            .chain(self.aliases.iter().map(|(a, _)| a.as_str()))
+        {
+            if !names.iter().any(|n| fold(n) == fold(name)) {
+                names.push(name);
+            }
+        }
+        names.join(", ")
+    }
+}
+
 /// `<name>` of `::: layout <name>`: the args, trimmed, internal whitespace collapsed (§8.3).
 pub fn normalize(args: &str) -> String {
     args.split_whitespace().collect::<Vec<_>>().join(" ")
@@ -132,16 +280,6 @@ pub fn normalize(args: &str) -> String {
 /// The valid layout names, for messages.
 pub fn names() -> String {
     Layout::HOUSE.map(Layout::name).join(", ")
-}
-
-/// Case folding for comparing names with the house set (§8.5). The house names are ASCII, so
-/// lowercasing plus the one non-ASCII letter whose simple case folding is an ASCII letter but
-/// whose lowercase isn't (U+017F, long s) matches exactly what simple case folding matches.
-fn fold(name: &str) -> String {
-    name.chars()
-        .flat_map(char::to_lowercase)
-        .map(|c| if c == '\u{17F}' { 's' } else { c })
-        .collect()
 }
 
 /// What doesn't fit a layout.
@@ -261,6 +399,7 @@ impl Fill {
         let text = block.kind == Kind::Text;
         match layout {
             Layout::SectionHeader | Layout::TitleOnly | Layout::Blank => false,
+            Layout::Own { slots } => self.count <= slots,
             Layout::TitleSlide => text && first(&mut self.text),
             Layout::TitleAndContent => self.count == 1,
             Layout::Quote => self.count == 1 && matches!(block.kind, Kind::Quote | Kind::Text),
@@ -294,4 +433,75 @@ impl Fill {
 /// True the first time, for a slot that holds one block.
 fn first(filled: &mut bool) -> bool {
     !std::mem::replace(filled, true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn template() -> TemplateLayouts {
+        let layout = |name: &str, kind: Option<&str>, content| TemplateLayout {
+            name: name.into(),
+            kind: kind.map(str::to_string),
+            content,
+        };
+        TemplateLayouts {
+            layouts: vec![
+                layout("Titelfolie", Some("title"), 1),
+                layout("Titel und Inhalt", Some("obj"), 1),
+                layout("Agenda", None, 3),
+                layout("Blank", Some("blank"), 0),
+            ],
+            aliases: vec![("Quote".into(), 2), ("Kunden".into(), 3)],
+        }
+    }
+
+    #[test]
+    fn house_layouts_bind_by_alias_name_type_then_fallback() {
+        let template = template();
+        let bound = |layout| {
+            let b = template.bind(layout);
+            (b.template, b.fallback)
+        };
+        assert_eq!(bound(Layout::Quote), (Some(2), false), "alias");
+        assert_eq!(bound(Layout::Blank), (Some(3), false), "name");
+        assert_eq!(bound(Layout::TitleSlide), (Some(0), false), "type");
+        assert_eq!(bound(Layout::Comparison), (Some(1), true), "fallback: obj");
+        // An aliased house name keeps its slots.
+        assert_eq!(template.bind(Layout::Quote).layout, Layout::Quote);
+    }
+
+    #[test]
+    fn names_resolve_to_the_templates_own_layouts() {
+        let template = template();
+        let agenda = template.resolve("agenda").unwrap();
+        assert_eq!(
+            (agenda.layout, agenda.name.as_str(), agenda.template),
+            (Layout::Own { slots: 3 }, "Agenda", Some(2))
+        );
+        // An alias to a template layout, under a name of its own.
+        assert_eq!(template.resolve("KUNDEN").unwrap().template, Some(3));
+        // U+212A KELVIN SIGN folds to `k`: "Blan\u{212A}" is Blank.
+        assert_eq!(template.resolve("Blan\u{212A}").unwrap().template, Some(3));
+        assert_eq!(template.resolve("Fancy"), None);
+        assert!(
+            template
+                .names()
+                .ends_with("Quote, Titelfolie, Titel und Inhalt, Agenda, Kunden")
+        );
+    }
+
+    #[test]
+    fn a_template_without_obj_falls_back_to_its_first_layout() {
+        let template = TemplateLayouts {
+            layouts: vec![TemplateLayout {
+                name: "Only".into(),
+                kind: None,
+                content: 2,
+            }],
+            aliases: Vec::new(),
+        };
+        let bound = template.bind(Layout::TwoContent);
+        assert_eq!((bound.template, bound.fallback), (Some(0), true));
+    }
 }

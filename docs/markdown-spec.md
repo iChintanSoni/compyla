@@ -108,6 +108,7 @@ prototype.
 | C53 | Nothing a slide holds is dropped: content on a layout without slots goes into its first content placeholder or over the master's body area, and a title on Blank over the master's title area; EXIF orientation is honored, with the tag set to 1 in the image written; show and view settings naming removed slides are dropped (§8.6, §8.8) | Dropped content, sideways photos, a show of missing slides | render/116 |
 | C54 | xlsx leftovers: a cell's diagnostics carry its path; table names `TRUE`, `FALSE` and anything shaped like a cell reference are invalid; more than 65,530 hyperlinks on a sheet or 200 custom number formats in a workbook are `xlsx_limit_exceeded`; conformance compares `path` where the expectation has one; an empty Excel table stacked onto the last row is reported at the table (§9.6, §9.7, §11.3) | Row-level paths only; names and files Excel may reject or repair; a position no node has | lint/137, lint/138 |
 | C55 | From opening the output in PowerPoint and Excel: columns are as wide as what they display, so numbers and dates don't show as `####`; a link in an Excel table keeps the table's text color (contrast); text that reads as a number isn't flagged as a number stored as text; slide shapes are written in reading order; a title on Blank is a title placeholder (§8.8, §9.2, §9.5) | Unreadable numbers; accessibility checks failing on contrast, reading order and slide titles; error flags on intended text | render/104, render/116–118 |
+| C56 | Supplied pptx templates: the `template` option and `meta.template` through the resolver, with `template_unresolved`, `template_invalid`, `no_theme` and `xlsx_template_unsupported`; layout binding by alias, name and type, with `layout_not_in_template` once per layout; a template's own layouts; `layoutAliases` checked (`option_invalid`); slots past a bound layout's placeholders share its last (§8.5, §8.6, §8.8, §10.2, §10.6) | Templates not used; aliases unchecked; content drawn over a placeholder | lint/139–143, render/119 |
 
 0.2 also corrects 0.1's *text* in one place where the prototype was right: `---` in xlsx is ignored
 without a diagnostic (§5).
@@ -686,7 +687,7 @@ The **house set** is the standard Office layout set plus Quote: `Title Slide`, `
 `Picture with Caption`, `Quote`. The house template is 16:9.
 
 A layout name resolves, in order, to:
-1. an explicit alias (`layoutAliases`, §10.2) naming a template layout;
+1. an explicit alias (`layoutAliases`, §10.2) naming a template layout. *(C56)*
 2. a template layout with the same name (compared after Unicode simple case folding; on duplicates
    across masters, the first in master order wins);
 3. for a house-set name, the template's first layout whose OOXML type (`p:sldLayout/@type`) matches:
@@ -695,7 +696,12 @@ A layout name resolves, in order, to:
    with Caption), `picTx` (Picture with Caption). This binds localized templates
    ("Titel und Inhalt");
 4. otherwise, for a house-set name, the template's Title and Content layout (type `obj`), else its
-   first layout, with `layout_not_in_template` (warning). No second master is imported.
+   first layout, with `layout_not_in_template` (warning, once per house layout, naming the layout
+   used). No second master is imported.
+
+Inferred layouts (§8.3) are house-set names, and bind the same way. A house-set name keeps its slots
+(§8.6) whatever template layout it binds to; any other name (an alias or the template's own) fills
+the template layout as its own. Names compare after Unicode simple case folding. *(C56)*
 
 Without a template, every house-set name binds to the house template. With a template, the valid
 names are the house set plus the template's own layout names and aliases. A name outside these
@@ -722,8 +728,8 @@ Content is measured in **blocks**:
 | Picture with Caption | picture (media), caption (text) | At most one media block and at most one text block, in either order |
 | Quote | quote (quote or text) | At most one block, which is a quote or a text block |
 
-A template layout outside the house set provides one slot per content placeholder (types `body`,
-`obj`, `pic`, `tbl`, `chart`, `media`, in placeholder order), each holding one block.
+A template layout outside the house set provides one slot per content placeholder (§8.8), in
+placeholder order, each holding one block. *(C56)*
 
 Content that doesn't fit produces `layout_overflow` (warning) against the **resolved** layout,
 explicit or inferred. With an explicit layout it is positioned at the layout directive; otherwise at
@@ -755,8 +761,11 @@ Each slide is written into its bound layout (§8.5). The title goes into the lay
 placeholder; on a layout without one (Blank) it is a title placeholder of its own, placed over the
 master's title area, so it is still the slide's title. *(C55)* Slot `i` (§8.6) goes into the layout's `i`-th content placeholder, in shape order: any
 placeholder but the title, date, footer, header and slide number. An empty slot's placeholder is
-left out. Content on a layout without slots (`layout_overflow`, §8.6) goes into the layout's first
-content placeholder if it has one (Section Header's text). Otherwise it is laid out over the
+left out. A slot past the bound layout's last content placeholder (a layout bound by fallback can
+have fewer placeholders than the house layout has slots, §8.5) shares that placeholder, as several
+blocks in one slot (below), rather than overlap it. *(C56)* Content on a layout without slots
+(`layout_overflow`, §8.6) goes into the layout's first content placeholder if it has one (Section
+Header's text). Otherwise it is laid out over the
 master's body area with no placeholder: text shares one text box, and other content divides the
 area among its blocks in order, each a shape of its own. Where the master has no title or body
 placeholder, the 16:9 house areas apply. Shapes are written in reading order: the title, then the
@@ -1155,7 +1164,7 @@ no input may make an operation crash or hang (§12.1).
 | `format` | `docx` \| `pdf` \| `pptx` \| `xlsx` | `meta.format` | Target format. Precedence: this option, then `meta.format`, else the operation error `format_missing` |
 | `strict` | boolean | `false` | Escalation (§11.1) |
 | `template` | bytes | — | Template package. Precedence: this option, then `meta.template` through the template resolver, then the house template |
-| `layoutAliases` | map: layout name → template layout name | `{}` | pptx layout binding (§8.5) |
+| `layoutAliases` | map: layout name → template layout name | `{}` | pptx layout binding (§8.5): each maps a name, a house-set name or a new one, to a layout of the supplied template. A target that names none of its layouts, or aliases without a supplied pptx template, is `option_invalid` *(C56)* |
 
 ### 10.3 Resolvers *(C41)*
 
@@ -1246,6 +1255,7 @@ Operation errors have stable codes, registered under `operationErrors` in `spec/
 | `renderer_unavailable` | This build doesn't include the requested renderer (e.g. the core-only WASM build) |
 | `ir_invalid` | IR input fails `spec/ir.schema.json` or an IR invariant (§10.7); the error carries the JSON Pointer of the first failure |
 | `ir_version_unsupported` | IR input has an `irVersion` this implementation doesn't support |
+| `option_invalid` | An option's value can't be used: a `layoutAliases` entry (§10.2) *(C56)* |
 
 ### 10.7 IR input
 

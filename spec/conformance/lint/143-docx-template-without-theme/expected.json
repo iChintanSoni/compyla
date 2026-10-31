@@ -1,0 +1,12 @@
+{
+  "diagnostics": [
+    {
+      "code": "no_styles_xml",
+      "severity": "warning"
+    },
+    {
+      "code": "no_theme",
+      "severity": "warning"
+    }
+  ]
+}

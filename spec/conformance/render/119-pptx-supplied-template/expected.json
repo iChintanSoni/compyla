@@ -1,0 +1,68 @@
+{
+  "diagnostics": [
+    {
+      "code": "layout_not_in_template",
+      "severity": "warning"
+    }
+  ],
+  "output": {
+    "slides": [
+      {
+        "layout": "Title Slide",
+        "title": "Brand deck",
+        "texts": [],
+        "notes": null
+      },
+      {
+        "layout": "Titel und Inhalt",
+        "title": "Agenda",
+        "texts": [
+          "One",
+          "Two"
+        ],
+        "notes": null
+      },
+      {
+        "layout": "Titel und Inhalt",
+        "title": "Inferred",
+        "texts": [
+          "A paragraph, inferred as Title and Content and bound by type."
+        ],
+        "notes": null
+      },
+      {
+        "layout": "Titel und Inhalt",
+        "title": "Two columns",
+        "texts": [
+          "Left",
+          "Right"
+        ],
+        "notes": null
+      }
+    ],
+    "package": {
+      "partsPresent": [
+        "ppt/fonts/font1.fntdata",
+        "ppt/slideLayouts/slideLayout2.xml",
+        "ppt/theme/theme1.xml"
+      ],
+      "xpath": [
+        {
+          "part": "ppt/slides/slide4.xml",
+          "expr": "count(//p:sp[p:nvSpPr/p:nvPr/p:ph[@idx='1']])",
+          "equals": 1
+        },
+        {
+          "part": "ppt/slides/slide4.xml",
+          "expr": "count(//p:sp[not(p:nvSpPr/p:nvPr/p:ph)])",
+          "equals": 0
+        },
+        {
+          "part": "ppt/presentation.xml",
+          "expr": "count(//p:sldIdLst/p:sldId)",
+          "equals": 4
+        }
+      ]
+    }
+  }
+}
