@@ -23,7 +23,7 @@ mod walk;
 use serde_json::{Map, Value, json};
 
 pub use compose::compose;
-pub use values::ColumnType;
+pub use values::{ColumnType, builtin_format};
 
 use super::{Input, Slugger, fragment_links};
 use crate::diagnostic::Sink;
@@ -405,6 +405,29 @@ mod tests {
             diagnostics.len(),
             1,
             "only the empty sheet name: {diagnostics:?}"
+        );
+    }
+
+    #[test]
+    fn hyperlinks_are_counted_per_sheet() {
+        // Sheet A's 65,530 links fit. Sheet B, counted on its own, passes the limit at its 65,531st.
+        let sheet = |name: &str, links: usize| {
+            let mut sheet = format!("# {name}\n\n| L |\n|---|\n");
+            for _ in 0..links {
+                sheet.push_str("| [x](https://e.example) |\n");
+            }
+            sheet.push('\n');
+            sheet
+        };
+        let source = format!("{}{}", sheet("A", 65_530), sheet("B", 65_531));
+        let limits: Vec<_> = lint(&source)
+            .into_iter()
+            .filter(|(code, _)| code == "xlsx_limit_exceeded")
+            .collect();
+        // B's header is on line 65,538, so its 65,531st data row is on line 65,538 + 2 + 65,530.
+        assert_eq!(
+            limits,
+            diagnostics(&[("xlsx_limit_exceeded", 65_538 + 2 + 65_530)])
         );
     }
 

@@ -1,0 +1,32 @@
+{
+  "diagnostics": [
+    {
+      "code": "invalid_directive_args",
+      "severity": "warning",
+      "line": 3
+    },
+    {
+      "code": "xlsx_ignored_content",
+      "severity": "warning",
+      "line": 6,
+      "path": "/body/0/children/1/header/0"
+    },
+    {
+      "code": "formula_error",
+      "severity": "warning",
+      "line": 8,
+      "path": "/body/0/children/1/rows/0/1"
+    },
+    {
+      "code": "invalid_directive_args",
+      "severity": "warning",
+      "line": 10
+    },
+    {
+      "code": "xlsx_limit_exceeded",
+      "severity": "error",
+      "line": 24,
+      "path": "/body/1/children/1/rows/0/200"
+    }
+  ]
+}

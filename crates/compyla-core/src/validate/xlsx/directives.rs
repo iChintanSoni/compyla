@@ -159,7 +159,7 @@ fn table(directive: &Directive, out: &mut Sink) -> TableOptions {
                     "`name={}` isn't a valid Excel table name; the table gets an automatic name.",
                     value.unwrap_or_default()
                 ),
-                "Start with a letter or `_`, use only letters, digits, `_` and `.`, and don't use a cell reference such as `A1`.",
+                "Start with a letter or `_`, use only letters, digits, `_` and `.`, and avoid `TRUE`, `FALSE` and anything shaped like a cell reference, such as `A1` or `XFE1`.",
             ),
             ("style", Some(style)) if style.eq_ignore_ascii_case("striped") => {
                 result.style = TableStyle::Striped;

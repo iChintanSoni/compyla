@@ -1,0 +1,11 @@
+{
+  "description": "Cell diagnostics carry the cell's path, a header cell's under header/ (§11.3, §9.7). Table names TRUE, FALSE and anything shaped like a cell reference, even past the grid, are invalid (§9.6). A workbook's 201st custom number format is xlsx_limit_exceeded, at the cell that needs it (§9.7).",
+  "spec": [
+    "§9.6",
+    "§9.7",
+    "§11.3",
+    "C54"
+  ],
+  "oracle": "corrected",
+  "format": "xlsx"
+}

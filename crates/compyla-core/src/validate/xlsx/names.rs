@@ -3,7 +3,6 @@
 use std::collections::{HashMap, HashSet};
 
 use super::excerpt;
-use super::grid::CellRef;
 use crate::diagnostic::{Diagnostic, Sink};
 use crate::validate::at;
 
@@ -98,8 +97,9 @@ pub fn sheet_name(
     name
 }
 
-/// A valid Excel table name: `[A-Za-z_\\][A-Za-z0-9_.]*`, at most 255 characters, not a cell
-/// reference, and not `R`, `C` or an R1C1 reference.
+/// A valid Excel table name: `[A-Za-z_\\][A-Za-z0-9_.]*`, at most 255 characters, not `TRUE` or
+/// `FALSE`, not shaped like a cell reference (one to three letters and digits, inside the grid or
+/// not), and not `R`, `C` or an R1C1 reference.
 pub fn valid_table_name(name: &str) -> bool {
     let mut chars = name.chars();
     let Some(first) = chars.next() else {
@@ -108,8 +108,17 @@ pub fn valid_table_name(name: &str) -> bool {
     (first.is_ascii_alphabetic() || first == '_' || first == '\\')
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
         && name.len() <= 255
-        && CellRef::parse(name).is_none()
+        && !name.eq_ignore_ascii_case("TRUE")
+        && !name.eq_ignore_ascii_case("FALSE")
+        && !is_cell_shaped(name)
         && !is_r1c1(name)
+}
+
+/// One to three letters, then one or more digits: a cell reference, or one past the grid's edge.
+fn is_cell_shaped(name: &str) -> bool {
+    let letters = name.bytes().take_while(u8::is_ascii_alphabetic).count();
+    let digits = &name[letters..];
+    (1..=3).contains(&letters) && !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
 }
 
 /// `R`, `C`, `R[0-9]*C[0-9]*`, `R[0-9]+` or `C[0-9]+`, in any case.
@@ -296,12 +305,34 @@ mod tests {
 
     #[test]
     fn table_names() {
-        for valid in ["sales_q3", "_x", "\\x", "Table1.a", "RCC", "R1C1x", "XFE1"] {
+        for valid in [
+            "sales_q3", "_x", "\\x", "Table1.a", "RCC", "R1C1x", "Table1", "TRUEx", "ABCD1",
+        ] {
             assert!(valid_table_name(valid), "{valid}");
         }
         for invalid in [
-            "", "A1", "a1", "XFD1", "R", "c", "R1", "C12", "RC", "R1C", "RC1", "r1c1", "1x", "x y",
-            "x-y", ".x",
+            "",
+            "A1",
+            "a1",
+            "XFD1",
+            "XFE1",
+            "ZZZ9",
+            "A0",
+            "abc1048577",
+            "TRUE",
+            "false",
+            "R",
+            "c",
+            "R1",
+            "C12",
+            "RC",
+            "R1C",
+            "RC1",
+            "r1c1",
+            "1x",
+            "x y",
+            "x-y",
+            ".x",
         ] {
             assert!(!valid_table_name(invalid), "{invalid}");
         }
