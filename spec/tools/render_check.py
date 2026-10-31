@@ -66,15 +66,18 @@ def core_properties(package):
 
 
 def run_text(element):
+    """Text of the runs under an element: w:t, w:tab and line-break w:br inside w:r only, so tab-stop
+    definitions in w:pPr/w:tabs never count."""
     parts = []
-    for node in element.iter():
-        tag = etree.QName(node).localname
-        if tag == "t":
-            parts.append(node.text or "")
-        elif tag == "tab":
-            parts.append("\t")
-        elif tag == "br" and node.get(f"{{{NS['w']}}}type") not in ("page", "column"):
-            parts.append("\n")
+    for run in element.iter(f"{{{NS['w']}}}r"):
+        for node in run:
+            tag = etree.QName(node).localname
+            if tag == "t":
+                parts.append(node.text or "")
+            elif tag == "tab":
+                parts.append("\t")
+            elif tag == "br" and node.get(f"{{{NS['w']}}}type") not in ("page", "column"):
+                parts.append("\n")
     return "".join(parts)
 
 
@@ -130,7 +133,20 @@ def project_docx(package):
 
 
 def shape_paragraphs(shape):
-    return [t for t in ("".join(r.text or "" for r in p.iter(f"{{{NS['a']}}}t")) for p in shape.iter(f"{{{NS['a']}}}p")) if t.strip()]
+    """Non-empty paragraph texts; a:br inside a paragraph is a line break."""
+    out = []
+    for paragraph in shape.iter(f"{{{NS['a']}}}p"):
+        parts = []
+        for node in paragraph:
+            tag = etree.QName(node).localname
+            if tag in ("r", "fld"):
+                parts.extend(t.text or "" for t in node.iter(f"{{{NS['a']}}}t"))
+            elif tag == "br":
+                parts.append("\n")
+        text = "".join(parts)
+        if text.strip():
+            out.append(text)
+    return out
 
 
 def project_pptx(package):
@@ -153,7 +169,8 @@ def project_pptx(package):
                 text = "\n".join(t for s in body for t in shape_paragraphs(s))
                 notes = text or None
         title, texts = None, []
-        for shape in slide.iter(f"{{{NS['p']}}}sp"):
+        # Shapes and graphic frames (tables) in shape-tree order, including inside groups.
+        for shape in slide.iter(f"{{{NS['p']}}}sp", f"{{{NS['p']}}}graphicFrame"):
             placeholder = shape.find(".//p:nvPr/p:ph", NS)
             kind = placeholder.get("type") if placeholder is not None else None
             lines = shape_paragraphs(shape)
@@ -161,8 +178,6 @@ def project_pptx(package):
                 title = "\n".join(lines) or None
             elif kind not in ("sldNum", "dt", "ftr"):
                 texts.extend(lines)
-        for frame in slide.iter(f"{{{NS['p']}}}graphicFrame"):
-            texts.extend(shape_paragraphs(frame))
         slides.append({"layout": layout, "title": title, "texts": texts, "notes": notes})
     return {"slides": slides, "properties": core_properties(package)}
 
@@ -317,10 +332,11 @@ def compare(fmt, want, got, problems):
 def subsequence_text(fragments, text):
     position = 0
     for fragment in fragments:
-        found = text.find(" ".join(fragment.split()), position)
+        normalized = " ".join(fragment.split())
+        found = text.find(normalized, position)
         if found < 0:
             return False
-        position = found + len(fragment)
+        position = found + len(normalized)
     return True
 
 

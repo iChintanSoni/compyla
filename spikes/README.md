@@ -19,31 +19,36 @@ and the Python host).
 
 | Platform | Check 1 | Check 2 | Check 3 |
 |----------|---------|---------|---------|
-| macOS arm64 (Rust 1.97.1, Node 24) | ✅ 39/39 fixtures | ✅ | ✅ Node, Python, WASM |
-| Linux arm64, Debian 13 (Rust 1.99.1, Node 20) | ✅ 39/39 fixtures | ✅ | ✅ Node, Python, WASM |
-| Linux x64, Linux arm64, macOS, Windows | CI (`toolchain-checks.yml`) | CI | CI |
+| macOS arm64 (Rust 1.97.1, Node 24) | ✅ 44/44 fixtures | ✅ | ✅ Node, Python, WASM |
+| Linux arm64, Debian 13 (Rust 1.99.1, Node 20), before the review fixes | ✅ 39/39 fixtures | ✅ | ✅ Node, Python, WASM |
+| CI: Ubuntu 24.04 x64 and arm64, macOS, Windows (`toolchain-checks.yml`) | ✅ | ✅ | ✅ |
 
 ## Check 1: comrak reproduces the parse suite's positions (D10, markdown-spec.md §1.3, §4)
 
 `comrak-positions` implements the directive pre-pass (§1.3) and the structural part of the IR mapping
 on top of `comrak` 0.59. Against every fixture in `spec/conformance/parse/`, it compares:
-- the position of every IR block node (120 nodes)
+- the position of every IR block node (128 nodes)
 - every table cell's `raw` text (34 cells)
-- every link destination, including references resolved across directive bodies (12)
-- every position-bearing parse diagnostic (19)
+- every link destination, including references resolved across directive bodies (13)
+- every position-bearing parse diagnostic (21)
 
-All 39 fixtures match.
+All 44 fixtures match.
 
 Findings that shape Phase B:
 - **Columns.** With `parse.sourcepos_chars`, comrak reports columns in Unicode scalar values, which is
   the spec's unit, so no conversion is needed.
-- **Directive bodies keep absolute positions.** Each container (the document, or a directive body) is
-  parsed from a text of the same length as the source: its own lines kept, everything else blank. Each
-  child directive's opener becomes a one-line HTML comment placeholder. An HTML comment interrupts a
-  paragraph and ends on its own line, which is exactly §1.3 rule 7, so no offset arithmetic is needed.
-- **Document-wide link references** (§4.5) work through comrak's `broken_link_callback`, in two passes:
-  collect the labels each container can't resolve, then resolve them against the whole document. That
-  reuses comrak's own definition parsing, and the first definition wins.
+- **Directive bodies: segments, not placeholders.** The pre-pass splits every container (the
+  document, or a directive body) into segments at directive boundaries. Each segment is parsed on its
+  own, and its positions are offset back to absolute lines. No markdown block can cross a directive,
+  which is §1.3 rule 7 by construction: a preceding HTML block or paragraph can't swallow a directive.
+  Total parsing work stays linear in the document size. A first design replaced openers with HTML
+  comment placeholders; code review showed an open HTML block swallows those, and that crafted
+  comments could imitate them (fixtures parse/128 and parse/015 guard both).
+- **Document-wide link references** (§4.5): one comrak parse of the whole document, with directive
+  fence lines blanked, resolves every reference by CommonMark's own rules, so the first definition in
+  document order wins everywhere. Segment parses take each link's destination from it by position.
+  For references defined in another segment, a `broken_link_callback` looks up the label in that same
+  parse (fixture parse/129).
 - **Table `raw`** is re-split from the source rows (§4.6), because a parser's table tree normalizes
   cell counts.
 - **One spec change:** comrak places an indented code block at its first content character, while

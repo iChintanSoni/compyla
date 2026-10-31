@@ -1,0 +1,10 @@
+{
+  "description": "An image wrapped in ::: image counts as a media block, so the slide infers Picture with Caption.",
+  "spec": [
+    "\u00a78.1",
+    "\u00a78.6",
+    "C38"
+  ],
+  "oracle": "corrected",
+  "format": "pptx"
+}

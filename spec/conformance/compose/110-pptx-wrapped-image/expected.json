@@ -1,0 +1,13 @@
+{
+  "format": "pptx",
+  "slides": [
+    {
+      "title": "Map",
+      "layout": "Picture with Caption",
+      "notes": false,
+      "content": [
+        "media"
+      ]
+    }
+  ]
+}

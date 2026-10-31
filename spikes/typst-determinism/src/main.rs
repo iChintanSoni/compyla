@@ -137,16 +137,22 @@ fn join(errors: &[typst::diag::SourceDiagnostic]) -> String {
     errors.iter().filter(|e| e.severity == Severity::Error).map(|e| e.message.to_string()).collect::<Vec<_>>().join("; ")
 }
 
-/// A document that tries to escape the sandbox must fail to compile.
-fn expect_blocked(label: &str, main: &str) -> bool {
+/// A document that tries to escape the sandbox must fail, and fail *because of the sandbox*: the
+/// error must be the World's own denial, not an unrelated failure (such as the file not existing on
+/// this host), so a sandbox regression can't pass.
+fn expect_blocked(label: &str, main: &str, denial: &str) -> bool {
     match render(&SandboxWorld::new(main, "")) {
         Ok(_) => {
             eprintln!("FAIL sandbox: {label} compiled");
             false
         }
-        Err(error) => {
+        Err(error) if error.contains(denial) => {
             eprintln!("ok   sandbox: {label} blocked ({error})");
             true
+        }
+        Err(error) => {
+            eprintln!("FAIL sandbox: {label} failed, but not through the sandbox ({error})");
+            false
         }
     }
 }
@@ -185,10 +191,10 @@ fn main() -> ExitCode {
         eprintln!("ok   no creation or modification date");
     }
 
-    ok &= expect_blocked("#read of a host file", "#read(\"/etc/passwd\")");
-    ok &= expect_blocked("#image of a host file", "#image(\"/etc/hosts\")");
-    ok &= expect_blocked("#import of a package", "#import \"@preview/cetz:0.3.0\": *");
-    ok &= expect_blocked("datetime.today()", "#datetime.today().display()");
+    ok &= expect_blocked("#read of a host file", "#read(\"/etc/passwd\")", "access denied");
+    ok &= expect_blocked("#image of a host file", "#image(\"/etc/hosts\")", "access denied");
+    ok &= expect_blocked("#import of a package", "#import \"@preview/cetz:0.3.0\": *", "access denied");
+    ok &= expect_blocked("datetime.today()", "#datetime.today().display()", "unable to get the current date");
 
     // markdown-spec.md §7 glyph_missing: Typst must report text no available font can draw.
     match render(&SandboxWorld::new("東京 😀", "")) {

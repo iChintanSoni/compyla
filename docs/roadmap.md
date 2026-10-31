@@ -49,21 +49,22 @@ reading the prototype.
       - operations, resolvers and templates
       - the severity policy, limits, security and determinism
 
-      42 recorded changes (C1–C42) correct prototype defects and close the gaps found by two
-      independent reviews.
+      44 recorded changes (C1–C44) correct prototype defects and close the gaps found by two
+      independent reviews of the spec and a code review of its tooling.
 - [x] IR schema 0.1 (`spec/ir.schema.json`)
 - [x] Diagnostics registry, with 50 codes (each with severity, stage, strict promotion and
       position) and 6 operation errors (`spec/diagnostics.json`, plus its own schema)
 - [x] Diagnostic object and template report schemas (`spec/diagnostic.schema.json`,
       `spec/template-report.schema.json`)
-- [x] Conformance fixtures: parse, lint and compose suites (`spec/conformance/`, 83 fixtures).
+- [x] Conformance fixtures: parse, lint, compose and render suites (`spec/conformance/`).
       Expectations are regenerated from the prototype wherever it agrees with the spec, and
       hand-written where 0.2 corrects it.
 - [x] Spec tooling: the prototype oracle (`spec/tools/oracle.mjs`) and the artifact checker,
       including schema validation (`spec/tools/check.mjs`)
 - [x] Toolchain check 1: `comrak` + the directive pre-pass reproduce the parse suite's positions
-      exactly. All 39 parse fixtures match: 120 node positions, 34 table cells, 12 link destinations,
-      19 diagnostics. One spec change resulted (C43) ([spikes/README.md](../spikes/README.md))
+      exactly. All 44 parse fixtures match: 128 node positions, 34 table cells, 13 link destinations,
+      21 diagnostics. Directive bodies are parsed as segments, so no block crosses a directive. One
+      spec change resulted (C43) ([spikes/README.md](../spikes/README.md))
 - [x] Toolchain check 2: Typst compiled in-process from Rust gives byte-identical PDFs across separate
       runs, inside the §12.2 sandbox (hostile text stays literal; file, package and clock access are
       denied). Typst doesn't report missing glyphs, so `glyph_missing` is detected from the layout

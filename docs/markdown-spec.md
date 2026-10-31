@@ -54,7 +54,7 @@ prototype.
 | # | 0.2 behavior | Before (0.1 text or prototype) | Fixtures |
 |---|--------------|--------------------------------|----------|
 | C1 | Formula cells are detected and read from the cell's **raw source text** (§4.6, §9.3) | Read from rendered text: `=B2*C2*D2` lost its `*`s to emphasis and became `=B2C2D2`; the documented `\=` escape never worked | parse/101, lint/102 |
-| C2 | A directive opener or closer always starts a new block, and the pre-pass tracks code fences per CommonMark (§1.3) | An opener right after a paragraph line was lost, a longer code fence containing a shorter one broke, and an internal placeholder leaked into the text | parse/108, parse/116 |
+| C2 | A directive opener or closer always starts a new block, and the pre-pass tracks code fences per CommonMark (§1.3) | An opener right after a paragraph line was lost, a longer code fence containing a shorter one broke, and an internal placeholder leaked into the text | parse/108, parse/116, parse/128 |
 | C3 | `:::name` (no space) opens a directive, like `::: name` (§1.3) | Literal text | parse/104 |
 | C4 | An unclosed opener becomes a leaf directive, with `directive_unclosed` (§1.3) | Literal text | parse/105 |
 | C5 | Reference-style links resolve to links; a soft line break is a space; a hard break or `<br>` is `"\n"` (§4.4, §4.5) | Reference links dropped with their text; soft breaks kept as `"\n"`; `<br>` dropped (`x<br>y` → `xy`) | parse/102, parse/103 |
@@ -75,8 +75,8 @@ prototype.
 | C20 | Dialect directives a profile doesn't use are handled per the directive registry, without `unknown_directive`; `notes` is omitted outside pptx (§1.5) | `unknown_directive` warnings, and speaker notes rendered as body text in docx/pdf | lint/112 |
 | C21 | Directive names are case-insensitive; fences may use 3 or more colons; `::: name args :::` is a one-line directive; markers are complete on their opener line; a fence-like line that isn't one produces `directive_malformed` (§1.3) | Case-sensitive; exactly `:::`; one-line form unsupported; `::: toc` swallowed content up to the next closer; malformed fences silently became text | parse/109, parse/110, parse/121, parse/122 |
 | C22 | Inline runs are canonical: adjacent runs with identical marks merge, empty runs are dropped (§4.4) | Implementation-defined run boundaries | parse/102 |
-| C23 | Link reference definitions apply document-wide, including inside directive bodies (§4.5) | References across a directive boundary didn't resolve | parse/111 |
-| C24 | Link destinations are checked against an allowlist; `#fragment` links resolve to headings (§4.5) | Any destination, including `javascript:` and UNC paths, written into output; fragments unresolved | parse/112, lint/113 |
+| C23 | Link reference definitions apply document-wide, including inside directive bodies (§4.5) | References across a directive boundary didn't resolve | parse/111, parse/129 |
+| C24 | Link destinations are checked against an allowlist; `#fragment` links resolve to headings (§4.5) | Any destination, including `javascript:` and UNC paths, written into output; fragments unresolved | parse/112, parse/127, lint/113 |
 | C25 | Characters not allowed in XML are replaced, with `invalid_character` (§1.1) | Passed through, producing corrupt Office files | parse/113 |
 | C26 | pptx placeholder slots define what fits; empty slides are omitted; Two Content distributes blocks without `col` markers (§8.1, §8.6) | Block counts only; empty trailing slides rendered; Two Content without markers put everything left | compose/104, lint/114 |
 | C27 | xlsx value integrity: >15 significant digits, leading zeros and impossible dates stay text; Excel limits, overlapping ranges and empty workbooks are diagnosed (§9.2, §9.5, §9.7) | Silent precision loss, dropped zeros, rolled-over dates, overwritten cells, invalid empty workbooks | compose/105, lint/115, lint/116, lint/119 |
@@ -90,7 +90,7 @@ prototype.
 | C35 | Ordered lists record their start number (§4.3) | Lost; numbering restarted at 1 after a code block between steps | parse/117 |
 | C36 | Inline tags that aren't HTML elements (`Promise<void>`) stay literal text (§4.8) | Dropped as HTML, deleting the word | parse/119 |
 | C37 | `table_malformed` and `document_in_code_fence` flag common LLM table and wrapping mistakes (§4.9) | Silently a paragraph of pipes, or one big code block | parse/120, parse/123 |
-| C38 | pptx inference only picks layouts the content fits; the title-slide rule applies only when the content fits it; layouts bind by name, then by OOXML layout type; the house set has the standard Office layouts (§8.3, §8.5) | Inferred layouts its own check rejected; titles slides held tables; localized templates never matched | compose/107, compose/108, lint/121 |
+| C38 | pptx inference only picks layouts the content fits; the title-slide rule applies only when the content fits it; layouts bind by name, then by OOXML layout type; the house set has the standard Office layouts (§8.3, §8.5) | Inferred layouts its own check rejected; titles slides held tables; localized templates never matched | compose/107, compose/108, compose/110, lint/121 |
 | C39 | xlsx: tables under level-3+ headings are kept; `columns` keys may be header names; percent values may end in `%`; typed values that don't parse warn; number formats and recalculation are defined (§9) | Tables under `###` dropped; formats undefined; silent text fallback | compose/106, compose/109, lint/125 |
 | C40 | `layout_not_in_template` and `font_unresolved` are validate-stage when their inputs are available, so `lint --strict` agrees with `convert --strict` (§11) | Render-stage only | render suite (Phase C) |
 | C41 | Hosts' resolvers are confined (§10.3); templates are stripped of macros, ActiveX, OLE, external references and orphaned parts; template XML may not contain a DTD; Typst runs sandboxed (§10.4, §12.2) | Unspecified | render suite (Phase C) |
@@ -175,7 +175,8 @@ ws     = 1*( SP / HTAB )
    - a line that would be an opener or closer but is indented by 1–3 spaces, or follows blockquote
      markers (`>`), e.g. inside a list item or a quote. It stays literal text.
 
-   Lines inside fenced code blocks never produce this.
+   Lines inside fenced code blocks never produce this, including fenced code inside blockquotes and
+   list items.
 
 A directive's position is its opener line, column 1.
 
@@ -224,7 +225,8 @@ place. The names `docx`, `pdf`, `pptx` and `xlsx` are reserved (§3) and are unk
 "Render in its place" means the children are rendered where the directive is, keeping the tree as
 parsed: sections inside the body stay in the body's own heading tree and never adopt content that
 follows the directive. Profiles that walk the document in order (pptx slides §8.1, xlsx sheets §9.1)
-enter the bodies of ignored and unknown directives, but not of containers.
+enter the bodies of annotations (whether the profile uses or ignores them) and of unknown
+directives, but not of containers.
 
 A directive the profile uses, in a position where it can have no effect, produces
 `directive_misplaced` (warning) and is then treated as ignored. Examples: a `layout` that isn't the
@@ -277,8 +279,8 @@ spec: "0.2"             # optional; the spec version the document was written fo
 - Its content is a **JSON-compatible subset of YAML 1.2** (core schema): a mapping with string keys,
   whose values are mappings, sequences, strings, finite numbers (integers within ±(2⁵³−1)), booleans
   or null. **Not allowed:** anchors and aliases, explicit tags, merge keys (`<<`), complex keys,
-  duplicate keys and multiple documents. Frontmatter longer than 64 KiB is not allowed. Empty
-  frontmatter is an empty mapping.
+  duplicate keys and multiple documents. Frontmatter longer than 64 KiB is not parsed and counts as
+  disallowed. Empty frontmatter is an empty mapping.
 - Content that isn't valid YAML, isn't a mapping, or uses a disallowed feature produces
   `frontmatter_invalid` (warning, at line 1), and `meta` is empty.
 - Frontmatter lines are excluded from markdown parsing and from directive recognition. `meta` keeps
@@ -448,7 +450,8 @@ Inline content becomes a flat list of **runs**: `{ "text", "bold"?, "italic"?, "
 - Images in a paragraph made only of images (each optionally inside a link, separated by whitespace)
   become one `media` node each, in order. `src` is the destination, processed as in §4.5. `alt` is
   the plain text of the description, per CommonMark. `link` is the surrounding link's destination,
-  when there is one and it is allowed (§4.5). Image titles are not represented.
+  when there is one and it is allowed (§4.5). A disallowed one produces `link_scheme_blocked` at the
+  link, and the media has no `link`. Image titles are not represented.
 - Image bytes come from the asset resolver (§10.3), except `data:` URIs with base64 content, which the
   core decodes itself. An image `src` is not subject to the link allowlist.
 - An image's format is determined from its **bytes**, not its extension. PNG, JPEG and GIF are
@@ -607,7 +610,8 @@ Plus every code in §6.3.
 ### 8.1 Slide segmentation *(C9, C26)*
 
 Slides are formed by walking the body **in document order**, entering every section (its heading,
-then its children) and the bodies of ignored and unknown directives (§1.5). Every `break` reached this
+then its children) and the bodies of annotations other than `layout`, and of unknown directives
+(§1.5). Every `break` reached this
 way ends the current slide and starts a new one, however deeply it is nested under headings. List
 items, quotes and `notes` bodies are not entered, so a `break` inside them has no effect. A slide with
 no title, no content and no notes is **omitted**: consecutive breaks, or a break at the start or end,
@@ -685,8 +689,9 @@ produces `unknown_layout`. Slide size, footers, dates and slide numbers follow t
 Content is measured in **blocks**:
 - Consecutive paragraphs, lists and demoted headings form one **text block**.
 - Every other node (table, media, code, quote) is one block.
-- The children of ignored and unknown directives count in their place. Markers other than `col` count
-  nothing. A `col` marker ends the current text block and separates columns.
+- The children of annotations other than `layout` (used, like `::: image fit=…`, or ignored) and of
+  unknown directives count in their place. A wrapped image is therefore a media block. Markers other
+  than `col` count nothing. A `col` marker ends the current text block and separates columns.
 
 | House layout | Content slots | Fits when |
 |--------------|---------------|-----------|
@@ -767,9 +772,10 @@ Each sheet keeps a stacking cursor, starting at row 1, column A. Tables are plac
 The placed address of data cell (row *r*, column *c*), both 0-based, is column *firstColumn + c* and
 row *headerRow + 1 + r*. A table's **placed range** runs from its first row (title, note or header)
 to its last data row, across its columns.
-- **Overlap.** Placed ranges on a sheet MUST NOT overlap. A table whose range would overlap an earlier
-  one is placed at the cursor instead (below everything placed so far), with `xlsx_range_overlap`
-  (warning) at its line. *(C27)*
+- **Overlap.** Placed ranges on a sheet MUST NOT overlap. A table, anchored or not, whose range would
+  overlap an earlier one is instead placed at column A, two rows below the lowest row placed so far on
+  the sheet, with `xlsx_range_overlap` (warning) at its line. The cursor then moves to *its header row
+  + data rows + 2*. A table placed this way can't overlap anything. *(C27)*
 - **Off the grid.** An anchor whose range would extend past row 1,048,576 or column XFD is ignored,
   with `invalid_directive_args`. Stacking past row 1,048,576 produces `xlsx_limit_exceeded` (error).
 
@@ -918,9 +924,11 @@ annotation.
 
 **Inference.** Without a `columns` entry, a column's type is inferred from the plain text of its data
 cells, skipping formula cells and blank cells. All numbers → `number`; all numbers or percents with at
-least one percent → `percent`; all dates → `date`; all booleans → `boolean`; otherwise `text`. A
-column whose cells matched different tests also produces `mixed_column_type` (warning, advisory). A
-column with no literal values at all is `text`.
+least one percent → `percent`; all dates → `date`; all booleans → `boolean`; otherwise `text`.
+Numbers and percents are one numeric family, so a column mixing them is `percent` without a
+diagnostic. A column that falls through to `text` although its cells matched different tests
+(e.g. numbers and dates) also produces `mixed_column_type` (warning, advisory). A column with no
+literal values at all is `text`.
 
 **Conversion.** A literal in a typed column converts with its type's test. Numeric types accept
 numbers, and percent also accepts percents. A value that fails is written as text, with
@@ -947,7 +955,7 @@ result trimmed. They are repaired, never rejected:
 | Contains `: \ / ? * [ ]` | Each replaced with `-` | `sheet_name_invalid` |
 | Starts or ends with `'` | Removed | `sheet_name_invalid` |
 | Empty | `Sheet{n}` (n = its position) | `sheet_name_invalid` |
-| Longer than 31 UTF-16 code units | Truncated | `sheet_name_too_long` |
+| Longer than 31 UTF-16 code units | Truncated to at most 31, never splitting a character (a surrogate pair) | `sheet_name_too_long` |
 | Equal to an earlier name or to `History` (Unicode simple case folding) | ` (2)`, ` (3)`, … appended, truncating first to stay within 31 | `duplicate_sheet_name` |
 
 All three codes are warnings and strict-promotable, reported at the heading's line (or at the `title`
@@ -1196,7 +1204,6 @@ hang or exhaust memory on any input.
 | Limit | Default |
 |-------|---------|
 | Input size | 10 MiB of UTF-8 |
-| Frontmatter size | 64 KiB |
 | Nesting depth (blockquotes, lists and directives combined) | 32 |
 | Table cells per document; cells per row | 1,000,000; 16,384 |
 | Slides; sheets | 10,000; 1,000 |

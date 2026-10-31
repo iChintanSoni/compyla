@@ -4,7 +4,7 @@
 //   node spec/tools/oracle.mjs --write   regenerate expected.json for oracle: "prototype" fixtures
 // Requires the prototype to be built (`pnpm build`). Exists only until the Rust core passes the suite.
 
-import { readdirSync, readFileSync, writeFileSync, existsSync, mkdtempSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync, existsSync, mkdtempSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -144,14 +144,20 @@ function runPrototype(suite, input, kase) {
 /** Render suite: renders twice (bytes must match), then checks diagnostics and the projection
  *  with spec/tools/render_check.py. Returns the list of differences from expected.json. */
 async function renderDifferences(name, input, kase, fixture, expected) {
-  const options = { format: kase.format, strict: kase.strict ?? false };
+  const assets = kase.assets ? new Set(kase.assets) : undefined;
+  const options = {
+    format: kase.format,
+    strict: kase.strict ?? false,
+    resolveAsset: assets ? (src) => assets.has(src) : undefined,
+    readAsset: (src) => readFileSync(join(fixture, src)),
+  };
   if (kase.template) options.template = readFileSync(join(fixture, kase.template));
   const first = await sdk.convert(input, options);
   const second = await sdk.convert(input, options);
   const differences = [];
   if (!first.buffer) return [`no output: ${JSON.stringify(first.diagnostics.map((d) => d.code))}`];
   if (!second.buffer || Buffer.compare(first.buffer, second.buffer) !== 0) differences.push("two renders differ (not reproducible)");
-  if (!same(toDiagnostics(first.diagnostics), expected.diagnostics)) {
+  if (!diagnosticsMatch(toDiagnostics(first.diagnostics), expected.diagnostics)) {
     differences.push(`diagnostics: ${JSON.stringify(toDiagnostics(first.diagnostics))}`);
   }
   const file = join(renders, `${name}.${kase.format}`);
@@ -178,6 +184,29 @@ function canonical(value) {
 
 const same = (a, b) => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
 
+/** markdown-spec.md §11.3: compared in order, keeping duplicates; `line` always compared; `column`
+ *  only when the expected diagnostic has one; message and hint never. */
+function diagnosticsMatch(actual, expected) {
+  return (
+    actual.length === expected.length &&
+    actual.every(
+      (a, i) =>
+        a.code === expected[i].code &&
+        a.severity === expected[i].severity &&
+        a.line === expected[i].line &&
+        (expected[i].column === undefined || a.column === expected[i].column),
+    )
+  );
+}
+
+/** Whether the prototype's output matches a fixture's expectation, per suite. */
+function matches(suite, actual, expected) {
+  if (actual === undefined || actual.prototypeThrew) return false;
+  if (suite === "parse") return same(actual.ir, expected.ir) && diagnosticsMatch(actual.diagnostics, expected.diagnostics);
+  if (suite === "lint") return diagnosticsMatch(actual.diagnostics, expected.diagnostics);
+  return same(actual, expected);
+}
+
 // ---------- main ----------
 
 let failures = 0;
@@ -186,6 +215,7 @@ for (const suite of ["parse", "lint", "compose", "render"]) {
   if (!existsSync(dir)) continue;
   for (const name of readdirSync(dir).sort()) {
     const fixture = join(dir, name);
+    if (!statSync(fixture).isDirectory()) continue; // e.g. .DS_Store
     const kase = JSON.parse(readFileSync(join(fixture, "case.json"), "utf8"));
     const input = readFileSync(join(fixture, "input.md"), "utf8");
     const expectedPath = join(fixture, "expected.json");
@@ -225,12 +255,17 @@ for (const suite of ["parse", "lint", "compose", "render"]) {
 
     if (kase.oracle === "prototype") {
       if (write) {
+        if (actual === undefined || actual.prototypeThrew) {
+          failures++;
+          console.log(`FAIL     ${label}: the prototype can't produce this (${actual?.prototypeThrew ?? "unsupported suite/format"}); not written`);
+          continue;
+        }
         writeFileSync(expectedPath, `${JSON.stringify(actual, null, 2)}\n`);
         console.log(`wrote    ${label}`);
         continue;
       }
       const expected = JSON.parse(readFileSync(expectedPath, "utf8"));
-      if (same(actual, expected)) console.log(`ok       ${label}`);
+      if (matches(suite, actual, expected)) console.log(`ok       ${label}`);
       else {
         failures++;
         console.log(`FAIL     ${label}: prototype output differs from expected.json`);
@@ -241,7 +276,7 @@ for (const suite of ["parse", "lint", "compose", "render"]) {
 
     // corrected: the spec must genuinely differ from the prototype
     const expected = JSON.parse(readFileSync(expectedPath, "utf8"));
-    if (same(actual, expected)) {
+    if (matches(suite, actual, expected)) {
       failures++;
       console.log(`FAIL     ${label}: marked "corrected" but the prototype already produces expected.json`);
     } else {

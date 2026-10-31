@@ -1,7 +1,7 @@
 {
-  "description": "References outside the table's own grid, or to missing sheets, warn.",
+  "description": "An unqualified reference outside the table's grid warns and is still translated; a qualified reference to a missing sheet is a formula error.",
   "spec": [
-    "§9.3",
+    "\u00a79.3",
     "C12"
   ],
   "oracle": "corrected",

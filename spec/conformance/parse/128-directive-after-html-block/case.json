@@ -1,0 +1,8 @@
+{
+  "description": "A directive opener ends a preceding HTML block, so the directive and its body survive.",
+  "spec": [
+    "\u00a71.3",
+    "C2"
+  ],
+  "oracle": "corrected"
+}
