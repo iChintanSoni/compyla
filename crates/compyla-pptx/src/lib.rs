@@ -16,7 +16,8 @@ use compyla_core::validate::pptx::layout::Layout as HouseLayout;
 use compyla_core::validate::pptx::model::{Content, Deck, Fit, Slide};
 use compyla_ooxml::dom::REL_NS;
 use compyla_ooxml::package::{self, HYPERLINK, Properties, Relationships};
-use compyla_ooxml::template::{Invalid, Relationship, Template};
+use compyla_ooxml::sanitize::{self, Removed};
+use compyla_ooxml::template::{Invalid, Template};
 use compyla_ooxml::xml::Writer;
 
 use crate::text::{Bullets, LinkTarget, Text};
@@ -56,18 +57,29 @@ pub fn house() -> Template {
 /// available, which shows the alt text, §5).
 pub type Images<'a> = dyn Fn(&str) -> Option<Vec<u8>> + 'a;
 
+/// A rendered deck.
+#[derive(Debug)]
+pub struct Rendered {
+    pub bytes: Vec<u8>,
+    /// What the template's kept parts had removed (§10.4), with each part's name, in package
+    /// order.
+    pub removed: Vec<(String, Removed)>,
+}
+
 /// Renders `deck` into `template`.
 pub fn render(
     deck: &Deck,
     template: &Template,
     properties: &Properties,
     images: &Images<'_>,
-) -> Result<Vec<u8>, Invalid> {
+) -> Result<Rendered, Invalid> {
     let layouts = layouts::read(template)?;
     if layouts.is_empty() {
         return Err(Invalid("has no slide layouts".into()));
     }
-    let main_rels = template.relationships(&template.main)?;
+    // The presentation part keeps nothing active or external either (§10.4).
+    let main = sanitize::part(template, &template.main)?;
+    let main_rels = main.relationships.clone();
     let notes_master = main_rels
         .iter()
         .find(|r| r.kind.ends_with("/notesMaster") && !r.external)
@@ -210,7 +222,9 @@ pub fn render(
         presentation_targets.push(part);
     }
     let presentation = presentation::edit(
-        template.part(&template.main).unwrap_or_default(),
+        main.xml
+            .as_deref()
+            .unwrap_or_else(|| template.part(&template.main).unwrap_or_default()),
         &slide_list,
     )
     .map_err(|why| {
@@ -226,11 +240,21 @@ pub fn render(
     assemble(
         template,
         properties,
-        presentation,
-        presentation_rels,
+        Presentation {
+            xml: presentation,
+            rels: presentation_rels,
+            sanitized: main,
+        },
         new_parts,
         &new_rels,
     )
+}
+
+/// The presentation part as written: edited, with its relationships, and what it had removed.
+struct Presentation {
+    xml: Vec<u8>,
+    rels: Relationships,
+    sanitized: sanitize::Part,
 }
 
 /// The house template's layout a house layout binds to (§8.5): by name, then by OOXML type, then
@@ -989,16 +1013,16 @@ fn percent_decoded(text: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// The output package: the template's parts that are still reachable, with its presentation and
-/// properties replaced, then the new parts. Content types are rebuilt for exactly these parts.
+/// The output package: the template's parts that are still reachable, without active or external
+/// content (§10.4), with its presentation and properties replaced, then the new parts. Content
+/// types are rebuilt for exactly these parts.
 fn assemble(
     template: &Template,
     properties: &Properties,
-    presentation: Vec<u8>,
-    presentation_rels: Relationships,
+    presentation: Presentation,
     new_parts: Vec<(String, String, Vec<u8>)>,
     new_rels: &HashMap<String, Vec<String>>,
-) -> Result<Vec<u8>, Invalid> {
+) -> Result<Rendered, Invalid> {
     let main = template.main.clone();
     let main_rels = rels_name(&main);
     let new_names: HashSet<String> = new_parts
@@ -1012,28 +1036,31 @@ fn assemble(
     };
     // The view settings' outline lists the template's slides, which are gone (§8.8): what it
     // relates to is neither followed nor kept.
-    let view_relationships = |part: &str| -> Result<Vec<Relationship>, Invalid> {
-        Ok(template
-            .relationships(part)?
-            .into_iter()
-            .filter(|r| !(typed(part, "viewProps") && r.kind.ends_with("/slide")))
-            .collect())
-    };
-    // What the package reaches from its main part, following relationships.
+    let viewed = |part: &str, kind: &str| typed(part, "viewProps") && kind.ends_with("/slide");
+    // What the package reaches from its main part, following the relationships each template part
+    // keeps once its active and external content is removed.
     let mut reachable: HashSet<String> = HashSet::new();
+    let mut sanitized: HashMap<String, sanitize::Part> = HashMap::new();
     let mut queue = vec![main.clone()];
     while let Some(part) = queue.pop() {
-        if !reachable.insert(part.to_ascii_lowercase()) {
+        let lower = part.to_ascii_lowercase();
+        if !reachable.insert(lower.clone()) {
             continue;
         }
         let targets: Vec<String> = match new_rels.get(&part) {
             Some(targets) => targets.clone(),
-            None if new_names.contains(&part.to_ascii_lowercase()) => Vec::new(),
-            None => view_relationships(&part)?
-                .into_iter()
-                .filter(|r| !r.external)
-                .map(|r| r.target)
-                .collect(),
+            None if new_names.contains(&lower) => Vec::new(),
+            None => {
+                let clean = sanitize::part(template, &part)?;
+                let targets = clean
+                    .relationships
+                    .iter()
+                    .filter(|r| !r.external && !viewed(&part, &r.kind))
+                    .map(|r| r.target.clone())
+                    .collect();
+                sanitized.insert(lower, clean);
+                targets
+            }
         };
         queue.extend(targets);
     }
@@ -1082,19 +1109,23 @@ fn assemble(
             continue;
         }
         if name.eq_ignore_ascii_case(&main) {
-            entries.push((name.to_string(), presentation.clone()));
+            entries.push((name.to_string(), presentation.xml.clone()));
             overrides.insert(name.to_string(), format!("{PML}.presentation.main+xml"));
             continue;
         }
         if name.eq_ignore_ascii_case(&main_rels) {
-            entries.push((name.to_string(), presentation_rels.to_xml()));
+            entries.push((name.to_string(), presentation.rels.to_xml()));
             continue;
         }
+        let clean = sanitized.get(&rels_owner(name).to_ascii_lowercase());
         if is_rels(name) && typed(&rels_owner(name), "viewProps") {
             let owner = rels_owner(name);
             let folder = owner.rsplit_once('/').map_or("", |(f, _)| f);
             let mut kept = Relationships::new();
-            for r in view_relationships(&owner)? {
+            for r in clean.iter().flat_map(|c| &c.relationships) {
+                if viewed(&owner, &r.kind) {
+                    continue;
+                }
                 let target = if r.external {
                     r.target.clone()
                 } else {
@@ -1107,8 +1138,18 @@ fn assemble(
             }
             continue;
         }
-        let content_type = template.content_type(name).filter(|_| !is_rels(name));
-        if let Some(content_type) = content_type {
+        if is_rels(name) {
+            let data = clean
+                .and_then(|c| c.rels.clone())
+                .unwrap_or_else(|| data.to_vec());
+            entries.push((name.to_string(), data));
+            continue;
+        }
+        let data = sanitized
+            .get(&lower)
+            .and_then(|c| c.xml.as_deref())
+            .unwrap_or(data);
+        if let Some(content_type) = template.content_type(name) {
             overrides.insert(name.to_string(), content_type.to_string());
         }
         // Show and view settings may name the template's slides or custom shows, which are gone.
@@ -1127,7 +1168,7 @@ fn assemble(
         .iter()
         .any(|(n, _)| n.eq_ignore_ascii_case(&main_rels))
     {
-        entries.push((main_rels, presentation_rels.to_xml()));
+        entries.push((main_rels, presentation.rels.to_xml()));
     }
     let mut extensions: BTreeMap<String, String> = template
         .defaults()
@@ -1180,7 +1221,24 @@ fn assemble(
     }
     types.close("Types");
     entries.insert(0, ("[Content_Types].xml".into(), types.finish()));
-    Ok(compyla_ooxml::zip::write(&entries))
+
+    // What the kept template parts had removed, in package order.
+    let mut removed = Vec::new();
+    for (name, _) in template.parts() {
+        let lower = name.to_ascii_lowercase();
+        let clean = if name.eq_ignore_ascii_case(&main) {
+            Some(&presentation.sanitized)
+        } else {
+            sanitized.get(&lower)
+        };
+        if let Some(clean) = clean {
+            removed.extend(clean.removed.iter().map(|r| (name.to_string(), r.clone())));
+        }
+    }
+    Ok(Rendered {
+        bytes: compyla_ooxml::zip::write(&entries),
+        removed,
+    })
 }
 
 #[cfg(test)]
@@ -1233,7 +1291,9 @@ mod tests {
             unreachable!()
         };
         let images = |_: &str| Some(png.clone());
-        let bytes = render(&deck, &template, &Properties::default(), &images).unwrap();
+        let bytes = render(&deck, &template, &Properties::default(), &images)
+            .unwrap()
+            .bytes;
         let names: Vec<String> = compyla_ooxml::read::entries(&bytes)
             .unwrap()
             .into_iter()
@@ -1298,7 +1358,9 @@ mod tests {
         ) else {
             unreachable!()
         };
-        let bytes = render(&deck, &template, &Properties::default(), &|_| None).unwrap();
+        let bytes = render(&deck, &template, &Properties::default(), &|_| None)
+            .unwrap()
+            .bytes;
         let parts: HashMap<String, Vec<u8>> = compyla_ooxml::read::entries(&bytes)
             .unwrap()
             .into_iter()
@@ -1336,7 +1398,9 @@ mod tests {
             unreachable!()
         };
         let images = |_: &str| Some(jpeg.to_vec());
-        let bytes = render(&deck, &house(), &Properties::default(), &images).unwrap();
+        let bytes = render(&deck, &house(), &Properties::default(), &images)
+            .unwrap()
+            .bytes;
         let parts: HashMap<String, Vec<u8>> = compyla_ooxml::read::entries(&bytes)
             .unwrap()
             .into_iter()

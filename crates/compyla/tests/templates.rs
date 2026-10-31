@@ -192,3 +192,24 @@ fn a_theme_part_that_isnt_a_theme_is_no_theme() {
         ["no_theme"]
     );
 }
+
+#[test]
+fn removals_are_reported_in_order_by_convert_and_not_by_lint() {
+    // Render-stage diagnostics join the others in §11.2 order: without a line, by code.
+    const ACTIVE: &[u8] = include_bytes!(
+        "../../../spec/conformance/render/121-pptx-template-active-content/brand.potx"
+    );
+    let source = "# A\n\n---\n\n## B\n\n![Logo](missing.png)\n";
+    let options = pptx(Some(ACTIVE), &[]);
+    assert_eq!(codes(source, &options), ["layout_not_in_template"]);
+    let convert: Vec<String> = compyla::convert(source, &options, &compyla::no_assets)
+        .unwrap()
+        .diagnostics
+        .into_iter()
+        .map(|d| d.code)
+        .collect();
+    let mut expected = vec!["layout_not_in_template"];
+    expected.extend(["template_content_removed"; 6]);
+    expected.push("image_unresolved");
+    assert_eq!(convert, expected);
+}

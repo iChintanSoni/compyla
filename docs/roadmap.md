@@ -135,7 +135,10 @@ Goal: output that is faithful to a real corporate template, and identical bytes 
       DTDs, unsafe paths), a namespace-aware XML reader, and `inspect_template` (C50) in the facade
       and CLI (`compyla template inspect`). The `inspect` suite has synthetic templates from
       `spec/tools/make_templates.py`, valid and hostile
-- [#11](https://github.com/iChintanSoni/compyla/issues/11) Sanitize supplied templates on output (§10.4): external relationships, ActiveX, OLE
+- [x] A supplied template's active and external content removed from the parts the output keeps:
+      external relationships other than hyperlinks, OLE objects and ActiveX controls, with what
+      refers to them and the parts only they reached, each reported as `template_content_removed`
+      (§10.4, C58, #11)
 - [#12](https://github.com/iChintanSoni/compyla/issues/12) Template parts that relate to the template's own slides (a master's or layout's jump to a slide)
 - [#14](https://github.com/iChintanSoni/compyla/issues/14) compyla-fonts: lockfile, cache, measurement, subsetting (D14)
 - [#15](https://github.com/iChintanSoni/compyla/issues/15) Compose stage with measured overflow diagnostics (D15)

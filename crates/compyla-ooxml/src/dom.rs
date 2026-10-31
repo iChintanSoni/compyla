@@ -73,13 +73,13 @@ impl Element {
 
 /// The deepest nesting a part may have. Real OOXML nests a few dozen levels; the limit keeps
 /// building and dropping the tree off the call stack's limits.
-const MAX_DEPTH: usize = 1_000;
+pub(crate) const MAX_DEPTH: usize = 1_000;
 /// The most elements a template part may have (markdown-spec.md §12.1): a tree costs far more
 /// memory than its bytes, so the limit bounds what one part can cost. A real styles part, master
 /// or layout has a few thousand.
 pub const MAX_ELEMENTS: usize = 500_000;
 /// The most namespace bindings in scope at once; quick-xml resolves prefixes by scanning them.
-const MAX_BINDINGS: usize = 1_000;
+pub(crate) const MAX_BINDINGS: usize = 1_000;
 
 /// Why a part didn't parse.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -118,6 +118,44 @@ pub fn utf8(bytes: &[u8]) -> Result<std::borrow::Cow<'_, [u8]>, Error> {
         [0x00, b'<', 0x00, b'?', ..] => utf16(bytes, false),
         _ => Ok(std::borrow::Cow::Borrowed(bytes)),
     }
+}
+
+/// A part as UTF-8 for writing back (§10.4 allows UTF-16 parts): transcoded, with its declaration
+/// saying so.
+pub fn utf8_document(bytes: &[u8]) -> Result<Vec<u8>, Error> {
+    let text = utf8(bytes)?;
+    let transcoded = matches!(text, std::borrow::Cow::Owned(_));
+    let mut text = text.into_owned();
+    if transcoded
+        && text.starts_with(b"<?xml")
+        && let Some(end) = text.windows(2).position(|w| w == b"?>")
+        && let Some(value) = encoding_value(&text[..end])
+    {
+        text.splice(value, b"UTF-8".iter().copied());
+    }
+    Ok(text)
+}
+
+/// Where the value of an XML declaration's `encoding` pseudo-attribute lies, between its quotes
+/// (XML 1.0 §2.8, §4.3.3: spaces may surround `=`).
+fn encoding_value(declaration: &[u8]) -> Option<std::ops::Range<usize>> {
+    let name = declaration.windows(8).position(|w| w == b"encoding")? + 8;
+    let mut at = name;
+    let space = |b: &u8| matches!(b, b' ' | b'\t' | b'\r' | b'\n');
+    while declaration.get(at).is_some_and(space) {
+        at += 1;
+    }
+    if declaration.get(at) != Some(&b'=') {
+        return None;
+    }
+    at += 1;
+    while declaration.get(at).is_some_and(space) {
+        at += 1;
+    }
+    let quote = *declaration.get(at).filter(|q| matches!(q, b'"' | b'\''))?;
+    let start = at + 1;
+    let length = declaration.get(start..)?.iter().position(|&b| b == quote)?;
+    Some(start..start + length)
 }
 
 /// Parses an XML part into its root element.
@@ -257,7 +295,10 @@ fn walk(bytes: &[u8], capture: &dyn Fn(&OpenPath) -> bool) -> Result<Vec<Element
 }
 
 /// An element's namespace and local name.
-fn names(reader: &NsReader<&[u8]>, start: &quick_xml::events::BytesStart<'_>) -> (String, String) {
+pub(crate) fn names(
+    reader: &NsReader<&[u8]>,
+    start: &quick_xml::events::BytesStart<'_>,
+) -> (String, String) {
     let (resolved, local) = reader.resolver().resolve_element(start.name());
     let namespace = match resolved {
         ResolveResult::Bound(ns) => ns.as_ref().to_string(),

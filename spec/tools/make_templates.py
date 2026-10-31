@@ -93,7 +93,7 @@ def layout(name, kind, *shapes):
 
 
 def pptx(path, main_type="presentation", extra=(), repeat_ids=1, odd=False,
-         fonts=("Brand Display", "Brand Sans"), accent1="2F5BEA"):
+         fonts=("Brand Display", "Brand Sans"), accent1="2F5BEA", patch=None):
     layouts = [
         ("Title Slide", "title", placeholder(2, "Title 1", "ctrTitle"),
          placeholder(3, "Subtitle 2", "notAType" if odd else "subTitle", 1)),
@@ -135,7 +135,82 @@ def pptx(path, main_type="presentation", extra=(), repeat_ids=1, odd=False,
         ("ppt/fonts/font1.fntdata", b"\x00" * 64),
         *extra,
     ]
-    write(path, entries)
+    write(path, patch(entries) if patch else entries)
+
+
+def active_content(entries):
+    """Active and external content in the parts a deck keeps (§10.4, C58): a linked picture and a
+    hyperlink on the master; on a layout, an embedded OLE object (with its alternate and preview),
+    a linked one, an ActiveX control and an animation of the embedded object; and external
+    relationships nothing refers to, from the presentation and the theme."""
+    parts = dict(entries)
+    mc = "http://schemas.openxmlformats.org/markup-compatibility/2006"
+    ole_uri = "http://schemas.openxmlformats.org/presentationml/2006/ole"
+
+    def add_rels(name, *items):
+        body = "".join(
+            f'<Relationship Id="{i}" Type="{t if t.startswith("http") else OFFICE + "/" + t}" Target="{target}"{EXTERNAL if ext else ""}/>'
+            for i, t, target, ext in items)
+        parts[name] = parts.get(name, rels()).replace("</Relationships>", body + "</Relationships>")
+
+    def frame(id, ole):
+        return (f'<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="{id}" name="Object {id}"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>'
+                '<p:xfrm><a:off x="838200" y="4000000"/><a:ext cx="1270000" cy="952500"/></p:xfrm>'
+                f'<a:graphic><a:graphicData uri="{ole_uri}">{ole}</a:graphicData></a:graphic></p:graphicFrame>')
+
+    picture = ('<p:pic><p:nvPicPr><p:cNvPr id="10" name="Tracker"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr>'
+               '<p:blipFill><a:blip r:link="rId20"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>'
+               '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="12700" cy="12700"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>')
+    link = ('<p:sp><p:nvSpPr><p:cNvPr id="11" name="Site"><a:hlinkClick r:id="rId21"/></p:cNvPr><p:cNvSpPr/><p:nvPr/></p:nvSpPr>'
+            '<p:spPr/><p:txBody><a:bodyPr/><a:p><a:r><a:t>example.com</a:t></a:r></a:p></p:txBody></p:sp>')
+    master = "ppt/slideMasters/slideMaster1.xml"
+    parts[master] = parts[master].replace("</p:spTree></p:cSld>", picture + link + "</p:spTree></p:cSld>", 1)
+    add_rels("ppt/slideMasters/_rels/slideMaster1.xml.rels",
+             ("rId20", "image", "https://tracker.example/pixel.png", True),
+             ("rId21", "hyperlink", "https://example.com/", True))
+
+    embedded = (f'<mc:AlternateContent xmlns:mc="{mc}"><mc:Choice xmlns:v="urn:schemas-microsoft-com:vml" Requires="v">'
+                + frame(20, '<p:oleObj name="Document" r:id="rId10" imgW="1270000" imgH="952500" progId="Word.Document.12"><p:embed/></p:oleObj>')
+                + '</mc:Choice><mc:Fallback>'
+                + frame(20, '<p:oleObj name="Document" r:id="rId10" imgW="1270000" imgH="952500" progId="Word.Document.12"><p:embed/>'
+                        '<p:pic><p:nvPicPr><p:cNvPr id="0" name=""/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="rId11"/>'
+                        '<a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="838200" y="4000000"/><a:ext cx="1270000" cy="952500"/></a:xfrm>'
+                        '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic></p:oleObj>')
+                + '</mc:Fallback></mc:AlternateContent>')
+    linked = frame(21, '<p:oleObj name="Budget" r:id="rId12" imgW="1270000" imgH="952500" progId="Excel.Sheet.12"><p:link updateAutomatic="1"/></p:oleObj>')
+    controls = (f'<p:controls><mc:AlternateContent xmlns:mc="{mc}"><mc:Choice xmlns:v="urn:schemas-microsoft-com:vml" Requires="v">'
+                '<p:control spid="1025" name="Button" r:id="rId13" imgW="914400" imgH="457200"/></mc:Choice><mc:Fallback>'
+                '<p:control name="Button" r:id="rId13" imgW="914400" imgH="457200"><p:pic><p:nvPicPr><p:cNvPr id="22" name="Button"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr>'
+                '<p:blipFill><a:blip r:embed="rId14"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="914400" cy="457200"/></a:xfrm>'
+                '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic></p:control></mc:Fallback></mc:AlternateContent></p:controls>')
+    timing = ('<p:timing><p:tnLst><p:par><p:cTn id="1" dur="indefinite" restart="never" nodeType="tmRoot"><p:childTnLst>'
+              '<p:set><p:cBhvr><p:cTn id="2" dur="1" fill="hold"/><p:tgtEl><p:spTgt spid="20"/></p:tgtEl><p:attrNameLst><p:attrName>style.visibility</p:attrName></p:attrNameLst></p:cBhvr>'
+              '<p:to><p:strVal val="visible"/></p:to></p:set></p:childTnLst></p:cTn></p:par></p:tnLst></p:timing>')
+    layout = "ppt/slideLayouts/slideLayout2.xml"
+    parts[layout] = (parts[layout].replace("</p:spTree></p:cSld>", embedded + linked + "</p:spTree>" + controls + "</p:cSld>" + timing, 1))
+    add_rels("ppt/slideLayouts/_rels/slideLayout2.xml.rels",
+             ("rId10", "package", "../embeddings/Microsoft_Word_Document.docx", False),
+             ("rId11", "image", "../media/preview.png", False),
+             ("rId12", "oleObject", "file:///C:/Finance/budget.xlsx", True),
+             ("rId13", "control", "../activeX/activeX1.xml", False),
+             ("rId14", "image", "../media/control.png", False))
+    parts["ppt/embeddings/Microsoft_Word_Document.docx"] = b"An embedded document, not opened by any fixture.\n"
+    parts["ppt/media/preview.png"] = b"\x89PNG\r\n\x1a\n preview"
+    parts["ppt/media/control.png"] = b"\x89PNG\r\n\x1a\n control"
+    parts["ppt/activeX/activeX1.xml"] = (f'{DECL}<ax:ocx xmlns:ax="http://schemas.microsoft.com/office/2006/activeX" xmlns:r="{OFFICE}" '
+                                         'ax:classid="{D7053240-CE69-11CD-A777-00DD01143C57}" ax:persistence="persistStorage" r:id="rId1"/>')
+    add_rels("ppt/activeX/_rels/activeX1.xml.rels",
+             ("rId1", "http://schemas.microsoft.com/office/2006/relationships/activeXControlBinary", "activeX1.bin", False))
+    parts["ppt/activeX/activeX1.bin"] = b"\x00" * 32
+
+    add_rels("ppt/_rels/presentation.xml.rels", ("rId9", "image", "https://tracker.example/deck.png", True))
+    add_rels("ppt/theme/_rels/theme1.xml.rels", ("rId1", "image", "https://tracker.example/theme.png", True))
+    parts["[Content_Types].xml"] = parts["[Content_Types].xml"].replace("</Types>", (
+        '<Default Extension="bin" ContentType="application/vnd.ms-office.activeX"/>'
+        '<Default Extension="docx" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document"/>'
+        '<Default Extension="png" ContentType="image/png"/>'
+        '<Override PartName="/ppt/activeX/activeX1.xml" ContentType="application/vnd.ms-office.activeX+xml"/></Types>'))
+    return list(parts.items())
 
 
 # ---------------------------------------------------------------- docx
@@ -258,6 +333,9 @@ def main():
     # on, so a striped table takes its dark header instead.
     pptx(ROOT / "render/120-xlsx-theme-tokens/orange.potx", main_type="template",
          fonts=("Georgia", "Verdana"), accent1="C55A11")
+    # Active and external content a deck mustn't carry over from its template (§10.4).
+    pptx(ROOT / "render/121-pptx-template-active-content/brand.potx", main_type="template",
+         patch=active_content)
 
 
 if __name__ == "__main__":
