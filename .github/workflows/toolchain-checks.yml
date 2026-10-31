@@ -8,11 +8,34 @@ on:
     paths: ["spikes/**", "spec/**", ".github/workflows/toolchain-checks.yml"]
   pull_request:
     branches: [main]
-    paths: ["spikes/**", "spec/**", ".github/workflows/toolchain-checks.yml"]
 
 jobs:
+  # Pull requests always run this workflow, so branch protection can require its result; the
+  # jobs below run only when the PR touches what they check. Pushes to main check everything.
+  changes:
+    name: changes
+    runs-on: ubuntu-24.04
+    outputs:
+      relevant: ${{ steps.diff.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: diff
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          # A PR checks out its merge commit: its first parent is the base branch.
+          elif git diff --name-only HEAD^1 HEAD | grep -qE '^(spikes/|spec/|\.github/workflows/toolchain-checks\.yml$)'; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          fi
+
   checks:
     name: ${{ matrix.os }}
+    needs: changes
+    if: needs.changes.outputs.relevant == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -48,3 +71,16 @@ jobs:
 
       - name: "Check 3: one core builds and runs in Node, Python and WASM"
         run: bash bindings/verify.sh
+
+  # The one check branch protection requires: it fails if any job above failed or was cancelled,
+  # and passes when they ran green or were skipped as irrelevant.
+  result:
+    name: Toolchain result
+    if: always()
+    needs: [changes, checks]
+    runs-on: ubuntu-24.04
+    steps:
+      - run: |
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            exit 1
+          fi

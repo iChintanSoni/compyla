@@ -1,0 +1,29 @@
+name: Documentation
+description: Something in the README, the wiki, the spec's wording or a doc comment is wrong or missing.
+title: "[Docs] "
+labels: ["type: docs", "status: needs-triage"]
+projects: ["iChintanSoni/9"]
+body:
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      options: [README, Wiki, Spec wording (docs/), CLI help, Doc comments, Other]
+    validations:
+      required: true
+  - type: input
+    id: link
+    attributes:
+      label: Link or path
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's wrong or missing
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested text

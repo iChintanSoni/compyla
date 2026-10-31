@@ -1,0 +1,57 @@
+name: Spec change
+description: Propose a change to the markdown spec, IR schema or diagnostics registry.
+title: "[Spec] "
+labels: ["type: spec", "area: spec", "status: needs-triage"]
+projects: ["iChintanSoni/9"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Spec changes are recorded in the change log of `docs/markdown-spec.md` with a C-number and pinned by conformance fixtures.
+  - type: input
+    id: section
+    attributes:
+      label: Section
+      placeholder: e.g. §9.2 Placement
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Current text and behavior
+    validations:
+      required: true
+  - type: textarea
+    id: proposed
+    attributes:
+      label: Proposed text
+    validations:
+      required: true
+  - type: textarea
+    id: rationale
+    attributes:
+      label: Why
+      description: The problem the current text causes; evidence (an input, a viewer's behavior, a standard).
+    validations:
+      required: true
+  - type: dropdown
+    id: compatibility
+    attributes:
+      label: Compatibility
+      options:
+        - Clarifies; no behavior changes
+        - Changes output
+        - Changes diagnostics (codes, severities or positions)
+        - Breaking for existing documents
+    validations:
+      required: true
+  - type: textarea
+    id: fixtures
+    attributes:
+      label: Fixtures
+      description: Which conformance suites and fixtures pin it (parse, lint, compose, render, inspect).
+  - type: textarea
+    id: registry
+    attributes:
+      label: Registry and schema impact
+      description: New or changed diagnostic codes, IR schema changes.

@@ -1,0 +1,22 @@
+title: "[Idea] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What do you want to do with Compyla that's hard or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+      description: Rough is fine. Markdown you'd like to write, and what you'd like to get.
+    validations:
+      required: true
+  - type: dropdown
+    id: formats
+    attributes:
+      label: Formats
+      multiple: true
+      options: [pptx, xlsx, docx, pdf, All, Not format-specific]

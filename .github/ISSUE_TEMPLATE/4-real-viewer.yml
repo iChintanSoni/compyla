@@ -1,0 +1,47 @@
+name: Real-viewer finding
+description: Output that a real application repairs, misrenders or flags (PowerPoint, Excel, Word, LibreOffice…).
+title: "[Viewer] "
+labels: ["type: real-viewer", "status: needs-triage"]
+projects: ["iChintanSoni/9"]
+body:
+  - type: dropdown
+    id: app
+    attributes:
+      label: Application
+      options: [Microsoft PowerPoint, Microsoft Excel, Microsoft Word, LibreOffice, Keynote, Numbers, Pages, Google Slides, Google Sheets, Google Docs, Quick Look, Other]
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: Application version and OS
+      placeholder: e.g. PowerPoint 16.9x on macOS 27
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What happened
+      multiple: true
+      options:
+        - Repair prompt, or the file won't open
+        - Renders wrong
+        - Accessibility checker flags it
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Input
+      description: The markdown (and template) that produced the file, or the conformance fixture's name.
+      render: markdown
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: The exact message, the accessibility checker's issue names, and screenshots.
+    validations:
+      required: true

@@ -1,0 +1,38 @@
+name: Conformance gap
+description: Behavior the spec defines that no conformance fixture pins (or a fixture that's wrong).
+title: "[Conformance] "
+labels: ["type: conformance", "area: conformance", "status: needs-triage"]
+projects: ["iChintanSoni/9"]
+body:
+  - type: dropdown
+    id: suite
+    attributes:
+      label: Suite
+      options: [parse, lint, compose, render, inspect]
+    validations:
+      required: true
+  - type: input
+    id: section
+    attributes:
+      label: Spec section
+      placeholder: e.g. §8.6
+    validations:
+      required: true
+  - type: textarea
+    id: gap
+    attributes:
+      label: What isn't covered (or is wrong)
+    validations:
+      required: true
+  - type: textarea
+    id: fixture
+    attributes:
+      label: Proposed fixture
+      description: input.md and the expected result.
+      render: markdown
+  - type: dropdown
+    id: oracle
+    attributes:
+      label: Oracle
+      description: See spec/conformance/README.md.
+      options: [prototype, corrected, none, Not sure]

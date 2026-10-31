@@ -1,0 +1,29 @@
+name: Labels
+
+# Labels are code: .github/labels.json is the list, and this keeps the repository's labels in step
+# with it. Labels not in the file (for instance Dependabot's own) are left alone.
+on:
+  push:
+    branches: [main]
+    paths: [".github/labels.json", ".github/workflows/labels.yml"]
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  sync:
+    name: sync labels
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create or update every label in labels.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          jq -c '.[]' .github/labels.json | while read -r label; do
+            gh label create "$(jq -r .name <<<"$label")" \
+              --color "$(jq -r .color <<<"$label")" \
+              --description "$(jq -r .description <<<"$label")" \
+              --force --repo "$GITHUB_REPOSITORY"
+          done
