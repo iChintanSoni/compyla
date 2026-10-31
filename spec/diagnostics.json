@@ -775,7 +775,7 @@
       "since": "0.2",
       "status": "active",
       "spec": "§8.5, §10.2, §10.6",
-      "summary": "An option's value can't be used: a layoutAliases entry naming no layout of the supplied template, or layoutAliases without a supplied pptx template."
+      "summary": "An option's value can't be used: for pptx, a layoutAliases entry naming no layout of the supplied template, or layoutAliases with no template asked for."
     }
   ]
 }

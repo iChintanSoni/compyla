@@ -11,3 +11,6 @@ target/
 
 # Agent worktrees (Claude Code)
 .claude/worktrees/
+
+# Python bytecode (spec/tools)
+__pycache__/

@@ -1,5 +1,5 @@
 {
-  "description": "A template without a theme part is no_theme, and a docx one without a styles part no_styles_xml; both warnings, wherever the template is used (§10.4).",
+  "description": "A template without a theme part is no_theme, wherever it is used; a docx document whose template has no styles part is no_styles_xml. Both are warnings (§10.4).",
   "spec": [
     "§10.4",
     "C56"

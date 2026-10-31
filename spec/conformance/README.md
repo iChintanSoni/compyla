@@ -59,8 +59,8 @@ a path is `none`: the oracle can't see that difference.
   that names a file in the fixture directory resolves to that file's bytes; any other resolves as
   *exists*, without bytes (markdown-spec.md §10.3). `template`, when the case gives one, is that
   file's bytes from the fixture directory. The template resolver resolves a `meta.template` reference
-  that is a plain file name (no `/`, `\`, `.` or `..`) to that file in the fixture directory, and any
-  other as *not found*.
+  that is a plain file name (containing no `/` or `\`, and not `.` or `..`) to that file in the
+  fixture directory, and any other as *not found*.
 - **compose:** run the implementation's compose stage for `format` and project it to the compose summary.
 - **render:** call `convert(input.md, { format, strict, template })`, with the asset and template
   resolvers and `template` as for lint. Do it **twice**: the two outputs must be
