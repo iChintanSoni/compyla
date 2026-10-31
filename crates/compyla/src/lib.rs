@@ -297,9 +297,12 @@ fn check(
     let (locator, sidecar) = compyla_core::locate::renumber(&mut document, &sidecar);
     let mut out = Sink::located(locator);
     let template = template(options, &document, &sidecar, resolvers, format, &mut out)?;
+    // `layoutAliases` binds pptx layouts (§8.5); other formats ignore it. A template that was asked
+    // for but can't be used has already been reported, and blocks the output.
+    let requested = options.template.is_some() || document.meta.contains_key("template");
     let layouts = match (&template, format) {
         (Some(template), Format::Pptx) => Some(template_layouts(template, options)?),
-        _ if !options.layout_aliases.is_empty() => {
+        (None, Format::Pptx) if !requested && !options.layout_aliases.is_empty() => {
             return Err(option_invalid(
                 "`layoutAliases` names a supplied pptx template's layouts, and there is none.",
             ));
@@ -382,17 +385,20 @@ fn template(
         Format::Docx => template.kind == Kind::Docx,
         Format::Pdf => matches!(template.kind, Kind::Docx | Kind::Pptx),
         Format::Pptx => template.kind == Kind::Pptx,
-        Format::Xlsx if template.kind == Kind::Xlsx => {
+        Format::Xlsx => {
+            // A workbook template is never used, and a docx or pptx template's theme tokens aren't
+            // applied yet: either way the house style is, and that is said.
+            let message = if template.kind == Kind::Xlsx {
+                "A workbook template isn't used; the house style is."
+            } else {
+                "Theme tokens from a template aren't applied to workbooks yet; the house style is used."
+            };
             out.push(
-                Diagnostic::new(
-                    "xlsx_template_unsupported",
-                    "A workbook template isn't used; an xlsx document takes theme tokens from a docx or pptx template.",
-                )
-                .hint("Supply a .docx, .dotx, .pptx or .potx template, or none."),
+                Diagnostic::new("xlsx_template_unsupported", message)
+                    .hint("Convert without a template for now."),
             );
             return Ok(None);
         }
-        Format::Xlsx => true,
     };
     if !accepted {
         out.push(
@@ -412,14 +418,31 @@ fn template(
         );
         return Ok(None);
     }
+    let invalid = |why: String| Diagnostic::new("template_invalid", format!("The template {why}."));
     match compyla_ooxml::inspect::warnings(&template) {
-        Ok(warnings) => out.extend(warnings),
+        // Styles matter to docx output only (§10.4).
+        Ok(warnings) => out.extend(
+            warnings
+                .into_iter()
+                .filter(|w| w.code != "no_styles_xml" || format == Format::Docx),
+        ),
         Err(why) => {
-            out.push(Diagnostic::new(
-                "template_invalid",
-                format!("The template {}.", why.0),
-            ));
+            out.push(invalid(why.0));
             return Ok(None);
+        }
+    }
+    // A deck is written into the template's layouts (§8.5): it needs some, readable.
+    if format == Format::Pptx {
+        match compyla_ooxml::layouts::read(&template) {
+            Ok(layouts) if layouts.is_empty() => {
+                out.push(invalid("has no slide layouts".into()));
+                return Ok(None);
+            }
+            Ok(_) => {}
+            Err(why) => {
+                out.push(invalid(why.0));
+                return Ok(None);
+            }
         }
     }
     Ok(Some(template))
@@ -432,7 +455,7 @@ fn template_layouts(
 ) -> Result<compyla_core::validate::pptx::layout::TemplateLayouts, OperationError> {
     use compyla_core::validate::pptx::layout::{TemplateLayout, TemplateLayouts};
     let fold = compyla_core::validate::fold;
-    // An unreadable layout list leaves binding to the house set; rendering reports the template.
+    // Read, and found not to be empty, when the template was accepted.
     let layouts: Vec<TemplateLayout> = compyla_ooxml::layouts::read(template)
         .unwrap_or_default()
         .into_iter()

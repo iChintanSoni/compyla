@@ -53,7 +53,7 @@
     },
     "template": {
       "type": "string",
-      "description": "Render suite: a template file in the fixture directory, passed as the template option."
+      "description": "Lint and render suites: a template file in the fixture directory, passed as the template option. Inspect suite: the template file to inspect."
     }
   }
 }

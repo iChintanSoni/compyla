@@ -37,8 +37,19 @@ pub fn validate(input: &Input<'_>, out: &mut Sink) -> model::Deck {
     }
     let overflow = deck.overflow;
     let composed = compose(deck.slides, input.template);
+    // The valid layout names, for messages: built once, however many slides need them.
+    let names = std::cell::OnceCell::new();
+    let names = || {
+        names
+            .get_or_init(|| {
+                input
+                    .template
+                    .map_or_else(layout::names, TemplateLayouts::names)
+            })
+            .clone()
+    };
     for slide in &composed {
-        slide_rules(slide, input.template, &mut settled, out);
+        slide_rules(slide, &names, &mut settled, out);
     }
     if let Some(template) = input.template {
         not_in_template(&composed, template, out);
@@ -201,11 +212,10 @@ fn compose<'a>(slides: Vec<Slide<'a>>, template: Option<&TemplateLayouts>) -> Ve
 /// misplaced `layout` is entered by the slide walk (§8.1) and reported with the nested directives.
 fn slide_rules(
     composed: &Composed<'_>,
-    template: Option<&TemplateLayouts>,
+    names: &dyn Fn() -> String,
     settled: &mut HashSet<*const Directive>,
     out: &mut Sink,
 ) {
-    let names = || template.map_or_else(layout::names, TemplateLayouts::names);
     let slide = &composed.slide;
     match &composed.request {
         Request::Missing(directive) => out.push(at(
@@ -682,5 +692,28 @@ mod tests {
     fn fragment_links_target_slide_titles() {
         let source = "## Intro\n\nSee [costs](#costs) and [detail](#detail).\n\n### Detail\n\n---\n\n## Costs\n\nText.\n";
         assert_eq!(lint(source), expect(&[("link_anchor_unresolved", 3)]));
+    }
+
+    #[test]
+    fn a_template_layouts_slots_stop_at_the_content() {
+        // A layout with a hundred thousand placeholders keeps only the slots a slide fills.
+        let template = super::layout::TemplateLayouts {
+            layouts: vec![super::layout::TemplateLayout {
+                name: "Big".into(),
+                kind: None,
+                content: 100_000,
+            }],
+            aliases: Vec::new(),
+        };
+        let parsed = crate::parse::parse("# A\n\n::: layout Big\n:::\n\nText.\n");
+        let input = Input {
+            document: &parsed.document,
+            sidecar: &parsed.sidecar,
+            assets: &|_| crate::validate::Asset::Exists,
+            template: Some(&template),
+        };
+        let deck = super::validate(&input, &mut crate::diagnostic::Sink::new());
+        assert_eq!(deck.slides[0].slots.len(), 1);
+        assert_eq!(deck.slides[0].template, Some(0));
     }
 }

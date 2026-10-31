@@ -210,6 +210,10 @@ impl TemplateLayouts {
     /// A house layout as bound (§8.5): by alias, by name, by OOXML type, else the template's Title
     /// and Content layout (type `obj`) or its first, as a fallback.
     pub fn bind(&self, layout: Layout) -> Bound {
+        if self.layouts.is_empty() {
+            // Nothing to bind to: the facade refuses such a template (`template_invalid`).
+            return Bound::house(layout);
+        }
         let wanted = fold(layout.name());
         let of_kind = |kind: &str| {
             self.layouts
@@ -255,19 +259,18 @@ impl TemplateLayouts {
         }
     }
 
-    /// The valid layout names, for messages: the house set, then the template's own and aliases.
+    /// The valid layout names, for messages: the house set, then the template's own and aliases,
+    /// each once.
     pub fn names(&self) -> String {
-        let mut names: Vec<&str> = Layout::HOUSE.iter().map(|l| l.name()).collect();
-        for name in self
-            .layouts
-            .iter()
-            .map(|l| l.name.as_str())
-            .chain(self.aliases.iter().map(|(a, _)| a.as_str()))
-        {
-            if !names.iter().any(|n| fold(n) == fold(name)) {
-                names.push(name);
-            }
-        }
+        let house = Layout::HOUSE.iter().map(|l| l.name());
+        let own = self.layouts.iter().map(|l| l.name.as_str());
+        let aliases = self.aliases.iter().map(|(a, _)| a.as_str());
+        let mut seen = std::collections::HashSet::new();
+        let names: Vec<&str> = house
+            .chain(own)
+            .chain(aliases)
+            .filter(|name| seen.insert(fold(name)))
+            .collect();
         names.join(", ")
     }
 }

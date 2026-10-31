@@ -165,10 +165,16 @@ impl Accepts {
 /// to the last slot. With `col` markers, a column's blocks go to its slots.
 fn slots(composed: &Composed<'_>, fits: &HashMap<*const Media, Fit>) -> Vec<Vec<Content>> {
     let layout = composed.layout;
-    let count = layout.slots();
-    if count == 0 {
+    let blocks = blocks(composed, fits);
+    // A template's own layout can have any number of placeholders, filled in order: slots past the
+    // content stay empty, so they aren't kept. House layouts have at most four, placed by column.
+    let count = match layout {
+        Layout::Own { slots } => slots.min(blocks.len().max(1)),
+        _ => layout.slots(),
+    };
+    if layout.slots() == 0 {
         // Content a layout has no slot for (`layout_overflow`) is still shown, never dropped.
-        let overflow: Vec<Content> = blocks(composed, fits).into_iter().map(|(_, c)| c).collect();
+        let overflow: Vec<Content> = blocks.into_iter().map(|(_, c)| c).collect();
         return if overflow.is_empty() {
             Vec::new()
         } else {
@@ -193,7 +199,7 @@ fn slots(composed: &Composed<'_>, fits: &HashMap<*const Media, Fit>) -> Vec<Vec<
         }
         _ => vec![Accepts::Any; count],
     };
-    for (column, content) in blocks(composed, fits) {
+    for (column, content) in blocks {
         let slot = match layout {
             Layout::TwoContent if columns => column.min(1),
             Layout::Comparison if columns => {
