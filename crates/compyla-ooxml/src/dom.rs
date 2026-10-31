@@ -95,8 +95,7 @@ pub enum Error {
 /// `<?` in either byte order); UTF-16 is transcoded, so every check sees characters, not bytes.
 pub fn utf8(bytes: &[u8]) -> Result<std::borrow::Cow<'_, [u8]>, Error> {
     let utf16 = |data: &[u8], little: bool| -> Result<std::borrow::Cow<'_, [u8]>, Error> {
-        let units = data.chunks_exact(2).map(|pair| {
-            let pair = [pair[0], pair[1]];
+        let units = data.as_chunks::<2>().0.iter().map(|&pair| {
             if little {
                 u16::from_le_bytes(pair)
             } else {
