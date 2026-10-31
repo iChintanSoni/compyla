@@ -1,4 +1,7 @@
-# Dependency updates, grouped so a week's minor and patch bumps arrive as one PR per ecosystem.
+# Weekly updates: cargo's minor and patch bumps arrive as one PR, and all action bumps as another.
+# npm gets security updates only (below). The spikes/ workspace isn't listed on purpose: it records
+# the Phase A toolchain checks at the versions decided then, and the main workspace's own tests
+# cover the versions in use.
 version: 2
 updates:
   - package-ecosystem: cargo

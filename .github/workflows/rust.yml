@@ -77,7 +77,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # The toolchain goes through the input, not the ref: Dependabot reads a ref like `@1.89` as
-      # an action release and "bumps" it to a Rust that doesn't exist (#51).
+      # an action release and "bumps" it to a Rust that doesn't exist (#51). `@master` is the ref
+      # the action's README prescribes for an explicit toolchain input.
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.89"
