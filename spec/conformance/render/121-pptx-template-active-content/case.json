@@ -1,0 +1,9 @@
+{
+  "description": "A supplied template whose kept parts hold active and external content (§10.4): the master's linked picture loses its link and keeps its hyperlink; the layout loses its embedded OLE object with its alternate, preview and animation, its linked OLE object and its ActiveX control, so the embedded document and the control's parts aren't in the package; external relationships nothing refers to are dropped from the presentation and the theme. One `template_content_removed` per object or other removed relationship.",
+  "spec": [
+    "§10.4",
+    "C58"
+  ],
+  "oracle": "none",
+  "format": "pptx"
+}

@@ -134,3 +134,69 @@ fn many_excel_tables_convert() {
     let archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
     assert!(archive.len() > 70_000);
 }
+
+#[test]
+#[cfg(feature = "pptx")]
+fn a_template_full_of_active_content_converts() {
+    // Each linked picture and OLE object is found, removed and reported in one pass (§10.4); the
+    // reports are capped like any others (§11.2).
+    const BRAND: &[u8] =
+        include_bytes!("../../../spec/conformance/lint/139-pptx-template-binding/brand.potx");
+    const R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+    let n = 8_000;
+    let mut shapes = String::new();
+    let mut rels = String::new();
+    for i in 0..n {
+        shapes.push_str(&format!(
+            r#"<p:pic><p:nvPicPr><p:cNvPr id="{}" name=""/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:link="rIdL{i}"/></p:blipFill><p:spPr/></p:pic><p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="{}" name=""/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr><p:xfrm/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/presentationml/2006/ole"><p:oleObj r:id="rIdO{i}"><p:embed/></p:oleObj></a:graphicData></a:graphic></p:graphicFrame>"#,
+            100 + 2 * i,
+            101 + 2 * i
+        ));
+        rels.push_str(&format!(
+            r#"<Relationship Id="rIdL{i}" Type="{R}/image" Target="https://tracker.example/{i}.png" TargetMode="External"/><Relationship Id="rIdO{i}" Type="{R}/oleObject" Target="../embeddings/o{i}.bin"/>"#
+        ));
+    }
+    let entries: Vec<(String, Vec<u8>)> = compyla_ooxml::read::entries(BRAND)
+        .unwrap()
+        .into_iter()
+        .map(|(name, data)| {
+            let text = String::from_utf8_lossy(&data);
+            let data = match name.as_str() {
+                "ppt/slideMasters/slideMaster1.xml" => text
+                    .replacen(
+                        "</p:spTree></p:cSld>",
+                        &format!("{shapes}</p:spTree></p:cSld>"),
+                        1,
+                    )
+                    .into_bytes(),
+                "ppt/slideMasters/_rels/slideMaster1.xml.rels" => text
+                    .replacen("</Relationships>", &format!("{rels}</Relationships>"), 1)
+                    .into_bytes(),
+                _ => data,
+            };
+            (name, data)
+        })
+        .collect();
+    let options = compyla::Options {
+        format: Some(compyla::Format::Pptx),
+        template: Some(compyla_ooxml::zip::write(&entries)),
+        ..Default::default()
+    };
+    let start = Instant::now();
+    let result = compyla::convert(
+        "# A\n\n---\n\n## B\n\nText.\n",
+        &options,
+        &compyla::no_assets,
+    )
+    .unwrap();
+    assert!(start.elapsed() < BOUND, "took {:?}", start.elapsed());
+    assert!(result.bytes.is_some());
+    let codes: Vec<&str> = result.diagnostics.iter().map(|d| d.code.as_str()).collect();
+    assert_eq!(codes.len(), 1_001);
+    assert!(
+        codes[..1_000]
+            .iter()
+            .all(|&c| c == "template_content_removed")
+    );
+    assert_eq!(codes[1_000], "diagnostics_truncated");
+}

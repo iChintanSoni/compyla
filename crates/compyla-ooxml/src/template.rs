@@ -272,18 +272,8 @@ impl Template {
     /// The relationships of `source` (`""` for the package), with targets resolved to part names.
     /// A target that leaves the package is treated as external.
     pub fn relationships(&self, source: &str) -> Result<Vec<Relationship>, Invalid> {
-        let (folder, file) = match source.rsplit_once('/') {
-            Some((folder, file)) => (folder, file),
-            None => ("", source),
-        };
-        let rels = if source.is_empty() {
-            "_rels/.rels".to_string()
-        } else if folder.is_empty() {
-            format!("_rels/{file}.rels")
-        } else {
-            format!("{folder}/_rels/{file}.rels")
-        };
-        let Some(root) = self.xml(&rels)? else {
+        let folder = source.rsplit_once('/').map_or("", |(folder, _)| folder);
+        let Some(root) = self.xml(&relationships_part(source))? else {
             return Ok(Vec::new());
         };
         let mut out = Vec::new();
@@ -319,6 +309,15 @@ impl Template {
             .into_iter()
             .find(|r| r.kind.ends_with(&suffix) && !r.external)
             .map(|r| r.target))
+    }
+}
+
+/// The relationships part of `source` (`""` for the package's own).
+pub fn relationships_part(source: &str) -> String {
+    match source.rsplit_once('/').unwrap_or(("", source)) {
+        _ if source.is_empty() => "_rels/.rels".to_string(),
+        ("", file) => format!("_rels/{file}.rels"),
+        (folder, file) => format!("{folder}/_rels/{file}.rels"),
     }
 }
 

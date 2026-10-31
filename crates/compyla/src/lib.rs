@@ -244,6 +244,9 @@ struct Checked {
     diagnostics: Vec<Diagnostic>,
     /// Whether any diagnostic, including any the cap dropped, is an error after escalation.
     blocked: bool,
+    /// Whether warnings escalate (§11.1), for the diagnostics rendering adds.
+    #[cfg_attr(not(feature = "pptx"), allow(dead_code))]
+    strict: bool,
     /// The composed model, its format and the document properties; absent when a limit stopped
     /// processing.
     composed: Option<(Composed, Format, Properties)>,
@@ -280,6 +283,7 @@ fn check(
         return Ok(Checked {
             diagnostics,
             blocked: true,
+            strict: options.strict,
             composed: None,
             template: None,
         });
@@ -322,6 +326,7 @@ fn check(
     Ok(Checked {
         diagnostics,
         blocked: blocking.merge(validate_blocking).blocks(options.strict),
+        strict: options.strict,
         composed: Some((composed, format, properties)),
         // pptx renders into the template, and xlsx takes its theme tokens.
         template: template.filter(|_| matches!(format, Format::Pptx | Format::Xlsx)),
@@ -493,9 +498,10 @@ fn render(
     assets: &dyn Fn(&str) -> Asset,
 ) -> Result<ConvertResult, OperationError> {
     let format = checked.composed.as_ref().map(|(_, format, _)| *format);
-    // Rendering may add `render_failed`.
-    #[cfg_attr(not(feature = "pptx"), allow(unused_mut))]
     let mut diagnostics = checked.diagnostics;
+    // Rendering may add `render_failed` and `template_content_removed`.
+    #[cfg_attr(not(feature = "pptx"), allow(unused_mut))]
+    let mut rendered: Vec<Diagnostic> = Vec::new();
     let bytes = match checked.composed {
         _ if checked.blocked => None,
         #[cfg(feature = "xlsx")]
@@ -524,12 +530,19 @@ fn render(
                 _ => None,
             };
             let template = checked.template.unwrap_or_else(compyla_pptx::house);
-            let rendered = compyla_pptx::render(&deck, &template, &properties, &images);
-            match rendered {
-                Ok(bytes) => Some(bytes),
+            match compyla_pptx::render(&deck, &template, &properties, &images) {
+                Ok(output) => {
+                    rendered.extend(
+                        output
+                            .removed
+                            .iter()
+                            .map(|(part, what)| content_removed(part, what)),
+                    );
+                    Some(output.bytes)
+                }
                 // A failure while rendering is the error diagnostic `render_failed` (§11.1).
                 Err(why) => {
-                    diagnostics.push(Diagnostic::new(
+                    rendered.push(Diagnostic::new(
                         "render_failed",
                         format!("The document couldn't be rendered: the template {}.", why.0),
                     ));
@@ -539,11 +552,48 @@ fn render(
         }
         _ => None,
     };
+    // Render-stage diagnostics join the others in §11.2 order, under the cap.
+    if !rendered.is_empty() {
+        if diagnostics
+            .last()
+            .is_some_and(|d| d.code == "diagnostics_truncated")
+        {
+            diagnostics.pop();
+        }
+        diagnostics.extend(rendered);
+        finish(&mut diagnostics, checked.strict);
+    }
     Ok(ConvertResult {
         bytes,
         format,
         diagnostics,
     })
+}
+
+/// `template_content_removed` (§10.4): what a kept part of the template had removed.
+#[cfg(feature = "pptx")]
+fn content_removed(part: &str, what: &compyla_ooxml::sanitize::Removed) -> Diagnostic {
+    use compyla_ooxml::sanitize::Removed;
+    let message = match what {
+        Removed::OleObject => format!(
+            "An OLE object in the template's `{part}` was removed: output keeps no embedded or linked objects."
+        ),
+        Removed::ActiveX => format!(
+            "An ActiveX control in the template's `{part}` was removed: output keeps no active content."
+        ),
+        Removed::External { kind, target } => {
+            // A target is the template's text, of any length.
+            let mut shown: String = target.chars().take(100).collect();
+            if shown.len() < target.len() {
+                shown.push('…');
+            }
+            format!(
+                "The template's `{part}` links to `{shown}` through an external `{kind}` relationship, which was removed: output keeps no external links but hyperlinks."
+            )
+        }
+    };
+    Diagnostic::new("template_content_removed", message)
+        .hint("Remove it from the template, and this warning goes away.")
 }
 
 fn properties(meta: &serde_json::Map<String, serde_json::Value>) -> Properties {

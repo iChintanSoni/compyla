@@ -1,0 +1,120 @@
+{
+  "diagnostics": [
+    {
+      "code": "template_content_removed",
+      "severity": "warning"
+    },
+    {
+      "code": "template_content_removed",
+      "severity": "warning"
+    },
+    {
+      "code": "template_content_removed",
+      "severity": "warning"
+    },
+    {
+      "code": "template_content_removed",
+      "severity": "warning"
+    },
+    {
+      "code": "template_content_removed",
+      "severity": "warning"
+    },
+    {
+      "code": "template_content_removed",
+      "severity": "warning"
+    }
+  ],
+  "output": {
+    "slides": [
+      {
+        "layout": "Title Slide",
+        "title": "Active content",
+        "texts": [],
+        "notes": null
+      },
+      {
+        "layout": "Titel und Inhalt",
+        "title": "Kept",
+        "texts": [
+          "Text."
+        ],
+        "notes": null
+      }
+    ],
+    "package": {
+      "partsPresent": [
+        "ppt/slideLayouts/slideLayout2.xml",
+        "ppt/slideMasters/slideMaster1.xml",
+        "ppt/theme/theme1.xml"
+      ],
+      "partsAbsent": [
+        "ppt/embeddings/.*",
+        "ppt/activeX/.*",
+        "ppt/media/(preview|control)\\.png"
+      ],
+      "xpath": [
+        {
+          "part": "ppt/slideLayouts/slideLayout2.xml",
+          "expr": "count(//p:graphicFrame)",
+          "equals": 0
+        },
+        {
+          "part": "ppt/slideLayouts/slideLayout2.xml",
+          "expr": "count(//p:controls)",
+          "equals": 0
+        },
+        {
+          "part": "ppt/slideLayouts/slideLayout2.xml",
+          "expr": "count(//p:timing)",
+          "equals": 0
+        },
+        {
+          "part": "ppt/slideLayouts/slideLayout2.xml",
+          "expr": "count(//p:sp)",
+          "equals": 3
+        },
+        {
+          "part": "ppt/slideLayouts/_rels/slideLayout2.xml.rels",
+          "expr": "count(//rel:Relationship)",
+          "equals": 1
+        },
+        {
+          "part": "ppt/slideMasters/slideMaster1.xml",
+          "expr": "count(//p:pic)",
+          "equals": 1
+        },
+        {
+          "part": "ppt/slideMasters/slideMaster1.xml",
+          "expr": "count(//a:blip/@r:link)",
+          "equals": 0
+        },
+        {
+          "part": "ppt/slideMasters/slideMaster1.xml",
+          "expr": "count(//a:hlinkClick)",
+          "equals": 1
+        },
+        {
+          "part": "ppt/slideMasters/_rels/slideMaster1.xml.rels",
+          "expr": "count(//rel:Relationship[@TargetMode='External'])",
+          "equals": 1
+        },
+        {
+          "part": "ppt/slideMasters/_rels/slideMaster1.xml.rels",
+          "expr": "string(//rel:Relationship[@TargetMode='External']/@Target)",
+          "equals": "https://example.com/"
+        },
+        {
+          "part": "ppt/_rels/presentation.xml.rels",
+          "expr": "count(//rel:Relationship[@TargetMode='External'])",
+          "equals": 0
+        },
+        {
+          "part": "ppt/theme/_rels/theme1.xml.rels",
+          "expr": "count(//rel:Relationship)",
+          "equals": 0
+        }
+      ]
+    }
+  }
+}

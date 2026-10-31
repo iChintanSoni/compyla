@@ -180,39 +180,7 @@ pub fn edit(bytes: &[u8], slides: &[(u32, String)]) -> Result<Vec<u8>, String> {
 
 /// A part as UTF-8 (§10.4 allows UTF-16 parts): transcoded, with its declaration saying so.
 fn utf8(bytes: &[u8]) -> Result<Vec<u8>, String> {
-    let text = compyla_ooxml::dom::utf8(bytes).map_err(|_| "an XML part isn't UTF-8 or UTF-16")?;
-    let transcoded = matches!(text, std::borrow::Cow::Owned(_));
-    let mut text = text.into_owned();
-    if transcoded
-        && text.starts_with(b"<?xml")
-        && let Some(end) = text.windows(2).position(|w| w == b"?>")
-        && let Some(value) = encoding_value(&text[..end])
-    {
-        text.splice(value, b"UTF-8".iter().copied());
-    }
-    Ok(text)
-}
-
-/// Where the value of an XML declaration's `encoding` pseudo-attribute lies, between its quotes
-/// (XML 1.0 §2.8, §4.3.3: spaces may surround `=`).
-fn encoding_value(declaration: &[u8]) -> Option<std::ops::Range<usize>> {
-    let name = declaration.windows(8).position(|w| w == b"encoding")? + 8;
-    let mut at = name;
-    let space = |b: &u8| matches!(b, b' ' | b'\t' | b'\r' | b'\n');
-    while declaration.get(at).is_some_and(space) {
-        at += 1;
-    }
-    if declaration.get(at) != Some(&b'=') {
-        return None;
-    }
-    at += 1;
-    while declaration.get(at).is_some_and(space) {
-        at += 1;
-    }
-    let quote = *declaration.get(at).filter(|q| matches!(q, b'"' | b'\''))?;
-    let start = at + 1;
-    let length = declaration.get(start..)?.iter().position(|&b| b == quote)?;
-    Some(start..start + length)
+    compyla_ooxml::dom::utf8_document(bytes).map_err(|_| "an XML part isn't UTF-8 or UTF-16".into())
 }
 
 /// `presProps.xml` without show settings that name slides or custom shows the output doesn't have:
