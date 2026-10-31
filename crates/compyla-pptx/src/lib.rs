@@ -329,31 +329,53 @@ impl SlideWriter<'_> {
                     text.cell(title, None);
                 })
             }
-            // A layout without a title placeholder (Blank): the title is a shape of its own over
-            // the master's title area, never dropped (§8.8).
+            // A layout without a title placeholder (Blank): the title is a title placeholder of
+            // its own over the master's title area, so it is still the slide's title, and never
+            // dropped (§8.8).
             (Some(title), None) => {
                 let area = layout.master_title.unwrap_or(TITLE_AREA);
-                self.text_box(&mut shapes, area, |text| text.cell(title, None));
+                let placeholder = Placeholder {
+                    kind: "title".into(),
+                    index: None,
+                    rect: Some(area),
+                };
+                self.text_shape(
+                    &mut shapes,
+                    &placeholder,
+                    Some(area),
+                    Bullets::Inherit,
+                    |text| text.cell(title, None),
+                );
             }
             (None, _) => {}
         }
+        // Content for a slot the layout has no placeholder for goes in a shape of its own over the
+        // master's body area.
+        let free = Placeholder {
+            kind: String::new(),
+            index: None,
+            rect: Some(layout.master_body.unwrap_or(BODY_AREA)),
+        };
         let content = layout.content();
-        for (index, blocks) in slide.slots.iter().enumerate() {
-            if blocks.is_empty() {
-                continue;
-            }
-            match content.get(index) {
+        let mut slots: Vec<(&[Content], Option<&Placeholder>)> = slide
+            .slots
+            .iter()
+            .enumerate()
+            .filter(|(_, blocks)| !blocks.is_empty())
+            .map(|(index, blocks)| (blocks.as_slice(), content.get(index).copied()))
+            .collect();
+        // Shapes are written in reading order (§8.8): by their areas' left edges, then top edges,
+        // so a caption beside a picture is read after the title above it, not after the picture.
+        slots.sort_by_key(|(_, placeholder)| {
+            placeholder
+                .unwrap_or(&free)
+                .rect
+                .map_or((i64::MAX, i64::MAX), |r| (r.x, r.y))
+        });
+        for (blocks, placeholder) in slots {
+            match placeholder {
                 Some(placeholder) => self.slot(&mut shapes, blocks, placeholder),
-                // Content for a slot the layout has no placeholder for: a shape of its own over
-                // the master's body area.
-                None => {
-                    let free = Placeholder {
-                        kind: String::new(),
-                        index: None,
-                        rect: Some(layout.master_body.unwrap_or(BODY_AREA)),
-                    };
-                    self.free_slot(&mut shapes, blocks, &free);
-                }
+                None => self.free_slot(&mut shapes, blocks, &free),
             }
         }
         let mut xml = Writer::new();

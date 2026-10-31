@@ -1,0 +1,10 @@
+{
+  "description": "Columns are as wide as their header and data cells display (a formatted number, a date, text), plus room for a total's growth and an Excel table's filter button, so no number shows as ####. A link in an Excel table is underlined in the table's own text color. Both found by opening the output in Excel.",
+  "spec": [
+    "§9.2",
+    "§9.5",
+    "C55"
+  ],
+  "oracle": "corrected",
+  "format": "xlsx"
+}

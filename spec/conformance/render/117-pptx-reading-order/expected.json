@@ -1,0 +1,64 @@
+{
+  "diagnostics": [
+    {
+      "code": "layout_overflow",
+      "severity": "warning",
+      "line": 28
+    }
+  ],
+  "output": {
+    "slides": [
+      {
+        "layout": "Title Slide",
+        "title": "Reading order",
+        "texts": [],
+        "notes": null
+      },
+      {
+        "layout": "Picture with Caption",
+        "title": "The chart",
+        "texts": [
+          "Revenue grew in every region."
+        ],
+        "notes": null
+      },
+      {
+        "layout": "Content with Caption",
+        "title": "A table with a caption",
+        "texts": [
+          "Figures in thousands.",
+          "Region",
+          "Revenue",
+          "APAC",
+          "120"
+        ],
+        "notes": null
+      },
+      {
+        "layout": "Blank",
+        "title": "Blank, titled",
+        "texts": [],
+        "notes": null
+      }
+    ],
+    "package": {
+      "xpath": [
+        {
+          "part": "ppt/slides/slide2.xml",
+          "expr": "count(//p:pic/preceding-sibling::p:sp[.//p:ph[@type='body']])",
+          "equals": 1
+        },
+        {
+          "part": "ppt/slides/slide3.xml",
+          "expr": "count(//p:graphicFrame/preceding-sibling::p:sp[.//p:ph[@type='body']])",
+          "equals": 1
+        },
+        {
+          "part": "ppt/slides/slide4.xml",
+          "expr": "count(//p:sp[p:nvSpPr/p:nvPr/p:ph[@type='title']][p:spPr/a:xfrm])",
+          "equals": 1
+        }
+      ]
+    }
+  }
+}

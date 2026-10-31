@@ -48,9 +48,8 @@
       },
       {
         "layout": "Blank",
-        "title": null,
+        "title": "Blank, titled",
         "texts": [
-          "Blank, titled",
           "Words on a blank slide."
         ],
         "notes": null
@@ -86,8 +85,8 @@
         },
         {
           "part": "ppt/slides/slide5.xml",
-          "expr": "count(//p:ph)",
-          "equals": 0
+          "expr": "count(//p:sp[p:nvSpPr/p:nvPr/p:ph[@type='title']][p:spPr/a:xfrm])",
+          "equals": 1
         },
         {
           "part": "ppt/slides/slide5.xml",

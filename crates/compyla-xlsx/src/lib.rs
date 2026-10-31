@@ -6,7 +6,7 @@
 //! first appear, and parts are written in a fixed order, so the bytes are reproducible (§13).
 
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use compyla_core::ir::Run;
 use compyla_core::validate::xlsx::{Cell, CellValue, Link, Role, Workbook, builtin_format};
@@ -27,7 +27,7 @@ const TABLE_TYPE: &str = "application/vnd.openxmlformats-officedocument.spreadsh
 
 /// The header row's fill in the house style (§9.2).
 const HEADER_FILL: &str = "FFE8ECF3";
-/// The color of a hyperlink's text.
+/// The color of a hyperlink's text outside an Excel table.
 const LINK_COLOR: &str = "FF0563C1";
 
 /// Renders `workbook` as xlsx bytes, with the document properties from `meta` (C44).
@@ -140,11 +140,12 @@ fn worksheet(
     tables: &[String],
 ) -> Vec<u8> {
     // Ranges placed side by side share rows; Excel wants rows, and cells in a row, in order.
-    let mut cells: BTreeMap<(u32, u32), &Cell> = BTreeMap::new();
+    // Each cell, and whether it is in an Excel table.
+    let mut cells: BTreeMap<(u32, u32), (&Cell, bool)> = BTreeMap::new();
     let mut merges = Vec::new();
     for range in &sheet.ranges {
         for cell in &range.cells {
-            cells.insert((cell.row, cell.column), cell);
+            cells.insert((cell.row, cell.column), (cell, range.excel_table.is_some()));
         }
         if range.columns > 1 {
             let last = range.first_column + range.columns - 1;
@@ -177,10 +178,29 @@ fn worksheet(
     };
     xml.empty("dimension", &[("ref", &dimension)]);
     xml.empty("sheetFormatPr", &[("defaultRowHeight", "15")]);
+    let widths = widths(sheet);
+    if !widths.is_empty() {
+        xml.open("cols", &[]);
+        for (column, width) in widths {
+            let column = (column + 1).to_string();
+            xml.empty(
+                "col",
+                &[
+                    ("min", &column),
+                    ("max", &column),
+                    ("width", &width.to_string()),
+                    ("customWidth", "1"),
+                ],
+            );
+        }
+        xml.close("cols");
+    }
     xml.open("sheetData", &[]);
     let mut hyperlinks = Vec::new();
+    // Text that reads as a number, kept as text on purpose (§9.5): Excel would flag each.
+    let mut numeric_text = Vec::new();
     let mut current_row = None;
-    for (&(row, column), cell) in &cells {
+    for (&(row, column), &(cell, in_table)) in &cells {
         if current_row != Some(row) {
             if current_row.is_some() {
                 xml.close("row");
@@ -188,7 +208,8 @@ fn worksheet(
             xml.open("row", &[("r", &row.to_string())]);
             current_row = Some(row);
         }
-        let style = styles.index(&StyleKey::of(cell));
+        let key = StyleKey::of(cell, in_table);
+        let style = styles.index(&key);
         let reference = address(column, row);
         let style = style.to_string();
         let mut attrs = vec![("r", reference.as_str())];
@@ -198,7 +219,16 @@ fn worksheet(
         match &cell.value {
             CellValue::Empty => xml.empty("c", &attrs),
             CellValue::Text(runs) => {
-                let index = strings.index(runs, &StyleKey::of(cell).font).to_string();
+                if runs
+                    .iter()
+                    .map(|r| r.text.as_str())
+                    .collect::<String>()
+                    .parse::<f64>()
+                    .is_ok_and(f64::is_finite)
+                {
+                    numeric_text.push(reference.clone());
+                }
+                let index = strings.index(runs, &key.font).to_string();
                 attrs.push(("t", "s"));
                 xml.open("c", &attrs);
                 xml.element("v", &[], &index);
@@ -264,6 +294,17 @@ fn worksheet(
             ("footer", "0.3"),
         ],
     );
+    if !numeric_text.is_empty() {
+        xml.open("ignoredErrors", &[]);
+        xml.empty(
+            "ignoredError",
+            &[
+                ("sqref", &numeric_text.join(" ")),
+                ("numberStoredAsText", "1"),
+            ],
+        );
+        xml.close("ignoredErrors");
+    }
     if !tables.is_empty() {
         xml.open("tableParts", &[("count", &tables.len().to_string())]);
         for id in tables {
@@ -342,7 +383,16 @@ struct Font {
     bold: bool,
     italic: bool,
     strike: bool,
-    link: bool,
+    link: LinkMark,
+}
+
+/// How a hyperlink's text is marked (§9.5): underlined in the link color, or, in an Excel table,
+/// underlined in the table style's own text color, which the style's fills contrast with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum LinkMark {
+    None,
+    Colored,
+    Underlined,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -355,8 +405,9 @@ struct StyleKey {
 
 impl StyleKey {
     /// The house style (§9.2): a bold title, an italic note, and a bold header row on a light fill,
-    /// except in an Excel table, whose style formats its header.
-    fn of(cell: &Cell) -> StyleKey {
+    /// except in an Excel table, whose style formats its header. `in_table`: the cell is in an
+    /// Excel table's range.
+    fn of(cell: &Cell, in_table: bool) -> StyleKey {
         let house_header = cell.role == Role::Header;
         let wrap = matches!(&cell.value, CellValue::Text(runs) if runs.iter().any(|r| r.text.contains('\n')));
         StyleKey {
@@ -365,7 +416,11 @@ impl StyleKey {
                 bold: cell.role == Role::Title || house_header || cell.marks.bold,
                 italic: cell.role == Role::Note || cell.marks.italic,
                 strike: cell.marks.strike,
-                link: cell.link.is_some(),
+                link: match (&cell.link, in_table) {
+                    (None, _) => LinkMark::None,
+                    (Some(_), false) => LinkMark::Colored,
+                    (Some(_), true) => LinkMark::Underlined,
+                },
             },
             header_fill: house_header,
             wrap,
@@ -390,7 +445,7 @@ impl Default for Styles {
                 bold: false,
                 italic: false,
                 strike: false,
-                link: false,
+                link: LinkMark::None,
             },
             header_fill: false,
             wrap: false,
@@ -459,11 +514,11 @@ impl Styles {
             if font.strike {
                 xml.empty("strike", &[]);
             }
-            if font.link {
+            if font.link != LinkMark::None {
                 xml.empty("u", &[]);
             }
             xml.empty("sz", &[("val", "11")]);
-            if font.link {
+            if font.link == LinkMark::Colored {
                 xml.empty("color", &[("rgb", LINK_COLOR)]);
             }
             xml.empty("name", &[("val", "Calibri")]);
@@ -550,7 +605,7 @@ impl Styles {
 // too (a bold title, an italic note, a link's underline and color).
 
 /// A run as written: its text, then bold, italic, strike and link styling.
-type RichRun = (String, bool, bool, bool, bool);
+type RichRun = (String, bool, bool, bool, LinkMark);
 
 #[derive(Default)]
 struct Strings {
@@ -574,7 +629,7 @@ impl Strings {
                     cell.link,
                 )
             } else {
-                (false, false, false, false)
+                (false, false, false, LinkMark::None)
             };
             match rich.last_mut() {
                 Some(last) if (last.1, last.2, last.3, last.4) == marks => {
@@ -600,7 +655,10 @@ impl Strings {
         );
         for item in &self.items {
             xml.open("si", &[]);
-            if item.iter().all(|&(_, b, i, s, l)| !(b || i || s || l)) {
+            if item
+                .iter()
+                .all(|&(_, b, i, s, l)| !(b || i || s || l != LinkMark::None))
+            {
                 let text: String = item.iter().map(|(t, ..)| t.as_str()).collect();
                 text_element(&mut xml, &text);
             } else {
@@ -617,11 +675,11 @@ impl Strings {
                     if *strike {
                         xml.empty("strike", &[]);
                     }
-                    if *link {
+                    if *link == LinkMark::Colored {
                         xml.empty("color", &[("rgb", LINK_COLOR)]);
                     }
                     xml.empty("sz", &[("val", "11")]);
-                    if *link {
+                    if *link != LinkMark::None {
                         xml.empty("u", &[]);
                     }
                     xml.close("rPr");
@@ -634,6 +692,123 @@ impl Strings {
         xml.close("sst");
         xml.finish()
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Column widths (§9.2): wide enough for what the header and data cells display, so no number shows
+// as `####`.
+
+/// Excel's default column width (8.43 characters), in whole characters: a column needing no more
+/// keeps it.
+const DEFAULT_WIDTH: usize = 8;
+const MAX_WIDTH: usize = 60;
+/// Room for a cell's padding and bold text, in characters.
+const PADDING: usize = 2;
+
+/// The width of each column that needs more than the default, by 0-based column.
+fn widths(sheet: &compyla_core::validate::xlsx::Sheet) -> BTreeMap<u32, usize> {
+    let mut widest: BTreeMap<u32, usize> = BTreeMap::new();
+    // The widest number in each column, and the columns holding formulas, whose results can
+    // outgrow the rows they total.
+    let mut numbers: HashMap<u32, usize> = HashMap::new();
+    let mut formulas: HashSet<u32> = HashSet::new();
+    for range in &sheet.ranges {
+        let filter = range.excel_table.as_ref().is_some_and(|t| t.autofilter);
+        for cell in &range.cells {
+            let width = match (&cell.role, &cell.value) {
+                // Titles and notes are merged across their range, and widen nothing.
+                (Role::Title | Role::Note, _) => continue,
+                (_, CellValue::Formula(_)) => {
+                    formulas.insert(cell.column);
+                    continue;
+                }
+                (_, CellValue::Text(runs)) => {
+                    let text: String = runs.iter().map(|r| r.text.as_str()).collect();
+                    let line = text.lines().map(display_width).max().unwrap_or(0);
+                    // A filter button sits at the right of an Excel table's header cell.
+                    if cell.role == Role::TableHeader && filter {
+                        line + 2
+                    } else {
+                        line
+                    }
+                }
+                (_, CellValue::Number(number)) => {
+                    let width = number_width(number, &cell.format);
+                    let widest = numbers.entry(cell.column).or_default();
+                    *widest = (*widest).max(width);
+                    width
+                }
+                (_, CellValue::Boolean(_)) => "FALSE".len(),
+                (_, CellValue::Empty) => 0,
+            };
+            let entry = widest.entry(cell.column).or_default();
+            *entry = (*entry).max(width);
+        }
+    }
+    for column in formulas {
+        if let Some(&number) = numbers.get(&column) {
+            let entry = widest.entry(column).or_default();
+            *entry = (*entry).max(number + 2);
+        }
+    }
+    widest
+        .into_iter()
+        .map(|(column, width)| (column, (width + PADDING).min(MAX_WIDTH)))
+        .filter(|&(_, width)| width > DEFAULT_WIDTH)
+        .collect()
+}
+
+/// How many characters a number shows in `format`, one of the formats the compose stage gives
+/// (§9.5): a date, a percent, a grouped number with an optional currency prefix, or as written.
+fn number_width(number: &str, format: &str) -> usize {
+    if format == "yyyy-mm-dd" {
+        return 10;
+    }
+    let value: f64 = number.parse().unwrap_or(0.0);
+    let sign = usize::from(value < 0.0);
+    let decimals = format
+        .rsplit_once('.')
+        .map_or(0, |(_, f)| f.chars().take_while(|&c| c == '0').count());
+    let fraction = if decimals > 0 { decimals + 1 } else { 0 };
+    let digits = |value: f64| format!("{:.0}", value.abs().trunc()).len();
+    if format.ends_with('%') {
+        return sign + digits(value * 100.0) + fraction + 1;
+    }
+    if format.contains("#,##0") {
+        let prefix = format
+            .split('"')
+            .nth(1)
+            .filter(|_| format.starts_with('"'))
+            .map_or(0, display_width);
+        let digits = digits(value);
+        return sign + prefix + digits + (digits - 1) / 3 + fraction;
+    }
+    // General: as written, which Excel shows in at most 11 characters.
+    number.chars().count().min(11)
+}
+
+/// A text's width in characters: East Asian wide and fullwidth characters take two.
+fn display_width(text: &str) -> usize {
+    text.chars()
+        .map(|c| {
+            let c = u32::from(c);
+            let wide = matches!(c,
+                0x1100..=0x115F
+                | 0x2E80..=0x303E
+                | 0x3041..=0x33FF
+                | 0x3400..=0x4DBF
+                | 0x4E00..=0x9FFF
+                | 0xA000..=0xA4CF
+                | 0xAC00..=0xD7A3
+                | 0xF900..=0xFAFF
+                | 0xFE30..=0xFE4F
+                | 0xFF00..=0xFF60
+                | 0xFFE0..=0xFFE6
+                | 0x20000..=0x2FFFD
+                | 0x30000..=0x3FFFD);
+            if wide { 2 } else { 1 }
+        })
+        .sum()
 }
 
 /// `<t>`, preserving whitespace a parser would otherwise strip.
@@ -693,6 +868,30 @@ mod tests {
         assert_eq!(xstring("a_x003A_b_x12_"), "a_x005F_x003A_b_x12_");
         assert_eq!(xstring("_x005F_"), "_x005F_x005F_");
         assert_eq!(xstring("é_x00e9_"), "é_x005F_x00e9_");
+    }
+
+    #[test]
+    fn numbers_are_as_wide_as_their_format_shows_them() {
+        assert_eq!(number_width("120000", "\"$\"#,##0.00"), "$120,000.00".len());
+        assert_eq!(
+            number_width("98000", "\"CHF \"#,##0.00"),
+            "CHF 98,000.00".len()
+        );
+        assert_eq!(number_width("-1234.5", "#,##0.0"), "-1,234.5".len());
+        assert_eq!(number_width("999", "#,##0"), 3);
+        assert_eq!(number_width("0.14", "0%"), "14%".len());
+        assert_eq!(number_width("0.095", "0.0%"), "9.5%".len());
+        assert_eq!(number_width("46023", "yyyy-mm-dd"), 10);
+        assert_eq!(number_width("42", "General"), 2);
+        assert_eq!(number_width("123456789012345", "General"), 11);
+    }
+
+    #[test]
+    fn wide_characters_take_two() {
+        assert_eq!(display_width("ab"), 2);
+        assert_eq!(display_width("日本語"), 6);
+        assert_eq!(display_width("한국"), 4);
+        assert_eq!(display_width("Ｗ"), 2);
     }
 
     #[test]
