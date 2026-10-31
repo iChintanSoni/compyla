@@ -92,7 +92,8 @@
         "code": { "type": "string" },
         "severity": { "enum": ["error", "warning"] },
         "line": { "type": "integer", "minimum": 1 },
-        "column": { "type": "integer", "minimum": 1 }
+        "column": { "type": "integer", "minimum": 1 },
+        "path": { "type": "string", "pattern": "^(/[^/]*)*$" }
       }
     }
   }
