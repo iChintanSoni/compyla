@@ -1,0 +1,9 @@
+{
+  "diagnostics": [
+    {
+      "code": "directive_misplaced",
+      "severity": "warning",
+      "line": 3
+    }
+  ]
+}

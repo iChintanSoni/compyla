@@ -5,6 +5,7 @@ pub mod diagnostic;
 pub mod frontmatter;
 pub mod ir;
 pub mod ir_input;
+pub mod locate;
 pub mod parse;
 pub mod prepass;
 pub mod validate;

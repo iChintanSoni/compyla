@@ -14,7 +14,7 @@
           "columnTypes": [
             "text",
             "text",
-            "text",
+            "general",
             "number"
           ],
           "formulas": {}

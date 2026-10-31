@@ -1,0 +1,9 @@
+{
+  "description": "A waiting empty annotation overridden by a wrapping one of the same name has no effect and is misplaced.",
+  "spec": [
+    "§9.4",
+    "C46"
+  ],
+  "oracle": "corrected",
+  "format": "xlsx"
+}

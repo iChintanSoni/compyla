@@ -138,20 +138,17 @@ pub fn translate(source: &str, context: &Context<'_>) -> Result<Formula, Error> 
         }
     }
     for token in &tokens {
-        if let Kind::Reference(reference) = &token.kind {
-            for endpoint in reference.endpoints() {
-                if let Some(sheet) = &endpoint.sheet
-                    && !context.sheets.contains(&fold(&sheet.name))
-                {
-                    return Err(Error {
-                        reason: format!(
-                            "refers to sheet `{}`, which the workbook doesn't have",
-                            excerpt(&sheet.name)
-                        ),
-                        hint: "Use a sheet's name as it is written to the workbook (after repairs), quoted when it isn't a plain name: `'Q3 Data'!A1`.",
-                    });
-                }
-            }
+        if let Kind::Reference(reference) = &token.kind
+            && let Some(sheet) = &reference.first.sheet
+            && !context.sheets.contains(&fold(&sheet.name))
+        {
+            return Err(Error {
+                reason: format!(
+                    "refers to sheet `{}`, which the workbook doesn't have",
+                    excerpt(&sheet.name)
+                ),
+                hint: "Use a sheet's name as it is written to the workbook (after repairs), quoted when it isn't a plain name: `'Q3 Data'!A1`.",
+            });
         }
     }
 
@@ -181,6 +178,7 @@ pub fn translate(source: &str, context: &Context<'_>) -> Result<Formula, Error> 
                     formula.past_grid.push(text.to_string());
                 }
             }
+            Kind::Boolean => formula.written.push_str(&text.to_ascii_uppercase()),
             _ => formula.written.push_str(text),
         }
         last = token.end;
@@ -198,8 +196,10 @@ struct Token {
 
 #[derive(Debug)]
 enum Kind {
-    /// A number, string or boolean.
+    /// A number or string.
     Value,
+    /// `TRUE` or `FALSE`, any case; written in uppercase.
+    Boolean,
     Reference(Reference),
     /// `fname [ws] "("`: the uppercase name, and where the name ends in the source.
     Call {
@@ -216,11 +216,11 @@ enum Kind {
     Percent,
 }
 
-/// `[ sheet "!" ] cell [ ":" [ sheet "!" ] cell ]`.
+/// `[ sheet "!" ] cell [ ":" cell ]`: a sheet qualifies both cells of a range.
 #[derive(Debug)]
 struct Reference {
     first: Endpoint,
-    second: Option<Endpoint>,
+    second: Option<CellRef>,
 }
 
 #[derive(Debug)]
@@ -238,27 +238,23 @@ struct Sheet {
 }
 
 impl Reference {
-    fn endpoints(&self) -> impl Iterator<Item = &Endpoint> {
-        std::iter::once(&self.first).chain(self.second.as_ref())
-    }
-
     /// Writes the reference: a sheet-qualified one unchanged but for uppercase cells, an
     /// unqualified one translated to the placed address. Returns whether every unqualified cell is
     /// inside the table's own grid, and whether a translation left the sheet.
     fn write(&self, source: &str, context: &Context<'_>, out: &mut String) -> (bool, bool) {
-        // `Sheet!A1:B2` qualifies both cells; `A1:Sheet!B2` only the second.
-        let range_qualified = self.first.sheet.is_some();
+        if let Some(sheet) = &self.first.sheet {
+            out.push_str(&source[sheet.span.clone()]);
+            out.push('!');
+        }
         let (mut inside, mut past) = (true, false);
-        for (index, endpoint) in self.endpoints().enumerate() {
+        for (index, cell) in std::iter::once(self.first.cell)
+            .chain(self.second)
+            .enumerate()
+        {
             if index == 1 {
                 out.push(':');
             }
-            if let Some(sheet) = &endpoint.sheet {
-                out.push_str(&source[sheet.span.clone()]);
-                out.push('!');
-            }
-            let cell = endpoint.cell;
-            if range_qualified || endpoint.sheet.is_some() {
+            if self.first.sheet.is_some() {
                 out.push_str(&cell.to_string());
                 continue;
             }
@@ -332,7 +328,7 @@ fn lex(source: &str) -> Result<Vec<Token>, String> {
                     Kind::Reference(reference)
                 } else if word.eq_ignore_ascii_case("TRUE") || word.eq_ignore_ascii_case("FALSE") {
                     i = end;
-                    Kind::Value
+                    Kind::Boolean
                 } else {
                     return Err(format!(
                         "uses `{}`, which isn't a cell reference or function call; defined names, \
@@ -446,8 +442,15 @@ fn reference(source: &str, i: usize) -> Result<(Reference, usize), String> {
     let (first, mut i) = endpoint(source, i)?;
     let second = if source.as_bytes().get(i) == Some(&b':') {
         let (second, end) = endpoint(source, i + 1)?;
+        if second.sheet.is_some() {
+            return Err(
+                "puts a sheet name on the second cell of a range (write `Revenue!A1:B2`, not \
+                 `Revenue!A1:Revenue!B2`)"
+                    .into(),
+            );
+        }
         i = end;
-        Some(second)
+        Some(second.cell)
     } else {
         None
     };
@@ -582,7 +585,10 @@ fn recognize(source: &str, tokens: &[Token]) -> Result<(), String> {
     for token in tokens {
         state = match (state, &token.kind) {
             (State::Operand | State::Argument, Kind::Sign) => State::Operand,
-            (State::Operand | State::Argument, Kind::Value | Kind::Reference(_)) => State::After,
+            (
+                State::Operand | State::Argument,
+                Kind::Value | Kind::Boolean | Kind::Reference(_),
+            ) => State::After,
             (State::Operand | State::Argument, Kind::Open) => {
                 stack.push(Open::Parenthesis);
                 State::Operand
@@ -688,8 +694,6 @@ mod tests {
             "Revenue!B5",
             "'Q3 Data'!A1:B2",
             "'It''s'!A1",
-            "Revenue!A1:Revenue!B2",
-            "A1:Revenue!B2",
             "IF(AND(A1>0,NOT(B1)),ROUND(A1/B1,2),\"-\")",
         ] {
             assert!(at(source, 0, 1).is_ok(), "{source}: {:?}", at(source, 0, 1));
@@ -715,6 +719,8 @@ mod tests {
             "1,2",
             "(1,2)",
             "A1:",
+            "Revenue!A1:Revenue!B2",
+            "A1:Revenue!B2",
             "A:B",
             "B:B",
             "2:5",
@@ -779,7 +785,7 @@ mod tests {
             written("IfNa(1,2)&Concat(\"a\")"),
             "_xlfn.IFNA(1,2)&_xlfn.CONCAT(\"a\")"
         );
-        assert_eq!(written("XOR(TRUE,false)"), "_xlfn.XOR(TRUE,false)");
+        assert_eq!(written("XOR(TRUE,false)"), "_xlfn.XOR(TRUE,FALSE)");
         assert_eq!(written("SUM ( A2 , B3 )"), "SUM ( A4 , B5 )");
         assert_eq!(
             written("\"B2\"&B2"),
@@ -790,7 +796,6 @@ mod tests {
             written("revenue!b5+'Q3 Data'!a1:b2"),
             "revenue!B5+'Q3 Data'!A1:B2"
         );
-        assert_eq!(written("A2:Revenue!B2"), "A4:Revenue!B2");
         assert_eq!(at("SUM(A2:B3)", 2, 8).unwrap().written, "SUM(C9:D10)");
     }
 

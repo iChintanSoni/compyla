@@ -15,7 +15,7 @@
             "text",
             "number",
             "number",
-            "text"
+            "general"
           ],
           "formulas": {
             "D4": "B4/C4-1",

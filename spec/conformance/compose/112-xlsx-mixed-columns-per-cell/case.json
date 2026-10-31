@@ -1,0 +1,10 @@
+{
+  "description": "A column mixing numbers and percents, and a column of formulas only, are general (each cell keeps its own type); booleans in formulas are written in uppercase.",
+  "spec": [
+    "§9.3",
+    "§9.5",
+    "C46"
+  ],
+  "oracle": "none",
+  "format": "xlsx"
+}

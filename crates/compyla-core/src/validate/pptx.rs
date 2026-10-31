@@ -162,8 +162,8 @@ fn compose(slides: Vec<Slide<'_>>) -> Vec<Composed<'_>> {
 // ---------------------------------------------------------------------------------------------
 // Validation (§8.7).
 
-/// A slide's own rules: its layout name, misplaced `layout` and `col` directives, demoted headings
-/// and fit.
+/// A slide's own rules: its layout name, misplaced `col` markers, demoted headings and fit. A
+/// misplaced `layout` is entered by the slide walk (§8.1) and reported with the nested directives.
 fn slide_rules(
     composed: &Composed<'_>,
     settled: &mut HashSet<*const Directive>,
@@ -211,14 +211,6 @@ fn slide_rules(
                     ));
                 }
             }
-            Item::Layout(directive) => {
-                settled.insert(ptr::from_ref(directive));
-                out.push(misplaced(
-                    directive,
-                    "`::: layout` isn't the first block of its slide; it is ignored.",
-                    "Put `::: layout` first on the slide, right after the title, or start a new slide before it with `---`.",
-                ));
-            }
             Item::Heading(section) if section.level >= 4 => out.push(at(
                 Diagnostic::new(
                     "heading_too_deep",
@@ -264,8 +256,9 @@ fn slide_rules(
     }
 }
 
-/// `layout`, `notes` and `col` directives the slide walk never placed: inside list items, quotes,
-/// `notes` bodies or misplaced `layout` bodies, where they can have no effect (§8.2–§8.4).
+/// `layout`, `notes` and `col` directives the slide walk never placed, where they can have no
+/// effect (§8.2–§8.4): a `layout` that isn't its slide's first block, and any of them inside list
+/// items, quotes or `notes` bodies.
 fn nested_directives(
     body: &[Block],
     settled: &HashSet<*const Directive>,
@@ -280,8 +273,8 @@ fn nested_directives(
         }
         let (message, hint) = match directive.name.as_str() {
             "layout" => (
-                "`::: layout` is nested inside another block; it is ignored.",
-                "Put `::: layout` first on the slide, at its top level.",
+                "`::: layout` isn't the first block of its slide; it is ignored.",
+                "Put `::: layout` first on the slide, right after the title and at its top level, or start a new slide before it with `---`.",
             ),
             "notes" => (
                 "`::: notes` is nested inside another block, so it doesn't become speaker notes; it is ignored.",

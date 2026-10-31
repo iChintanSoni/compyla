@@ -58,11 +58,12 @@
                     "lastColumn": { "type": "string", "pattern": "^[A-Z]{1,3}$" },
                     "lastRow": { "type": "integer", "minimum": 1 },
                     "columnTypes": {
+                      "description": "Each column's type: from its `columns` entry, else inferred (markdown-spec.md §9.5). `general` is inferred only.",
                       "type": "array",
-                      "items": { "enum": ["number", "currency", "percent", "date", "text", "boolean"] }
+                      "items": { "enum": ["number", "currency", "percent", "date", "text", "boolean", "general"] }
                     },
                     "formulas": {
-                      "description": "Placed address → translated formula text (without the leading =).",
+                      "description": "Placed address → written formula text (without the leading =), for the cells written as formulas. A formula with a formula_error is written as text, and one with xlsx_limit_exceeded blocks convert (markdown-spec.md §11.1); neither is listed.",
                       "type": "object",
                       "patternProperties": { "^[A-Z]{1,3}[1-9][0-9]*$": { "type": "string" } },
                       "additionalProperties": false

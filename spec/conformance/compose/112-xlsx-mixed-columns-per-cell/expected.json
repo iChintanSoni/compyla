@@ -1,0 +1,32 @@
+{
+  "format": "xlsx",
+  "sheets": [
+    {
+      "name": "Team",
+      "ranges": [
+        {
+          "titleRow": null,
+          "noteRow": null,
+          "headerRow": 1,
+          "firstColumn": "A",
+          "lastColumn": "D",
+          "lastRow": 4,
+          "columnTypes": [
+            "text",
+            "general",
+            "general",
+            "general"
+          ],
+          "formulas": {
+            "C2": "B2/B3",
+            "D2": "IF(B2>40,TRUE,FALSE)",
+            "C3": "B3/B2",
+            "D3": "AND(TRUE,FALSE)",
+            "C4": "B4",
+            "D4": "NOT(TRUE)"
+          }
+        }
+      ]
+    }
+  ]
+}

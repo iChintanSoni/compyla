@@ -7,17 +7,21 @@ pub enum ColumnType {
     Number {
         decimals: Option<u8>,
     },
-    /// An ISO 4217 code, uppercase.
+    /// A three-letter currency code, uppercase.
     Currency {
         code: String,
     },
-    /// `0%` with this many decimals.
+    /// `0%` with this many decimals. `None` until the column's cells are known: then just enough to
+    /// show every value as written, at most 10.
     Percent {
-        decimals: u8,
+        decimals: Option<u8>,
     },
     Date,
     Text,
     Boolean,
+    /// Inferred only: each literal keeps the type of the test it matches, and formula cells use
+    /// `General`.
+    General,
 }
 
 impl ColumnType {
@@ -30,6 +34,7 @@ impl ColumnType {
             ColumnType::Date => "date",
             ColumnType::Text => "text",
             ColumnType::Boolean => "boolean",
+            ColumnType::General => "general",
         }
     }
 
@@ -41,7 +46,7 @@ impl ColumnType {
             ColumnType::Percent { .. } => matches!(literal, Literal::Number | Literal::Percent),
             ColumnType::Date => literal == Literal::Date,
             ColumnType::Boolean => literal == Literal::Boolean,
-            ColumnType::Text => true,
+            ColumnType::Text | ColumnType::General => true,
         }
     }
 }
@@ -138,12 +143,30 @@ fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     era * 146_097 + day_of_era - 719_468
 }
 
-/// Inference over a column's literal cells (formula and blank cells already skipped). Numbers and
-/// percents are one family. When the cells fall into more than one kind, the column is text and the
+/// The decimals a percent format needs to show this literal as written: a percent's own, and two
+/// fewer for a number (0.095 is 9.5%), at most 10.
+pub fn percent_decimals(text: &str, literal: Literal) -> u8 {
+    let text = match literal {
+        Literal::Percent => text.trim_end_matches('%'),
+        Literal::Number => text,
+        _ => return 0,
+    };
+    let fraction = text.split_once('.').map_or(0, |(_, f)| f.len());
+    let decimals = if literal == Literal::Number {
+        fraction.saturating_sub(2)
+    } else {
+        fraction
+    };
+    decimals.min(10) as u8
+}
+
+/// Inference over a column's literal cells (formula and blank cells already skipped). When the
+/// cells match more than one test, plain text counting as one, the column is `general` and the
 /// kinds found are returned for `mixed_column_type`.
 pub fn infer(literals: &[Literal]) -> (ColumnType, Option<String>) {
     let kind = |literal: Literal| match literal {
-        Literal::Number | Literal::Percent => "numbers",
+        Literal::Number => "numbers",
+        Literal::Percent => "percents",
         Literal::Date => "dates",
         Literal::Boolean => "booleans",
         Literal::Text => "text",
@@ -155,14 +178,13 @@ pub fn infer(literals: &[Literal]) -> (ColumnType, Option<String>) {
         }
     }
     match kinds.as_slice() {
-        [] | ["text"] => (ColumnType::Text, None),
-        ["numbers"] if literals.contains(&Literal::Percent) => {
-            (ColumnType::Percent { decimals: 0 }, None)
-        }
+        [] => (ColumnType::General, None),
+        ["text"] => (ColumnType::Text, None),
         ["numbers"] => (ColumnType::Number { decimals: None }, None),
+        ["percents"] => (ColumnType::Percent { decimals: None }, None),
         ["dates"] => (ColumnType::Date, None),
         ["booleans"] => (ColumnType::Boolean, None),
-        _ => (ColumnType::Text, Some(kinds.join(" and "))),
+        _ => (ColumnType::General, Some(kinds.join(" and "))),
     }
 }
 
@@ -250,26 +272,41 @@ mod tests {
     #[test]
     fn inference() {
         use Literal::*;
-        assert_eq!(infer(&[]), (ColumnType::Text, None));
+        assert_eq!(infer(&[]), (ColumnType::General, None));
         assert_eq!(
             infer(&[Number, Number]),
             (ColumnType::Number { decimals: None }, None)
         );
         assert_eq!(
-            infer(&[Number, Percent]),
-            (ColumnType::Percent { decimals: 0 }, None)
+            infer(&[Percent, Percent]),
+            (ColumnType::Percent { decimals: None }, None)
+        );
+        assert_eq!(
+            infer(&[Number, Number, Percent]),
+            (ColumnType::General, Some("numbers and percents".into()))
         );
         assert_eq!(infer(&[Date, Date]), (ColumnType::Date, None));
         assert_eq!(infer(&[Boolean]), (ColumnType::Boolean, None));
         assert_eq!(infer(&[Text, Text]), (ColumnType::Text, None));
         assert_eq!(
             infer(&[Number, Text]),
-            (ColumnType::Text, Some("numbers and text".into()))
+            (ColumnType::General, Some("numbers and text".into()))
         );
         assert_eq!(
             infer(&[Date, Number, Date]),
-            (ColumnType::Text, Some("dates and numbers".into()))
+            (ColumnType::General, Some("dates and numbers".into()))
         );
+    }
+
+    #[test]
+    fn decimals_for_percent_formats() {
+        assert_eq!(percent_decimals("14%", Literal::Percent), 0);
+        assert_eq!(percent_decimals("9.5%", Literal::Percent), 1);
+        assert_eq!(percent_decimals("0.14", Literal::Number), 0);
+        assert_eq!(percent_decimals("0.095", Literal::Number), 1);
+        assert_eq!(percent_decimals("1", Literal::Number), 0);
+        assert_eq!(percent_decimals("0.000000000000001", Literal::Number), 10);
+        assert_eq!(percent_decimals("2026-01-01", Literal::Date), 0);
     }
 
     #[test]
@@ -278,7 +315,7 @@ mod tests {
         assert!(currency.accepts(Literal::Number));
         assert!(!currency.accepts(Literal::Percent));
         assert!(!currency.accepts(Literal::Text));
-        let percent = ColumnType::Percent { decimals: 0 };
+        let percent = ColumnType::Percent { decimals: None };
         assert!(percent.accepts(Literal::Number) && percent.accepts(Literal::Percent));
         assert!(!ColumnType::Number { decimals: None }.accepts(Literal::Percent));
         assert!(ColumnType::Date.accepts(Literal::Date));

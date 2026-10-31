@@ -1,0 +1,11 @@
+{
+  "description": "Any three-letter currency code is accepted; a sheet qualifier on a range's second cell is a formula error; numbers mixed with percents warn (advisory).",
+  "spec": [
+    "§9.3",
+    "§9.4",
+    "§9.5",
+    "C46"
+  ],
+  "oracle": "corrected",
+  "format": "xlsx"
+}

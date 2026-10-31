@@ -220,7 +220,8 @@ mod tests {
         let source = "# S\n\n::: columns A:text\n:::\n\n::: columns A:boolean\n| A |\n|---|\n| true |\n:::\n";
         let sheet = &workbook(source).sheets[0];
         assert_eq!(sheet.ranges[0].column_types, vec![ColumnType::Boolean]);
-        assert_eq!(lint(source), vec![]);
+        // The overridden one has no effect (§9.4).
+        assert_eq!(lint(source), diagnostics(&[("directive_misplaced", 3)]));
     }
 
     #[test]
@@ -250,7 +251,7 @@ mod tests {
         assert_eq!(
             types,
             vec![
-                vec![ColumnType::Text, ColumnType::Percent { decimals: 0 }],
+                vec![ColumnType::Text, ColumnType::Percent { decimals: Some(0) }],
                 vec![ColumnType::Text]
             ]
         );
@@ -454,7 +455,7 @@ mod tests {
         let source = "# S\n\n| A | B |\n|---|---|\n| 1 | =SUM( |\n| 2 | =a2 |\n";
         let range = &workbook(source).sheets[0].ranges[0];
         assert_eq!(range.formulas, vec![("B3".to_string(), "A2".to_string())]);
-        assert_eq!(range.column_types[1], ColumnType::Text);
+        assert_eq!(range.column_types[1], ColumnType::General);
         assert_eq!(lint(source), diagnostics(&[("formula_error", 5)]));
     }
 

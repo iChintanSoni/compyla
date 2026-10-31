@@ -225,7 +225,7 @@ fn columns(directive: &Directive, out: &mut Vec<Diagnostic>) -> Columns {
             );
             continue;
         };
-        let Some((kind, param_known)) = column_type(kind, param) else {
+        let Some((kind, param_check)) = column_type(kind, param) else {
             push(
                 "unknown_directive_option",
                 format!(
@@ -236,15 +236,20 @@ fn columns(directive: &Directive, out: &mut Vec<Diagnostic>) -> Columns {
             );
             continue;
         };
-        if !param_known {
+        let code = match param_check {
+            Param::Fine => None,
+            Param::Unknown => Some("unknown_directive_option"),
+            Param::Invalid => Some("invalid_directive_args"),
+        };
+        if let Some(code) = code {
             push(
-                "unknown_directive_option",
+                code,
                 format!(
-                    "`{}` isn't a parameter of `{}`; its default is used.",
-                    param.unwrap_or_default(),
+                    "`{}` isn't a valid parameter of `{}`; its default is used.",
+                    excerpt(param.unwrap_or_default()),
                     kind.name()
                 ),
-                "number and percent take decimal places 0–10, currency an ISO 4217 code, date `iso`; text and boolean take none.",
+                "number and percent take decimal places 0–10, currency a three-letter code, date `iso`; text and boolean take none.",
             );
         }
         // The same key always names the same column, so a repeated key is a column named twice.
@@ -285,71 +290,63 @@ fn entry_parts(text: &str) -> Option<(&str, &str, Option<&str>)> {
     (!key.is_empty() && !kind.is_empty()).then_some((key, kind, param))
 }
 
-/// The type an entry names, and whether its parameter (if any) is known; an unknown one leaves the
-/// type's default. `None` for an unknown type.
-fn column_type(kind: &str, param: Option<&str>) -> Option<(ColumnType, bool)> {
+/// What is wrong with an entry's parameter, as §1.6 classifies it: a value outside an enumeration,
+/// or a parameter for a type that takes none, is unknown; a malformed or out-of-range one is
+/// invalid. Either way the type's default applies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Param {
+    Fine,
+    Unknown,
+    Invalid,
+}
+
+/// The type an entry names, with its parameter checked. `None` for an unknown type.
+fn column_type(kind: &str, param: Option<&str>) -> Option<(ColumnType, Param)> {
     let decimals = |p: &str| {
         (!p.is_empty() && p.len() <= 2 && p.bytes().all(|b| b.is_ascii_digit()))
             .then(|| p.parse::<u8>().ok())
             .flatten()
             .filter(|d| *d <= 10)
     };
-    let known = |value: Option<bool>| value.unwrap_or(true);
+    let check = |fine: bool, problem: Param| if fine { Param::Fine } else { problem };
     Some(match kind.to_ascii_lowercase().as_str() {
         "number" => {
             let d = param.and_then(decimals);
             (
                 ColumnType::Number { decimals: d },
-                known(param.map(|_| d.is_some())),
+                check(param.is_none() || d.is_some(), Param::Invalid),
             )
         }
         "percent" => {
             let d = param.and_then(decimals);
             (
-                ColumnType::Percent {
-                    decimals: d.unwrap_or(0),
-                },
-                known(param.map(|_| d.is_some())),
+                ColumnType::Percent { decimals: d },
+                check(param.is_none() || d.is_some(), Param::Invalid),
             )
         }
         "currency" => {
             let code = param
-                .map(str::to_ascii_uppercase)
-                .filter(|c| ISO_4217.contains(&c.as_str()));
+                .filter(|c| c.len() == 3 && c.bytes().all(|b| b.is_ascii_alphabetic()))
+                .map(str::to_ascii_uppercase);
             (
                 ColumnType::Currency {
                     code: code.clone().unwrap_or_else(|| "USD".into()),
                 },
-                known(param.map(|_| code.is_some())),
+                check(param.is_none() || code.is_some(), Param::Invalid),
             )
         }
         "date" => (
             ColumnType::Date,
-            known(param.map(|p| p.eq_ignore_ascii_case("iso"))),
+            check(
+                param.is_none_or(|p| p.eq_ignore_ascii_case("iso")),
+                Param::Unknown,
+            ),
         ),
-        "text" => (ColumnType::Text, param.is_none()),
-        "boolean" => (ColumnType::Boolean, param.is_none()),
+        "text" => (ColumnType::Text, check(param.is_none(), Param::Unknown)),
+        "boolean" => (ColumnType::Boolean, check(param.is_none(), Param::Unknown)),
         _ => return None,
     })
 }
-
-/// ISO 4217 currency codes (list one).
-const ISO_4217: &[&str] = &[
-    "AED", "AFN", "ALL", "AMD", "ANG", "AOA", "ARS", "AUD", "AWG", "AZN", "BAM", "BBD", "BDT",
-    "BGN", "BHD", "BIF", "BMD", "BND", "BOB", "BOV", "BRL", "BSD", "BTN", "BWP", "BYN", "BZD",
-    "CAD", "CDF", "CHE", "CHF", "CHW", "CLF", "CLP", "CNY", "COP", "COU", "CRC", "CUC", "CUP",
-    "CVE", "CZK", "DJF", "DKK", "DOP", "DZD", "EGP", "ERN", "ETB", "EUR", "FJD", "FKP", "GBP",
-    "GEL", "GHS", "GIP", "GMD", "GNF", "GTQ", "GYD", "HKD", "HNL", "HTG", "HUF", "IDR", "ILS",
-    "INR", "IQD", "IRR", "ISK", "JMD", "JOD", "JPY", "KES", "KGS", "KHR", "KMF", "KPW", "KRW",
-    "KWD", "KYD", "KZT", "LAK", "LBP", "LKR", "LRD", "LSL", "LYD", "MAD", "MDL", "MGA", "MKD",
-    "MMK", "MNT", "MOP", "MRU", "MUR", "MVR", "MWK", "MXN", "MXV", "MYR", "MZN", "NAD", "NGN",
-    "NIO", "NOK", "NPR", "NZD", "OMR", "PAB", "PEN", "PGK", "PHP", "PKR", "PLN", "PYG", "QAR",
-    "RON", "RSD", "RUB", "RWF", "SAR", "SBD", "SCR", "SDG", "SEK", "SGD", "SHP", "SLE", "SLL",
-    "SOS", "SRD", "SSP", "STN", "SVC", "SYP", "SZL", "THB", "TJS", "TMT", "TND", "TOP", "TRY",
-    "TTD", "TWD", "TZS", "UAH", "UGX", "USD", "USN", "UYI", "UYU", "UYW", "UZS", "VED", "VES",
-    "VND", "VUV", "WST", "XAF", "XAG", "XAU", "XBA", "XBB", "XBC", "XBD", "XCD", "XCG", "XDR",
-    "XOF", "XPD", "XPF", "XPT", "XSU", "XTS", "XUA", "XXX", "YER", "ZAR", "ZMW", "ZWG", "ZWL",
-];
 
 #[cfg(test)]
 mod tests {
@@ -389,7 +386,7 @@ mod tests {
             vec![
                 ("B", ColumnType::Currency { code: "USD".into() }),
                 ("Q3 Actual", ColumnType::Currency { code: "EUR".into() }),
-                ("Ratio: a/b", ColumnType::Percent { decimals: 2 }),
+                ("Ratio: a/b", ColumnType::Percent { decimals: Some(2) }),
                 ("C", ColumnType::Number { decimals: Some(4) }),
                 ("D", ColumnType::Date),
                 ("E", ColumnType::Boolean),
@@ -403,7 +400,7 @@ mod tests {
         let entries = columns(
             &directive(
                 "columns",
-                "X, :number, A:, A:money, A:number(11), B:currency(ABC), C:text(x), D:date(us), E:number(2, a:text",
+                "X, :number, A:, A:money, A:number(11), B:currency(EURO), C:text(x), D:date(us), E:number(2, a:text",
             ),
             &mut out,
         );
@@ -414,8 +411,8 @@ mod tests {
                 "invalid_directive_args",
                 "invalid_directive_args",
                 "unknown_directive_option",
-                "unknown_directive_option",
-                "unknown_directive_option",
+                "invalid_directive_args",
+                "invalid_directive_args",
                 "unknown_directive_option",
                 "unknown_directive_option",
                 "invalid_directive_args",
@@ -451,7 +448,7 @@ mod tests {
             vec![
                 Some(ColumnType::Text),
                 Some(ColumnType::Number { decimals: None }),
-                Some(ColumnType::Percent { decimals: 0 }),
+                Some(ColumnType::Percent { decimals: None }),
             ]
         );
         assert_eq!(resolved.matched, vec![0, 1, 2]);

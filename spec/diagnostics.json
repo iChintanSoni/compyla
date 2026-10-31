@@ -416,7 +416,7 @@
       "since": "0.1",
       "status": "active",
       "spec": "§9.5",
-      "summary": "A column without a columns entry has cells of disagreeing inferred types; it is typed as text."
+      "summary": "A column without a columns entry has cells matching different literal tests; it is general, and each cell keeps its own type."
     },
     {
       "code": "no_styles_xml",
