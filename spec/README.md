@@ -19,6 +19,7 @@ All schemas are JSON Schema 2020-12.
 
 1. Change `docs/markdown-spec.md` and, where affected, the schemas and the registry.
 2. Add or update fixtures that encode the change. A behavior change without a fixture is not done.
-3. Record the change in the change table of the version in draft (markdown-spec.md §0.2 while 0.2
-   is). A released version doesn't change: the next behavior change starts the next version (§14).
+3. Record the change in the change table of the version in draft (markdown-spec.md §0.2, while 0.2
+   is in draft). Once a version is released, its table is closed: the next behavior change starts
+   the next version, bumping the minor version (§14).
 4. Run `node spec/tools/check.mjs` (artifact consistency) and `node spec/tools/oracle.mjs`.
