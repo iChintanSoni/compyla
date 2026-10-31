@@ -212,11 +212,13 @@ struct Checked {
     composed: Option<(Composed, Format, Properties)>,
 }
 
-/// Document properties from `meta` only (C44): `title`, and `author` (a list joined with `, `).
+/// Document properties from `meta` only (C44): `title`, `author` (a list joined with `, `) and
+/// `lang`.
 #[cfg_attr(not(feature = "xlsx"), allow(dead_code))]
 struct Properties {
     title: Option<String>,
     creator: Option<String>,
+    language: Option<String>,
 }
 
 /// Parse or load output through validation. A limit stops processing (§12.1) before the format is
@@ -285,6 +287,7 @@ fn render(
             let properties = compyla_ooxml::Properties {
                 title: properties.title,
                 creator: properties.creator,
+                language: properties.language,
             };
             Some(compyla_xlsx::render(&workbook, &properties))
         }
@@ -293,6 +296,7 @@ fn render(
             let properties = compyla_ooxml::Properties {
                 title: properties.title,
                 creator: properties.creator,
+                language: properties.language,
             };
             let images = |src: &str| match assets(src) {
                 Asset::Bytes(bytes) => Some(bytes),
@@ -336,6 +340,10 @@ fn properties(meta: &serde_json::Map<String, serde_json::Value>) -> Properties {
     Properties {
         title: meta.get("title").and_then(text),
         creator: meta.get("author").and_then(text),
+        language: meta
+            .get("lang")
+            .and_then(|l| l.as_str())
+            .map(str::to_string),
     }
 }
 

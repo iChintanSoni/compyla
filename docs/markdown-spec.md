@@ -104,6 +104,7 @@ prototype.
 | C49 | xlsx output, from review: the diagnostics cap keeps errors first, so a blocked `convert` always reports why (§11.2); text that looks like a SpreadsheetML escape reads back as written; Excel table headers keep links and rich text; emphasis on a number becomes the cell's font; an erroring formula's text is its `raw` (§9.3, §9.5, §9.6) | A blocked `convert` could report no error; `_x0041_` read back as "A"; header links dropped silently | render/108 |
 | C50 | `inspect_template` is specified end to end: an invalid template's report has `kind: null` and its reason; layouts report their OOXML type; Word's page defaults where a template is silent (§10.4, §10.5) | Undefined for invalid packages | inspect/101–110 |
 | C51 | pptx rendering is specified: placeholders by slot, text (bullets, numbering, code, quotes), tables, images (`contain` by default, `cover` cropped), shared slots, links to slides, notes, and the package (§8.8) | Undefined beyond the projection | render/109–render/114 |
+| C52 | From review of the pptx renderer: images over §12.1's limits are `limit_exceeded`, and unreadable ones `image_unsupported`; nested images and tables are `pptx_ignored_content`; numbering outside DrawingML's range is text; notes are plain; `lang` reaches the output (§5, §8.8, §12.1) | Unchecked, silent, or schema-invalid output | render/115, lint/136 |
 
 0.2 also corrects 0.1's *text* in one place where the prototype was right: `---` in xlsx is ignored
 without a diagnostic (§5).
@@ -740,6 +741,7 @@ larger than its placeholder produces `content_overflow` (warning, render stage).
 | `link_anchor_unresolved` | warning | A fragment link matches no **slide title**'s slug. Matches become links to that slide. Slide-title slugs are numbered over the slide titles alone (§4.5 step 4) |
 | `invalid_directive_args` / `unknown_directive_option` | warning | §1.6 |
 | `unknown_directive` / `directive_misplaced` | warning | §1.5, §8.2–§8.4 |
+| `pptx_ignored_content` | warning | An image or table inside a list item or a quote in a slide's content: a text body can't hold it, so it shows as its alt text or as tab-separated rows (§8.8) |
 | `content_overflow` | warning | Render stage, §8.6 |
 | `font_unresolved` | warning | §3 |
 
@@ -753,24 +755,33 @@ their own except where their content needs it, so they inherit the layout's.
 
 - **Text** (a text block, code, a quote) shares one text body:
   - Paragraphs, and demoted headings (in bold), have no bullet.
-  - List items are bulleted at their nesting level (at most nine levels). Numbered lists count from
-    their start, and task items begin with ☑ or ☐. An item's further paragraphs align with its text.
-    A content placeholder (type `obj`) shows the template's bullets; other placeholders (subtitles,
-    captions, notes), whose styles usually have none, get explicit ones.
+  - List items are bulleted at their nesting level (at most nine levels). An item's first line takes
+    the bullet, whatever it is (an empty item keeps its bullet), and its further lines align with
+    its text. Numbered lists count from their start; a number outside 1–32,767, which DrawingML
+    can't number, is written as text instead. Task items begin with ☑ or ☐. A content placeholder
+    (type `obj`) shows the template's bullets; other placeholders (subtitles, captions, notes),
+    whose styles usually have none, get explicit ones.
+  - An image or a table inside a list item or a quote can't sit in a text body: it shows as its alt
+    text or as tab-separated rows, with `pptx_ignored_content`.
+  - Text takes the document's language (`lang`, §2), and otherwise the template's.
   - Code is one paragraph per line, indentation kept, in a monospace face (Consolas), as inline code
     is. A quote's content is italic.
 - **Tables** are a table frame in the slot's geometry: the header first, the template's default
-  table style, and each column's alignment.
+  table style, and each column's alignment. Tables and images take a placeholder only where one
+  can hold them (types `obj`, `tbl` and `pic`); elsewhere they are shapes of their own in its
+  geometry.
 - **Images** are a picture in the slot. With `fit=contain`, the default, the whole image is scaled
-  to fit and centered; with `fit=cover` it fills the slot, cropped evenly from both sides. An image
-  whose bytes can't be written shows its alt text (§5).
+  to fit and centered; with `fit=cover` it fills the slot, cropped evenly from both sides (always
+  leaving some of the image). An image whose bytes can't be written shows its alt text (§5), in its
+  share of the slot.
 - **Several blocks in one slot** (§8.6): if all are text, they share the placeholder's text body.
   Otherwise the slot's height is divided among them in order; the first keeps the placeholder, and
   the rest are shapes of their own.
 - **Links:** an external destination is a hyperlink. A fragment matching a slide title's slug
   (§8.7) jumps to that slide; one that matches none has no link.
 - **Speaker notes** (§8.2) are the body of the slide's notes page, when the template has a notes
-  master.
+  master. Code and images there are plain text (an image is its alt text), and a fragment link in
+  the notes doesn't jump: a notes page's own relationship to its slide must stay unambiguous.
 - **The package** (§10.4): the template's own slides are removed, with every part no longer reached
   from the presentation, and a `.potx` is written as a presentation.
 

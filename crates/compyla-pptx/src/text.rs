@@ -51,9 +51,37 @@ pub struct Text<'w, 'l> {
     pub bullets: Bullets,
     /// Whether anything was written, so an empty body can still hold one paragraph.
     pub wrote: bool,
+    /// Plain text (speaker notes, §8.2): code without its typeface, images as bare alt text.
+    pub plain: bool,
+    /// The language of the text (`lang`, §2); `None` leaves the template's.
+    pub lang: Option<&'w str>,
+    /// A list item's bullet and mark, for its first line, whatever that line is.
+    pending: Option<(Bullet, Option<&'static str>)>,
 }
 
-impl Text<'_, '_> {
+impl<'w, 'l> Text<'w, 'l> {
+    pub fn new(
+        out: &'w mut Writer,
+        links: &'w mut Links<'l>,
+        bullets: Bullets,
+        lang: Option<&'w str>,
+        plain: bool,
+    ) -> Self {
+        Text {
+            out,
+            links,
+            bullets,
+            wrote: false,
+            plain,
+            lang,
+            pending: None,
+        }
+    }
+
+    /// An image's alt text, in place of the image (§5), with no bullet.
+    pub fn alt_paragraph(&mut self, text: &str) {
+        self.paragraph(&[alt(text)], Style::default());
+    }
     /// A text block's pieces (§8.6).
     pub fn pieces(&mut self, pieces: &[Piece]) {
         for piece in pieces {
@@ -80,7 +108,7 @@ impl Text<'_, '_> {
             } else {
                 Bullet::None
             },
-            mono: true,
+            mono: !self.plain,
             ..Style::default()
         };
         for line in value.split('\n') {
@@ -120,6 +148,11 @@ impl Text<'_, '_> {
                         self.paragraph(&[Run::plain(cells.join("\t"))], base);
                     }
                 }
+                Block::Media(media) if self.plain => {
+                    if !media.alt.trim().is_empty() {
+                        self.paragraph(&[Run::plain(media.alt.clone())], base);
+                    }
+                }
                 Block::Media(media) => self.paragraph(&[alt(&media.alt)], base),
                 Block::Directive(d) => self.blocks(&d.children, level, italic, in_item),
                 Block::Break(_) => {}
@@ -131,38 +164,50 @@ impl Text<'_, '_> {
         let level = level.min(8);
         for (index, item) in list.items.iter().enumerate() {
             let bullet = if list.ordered {
-                Bullet::Number(list.start.unwrap_or(1) + index as u64)
+                Bullet::Number(list.start.unwrap_or(1).saturating_add(index as u64))
             } else {
                 Bullet::Char
             };
-            let mut first = true;
-            for block in &item.children {
-                match block {
-                    Block::Paragraph(p) if first => {
-                        let mut runs = p.runs.clone();
-                        if let Some(checked) = item.checked {
-                            let mark = if checked { "☑ " } else { "☐ " };
-                            runs.insert(0, Run::plain(mark.into()));
-                        }
-                        self.paragraph(
-                            &runs,
-                            Style {
-                                level,
-                                bullet,
-                                italic,
-                                ..Style::default()
-                            },
-                        );
-                    }
-                    other => self.blocks(std::slice::from_ref(other), level, italic, true),
-                }
-                first = false;
+            let mark = item
+                .checked
+                .map(|checked| if checked { "☑ " } else { "☐ " });
+            // The item's first line takes the bullet, whatever kind of line it is.
+            self.pending = Some((bullet, mark));
+            self.blocks(&item.children, level, italic, true);
+            if self.pending.is_some() {
+                // An empty item keeps its bullet.
+                self.paragraph(
+                    &[],
+                    Style {
+                        level,
+                        italic,
+                        bullet: Bullet::Continue,
+                        ..Style::default()
+                    },
+                );
             }
         }
     }
 
-    fn paragraph(&mut self, runs: &[Run], style: Style) {
+    fn paragraph(&mut self, runs: &[Run], mut style: Style) {
         self.wrote = true;
+        let mut prefix = None;
+        if let Some((bullet, mark)) = self.pending.take() {
+            style.bullet = bullet;
+            prefix = mark.map(str::to_string);
+        }
+        // DrawingML numbers 1–32,767; outside that, the number is text (§8.8).
+        if let Bullet::Number(n) = style.bullet
+            && !(1..=32_767).contains(&n)
+        {
+            style.bullet = Bullet::Continue;
+            prefix = Some(format!("{n}. {}", prefix.unwrap_or_default()));
+        }
+        let mut runs = runs.to_vec();
+        if let Some(prefix) = prefix {
+            runs.insert(0, Run::plain(prefix));
+        }
+        let runs = &runs;
         let out = &mut *self.out;
         out.open("a:p", &[]);
         let level = style.level.to_string();
@@ -231,7 +276,10 @@ impl Text<'_, '_> {
         let link = run.link.as_deref().and_then(|url| (self.links)(url));
         let out = &mut *self.out;
         out.open("a:r", &[]);
-        let mut attrs = vec![("lang", "en-US")];
+        let mut attrs = Vec::new();
+        if let Some(lang) = self.lang {
+            attrs.push(("lang", lang));
+        }
         if run.bold || style.bold {
             attrs.push(("b", "1"));
         }

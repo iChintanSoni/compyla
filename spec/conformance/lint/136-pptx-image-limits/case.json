@@ -1,0 +1,16 @@
+{
+  "description": "An image over 100 megapixels is limit_exceeded (§12.1); an image whose header can't be read is image_unsupported; an image inside a list item is pptx_ignored_content.",
+  "spec": [
+    "§5",
+    "§8.8",
+    "§12.1",
+    "C52"
+  ],
+  "oracle": "corrected",
+  "format": "pptx",
+  "assets": [
+    "huge.png",
+    "zero.png",
+    "logo.png"
+  ]
+}

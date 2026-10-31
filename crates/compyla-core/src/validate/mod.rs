@@ -220,20 +220,46 @@ fn images(input: &Input<'_>, out: &mut Sink) {
                 }
             },
         };
-        if let Some(bytes) = bytes
-            && image_format(&bytes).is_none()
-        {
-            out.push(at(
+        let Some(bytes) = bytes else { return };
+        let unsupported = |why: &str| {
+            at(
                 Diagnostic::new(
                     "image_unsupported",
                     format!(
-                        "Image `{}` isn't PNG, JPEG or GIF; its alt text is shown instead.",
+                        "Image `{}` {why}; its alt text is shown instead.",
                         media.src
                     ),
                 )
                 .hint("Convert the image to PNG or JPEG."),
                 line,
-            ));
+            )
+        };
+        // §12.1: an image too large to decode safely is a limit, not a fallback.
+        let limit = |why: String| {
+            let diagnostic = Diagnostic::new("limit_exceeded", why);
+            match media.position {
+                Some(p) => diagnostic.at(p.line, Some(p.column)),
+                None => diagnostic,
+            }
+        };
+        if bytes.len() > crate::image::MAX_ENCODED {
+            out.push(limit(format!(
+                "Image `{}` is larger than 50 MiB.",
+                media.src
+            )));
+        } else if image_format(&bytes).is_none() {
+            out.push(unsupported("isn't PNG, JPEG or GIF"));
+        } else {
+            match crate::image::dimensions(&bytes) {
+                None => out.push(unsupported("has a header that can't be read")),
+                Some((w, h)) if u64::from(w) * u64::from(h) > crate::image::MAX_PIXELS => {
+                    out.push(limit(format!(
+                        "Image `{}` is {w} × {h} pixels, more than 100 megapixels.",
+                        media.src
+                    )));
+                }
+                Some(_) => {}
+            }
         }
     });
 }

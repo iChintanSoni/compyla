@@ -1,5 +1,9 @@
-//! Image dimensions, read from the headers of the formats the profile accepts (markdown-spec.md
+//! Image dimensions, read from the headers of the formats the profiles accept (markdown-spec.md
 //! §4.7): PNG, JPEG and GIF.
+
+/// The image limits of markdown-spec.md §12.1.
+pub const MAX_ENCODED: usize = 50 * 1024 * 1024;
+pub const MAX_PIXELS: u64 = 100_000_000;
 
 /// Width and height in pixels, or `None` when the header can't be read.
 pub fn dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
