@@ -1,0 +1,69 @@
+{
+  "format": "pptx",
+  "slides": [
+    {
+      "title": "Deck Title",
+      "layout": "Title Slide",
+      "notes": false,
+      "content": [
+        "paragraph"
+      ]
+    },
+    {
+      "title": "Section Only",
+      "layout": "Section Header",
+      "notes": false,
+      "content": []
+    },
+    {
+      "title": "Bullets",
+      "layout": "Title and Content",
+      "notes": false,
+      "content": [
+        "list"
+      ]
+    },
+    {
+      "title": "A Table",
+      "layout": "Title and Content",
+      "notes": false,
+      "content": [
+        "table"
+      ]
+    },
+    {
+      "title": "A Picture",
+      "layout": "Picture with Caption",
+      "notes": false,
+      "content": [
+        "media"
+      ]
+    },
+    {
+      "title": "A Quote",
+      "layout": "Quote",
+      "notes": false,
+      "content": [
+        "quote"
+      ]
+    },
+    {
+      "title": "Two Columns",
+      "layout": "Two Content",
+      "notes": false,
+      "content": [
+        "paragraph",
+        "col",
+        "paragraph"
+      ]
+    },
+    {
+      "title": "With Notes",
+      "layout": "Title and Content",
+      "notes": true,
+      "content": [
+        "paragraph"
+      ]
+    }
+  ]
+}

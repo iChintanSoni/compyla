@@ -1,0 +1,9 @@
+{
+  "diagnostics": [
+    {
+      "code": "formula_error",
+      "severity": "warning",
+      "line": 6
+    }
+  ]
+}

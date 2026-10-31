@@ -1,0 +1,9 @@
+{
+  "description": "A level-3 heading is ignored, but the table under it is kept.",
+  "spec": [
+    "§9.1",
+    "C39"
+  ],
+  "oracle": "none",
+  "format": "xlsx"
+}

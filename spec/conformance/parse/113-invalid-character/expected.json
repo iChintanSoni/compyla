@@ -1,0 +1,28 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "paragraph",
+        "runs": [
+          {
+            "text": "Tab�vertical"
+          }
+        ],
+        "position": {
+          "line": 1,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": [
+    {
+      "code": "invalid_character",
+      "severity": "warning",
+      "line": 1,
+      "column": 4
+    }
+  ]
+}

@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:compyla:render-expected:0.2",
+  "title": "Compyla render fixture expectation",
+  "description": "expected.json in the render suite: convert diagnostics plus a projection of the rendered file (README.md, \"Render suite\"). Every key under output is optional; only the keys present are checked.",
+  "type": "object",
+  "required": ["diagnostics", "output"],
+  "additionalProperties": false,
+  "properties": {
+    "diagnostics": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "paragraphs": { "type": "array", "items": { "type": "object", "required": ["style", "text"], "additionalProperties": false, "properties": { "style": { "type": "string" }, "text": { "type": "string" } } } },
+        "tables": { "type": "array", "items": { "type": "array", "items": { "type": "array", "items": { "type": "string" } } } },
+        "hyperlinks": { "type": "array", "items": { "type": "object", "required": ["text", "target"], "additionalProperties": false, "properties": { "text": { "type": "string" }, "target": { "type": "string" } } } },
+        "pageBreaks": { "type": "integer", "minimum": 0 },
+        "horizontalRules": { "type": "integer", "minimum": 0 },
+        "slides": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "layout": { "type": "string" },
+              "title": { "type": ["string", "null"] },
+              "texts": { "type": "array", "items": { "type": "string" } },
+              "notes": { "type": ["string", "null"] }
+            }
+          }
+        },
+        "sheets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string" },
+              "cells": {
+                "type": "object",
+                "propertyNames": { "pattern": "^[A-Z]{1,3}[1-9][0-9]*$" },
+                "additionalProperties": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "value": { "type": ["string", "number", "boolean"] },
+                    "type": { "enum": ["s", "n", "b"] },
+                    "formula": { "type": "string" },
+                    "numFmt": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "properties": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "creator": { "type": "string" } } },
+        "pages": { "type": "integer", "minimum": 0 },
+        "pageSize": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+        "text": { "type": "array", "items": { "type": "string" } },
+        "outline": { "type": "array", "items": { "type": "string" } },
+        "links": { "type": "array", "items": { "type": "string" } },
+        "metadata": { "type": "object", "additionalProperties": false, "properties": { "title": { "type": "string" }, "author": { "type": "string" } } },
+        "package": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "partsPresent": { "type": "array", "items": { "type": "string" } },
+            "partsAbsent": { "type": "array", "items": { "type": "string" }, "description": "Regular expressions matched against whole part names." },
+            "xpath": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["part", "expr", "equals"],
+                "additionalProperties": false,
+                "properties": { "part": { "type": "string" }, "expr": { "type": "string" }, "equals": {} }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "diagnostic": {
+      "type": "object",
+      "required": ["code", "severity"],
+      "additionalProperties": false,
+      "properties": {
+        "code": { "type": "string" },
+        "severity": { "enum": ["error", "warning"] },
+        "line": { "type": "integer", "minimum": 1 },
+        "column": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "section",
+        "level": 1,
+        "title": [
+          {
+            "text": "Title"
+          }
+        ],
+        "children": [
+          {
+            "type": "paragraph",
+            "runs": [
+              {
+                "text": "Body."
+              }
+            ],
+            "position": {
+              "line": 4,
+              "column": 1
+            }
+          }
+        ],
+        "position": {
+          "line": 1,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": []
+}

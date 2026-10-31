@@ -1,0 +1,9 @@
+{
+  "description": "Every --- splits a slide, however deeply it is nested under headings.",
+  "spec": [
+    "§8.1",
+    "C9"
+  ],
+  "oracle": "corrected",
+  "format": "pptx"
+}

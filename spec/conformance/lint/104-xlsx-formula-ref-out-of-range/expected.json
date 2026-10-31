@@ -1,0 +1,14 @@
+{
+  "diagnostics": [
+    {
+      "code": "formula_ref_out_of_range",
+      "severity": "warning",
+      "line": 5
+    },
+    {
+      "code": "formula_ref_out_of_range",
+      "severity": "warning",
+      "line": 6
+    }
+  ]
+}

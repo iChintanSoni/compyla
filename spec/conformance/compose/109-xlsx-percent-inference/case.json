@@ -1,0 +1,9 @@
+{
+  "description": "Values ending in % infer a percent column.",
+  "spec": [
+    "§9.5",
+    "C39"
+  ],
+  "oracle": "none",
+  "format": "xlsx"
+}

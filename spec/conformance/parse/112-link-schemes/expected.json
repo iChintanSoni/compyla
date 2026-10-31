@@ -1,0 +1,59 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "paragraph",
+        "runs": [
+          {
+            "text": "ok",
+            "link": "https://a.example"
+          },
+          {
+            "text": " "
+          },
+          {
+            "text": "mail",
+            "link": "mailto:x@example.com"
+          },
+          {
+            "text": " "
+          },
+          {
+            "text": "rel",
+            "link": "docs/page.md"
+          },
+          {
+            "text": " "
+          },
+          {
+            "text": "frag",
+            "link": "#intro"
+          },
+          {
+            "text": " bad file"
+          }
+        ],
+        "position": {
+          "line": 1,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": [
+    {
+      "code": "link_scheme_blocked",
+      "severity": "warning",
+      "line": 1,
+      "column": 89
+    },
+    {
+      "code": "link_scheme_blocked",
+      "severity": "warning",
+      "line": 1,
+      "column": 116
+    }
+  ]
+}

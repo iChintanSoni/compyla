@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:compyla:diagnostic:0.2",
+  "title": "Compyla diagnostic",
+  "description": "The one diagnostics shape every operation and host returns (markdown-spec.md §10). Registry metadata such as stage and strictPromotable lives in diagnostics.json, not on the object.",
+  "type": "object",
+  "required": ["code", "severity", "message"],
+  "additionalProperties": false,
+  "properties": {
+    "code": {
+      "description": "A code registered in diagnostics.json.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "severity": { "enum": ["error", "warning"] },
+    "line": {
+      "description": "1-based source line. Absent for document-level diagnostics (e.g. a template issue) and when the input was IR without positions.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "column": {
+      "description": "1-based column in Unicode scalar values.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "path": {
+      "description": "JSON Pointer (RFC 6901) to the IR node the diagnostic is about, e.g. /body/0/children/2.",
+      "type": "string",
+      "pattern": "^(/[^/]*)*$"
+    },
+    "message": { "type": "string", "description": "Not normative." },
+    "hint": { "type": "string", "description": "Not normative." }
+  },
+  "dependentRequired": { "column": ["line"] }
+}

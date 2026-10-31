@@ -1,0 +1,56 @@
+{
+  "diagnostics": [],
+  "output": {
+    "paragraphs": [
+      {
+        "style": "heading 1",
+        "text": "Report"
+      },
+      {
+        "style": "normal",
+        "text": "Intro paragraph."
+      },
+      {
+        "style": "heading 2",
+        "text": "Findings"
+      },
+      {
+        "style": "normal",
+        "text": "See the docs."
+      }
+    ],
+    "tables": [
+      [
+        [
+          "A",
+          "B"
+        ],
+        [
+          "1",
+          "2"
+        ]
+      ]
+    ],
+    "hyperlinks": [
+      {
+        "text": "the docs",
+        "target": "https://example.com/docs"
+      }
+    ],
+    "pageBreaks": 0,
+    "properties": {
+      "title": "Quarterly Report",
+      "creator": "Strategy Team"
+    },
+    "package": {
+      "partsPresent": [
+        "word/document.xml",
+        "word/styles.xml"
+      ],
+      "partsAbsent": [
+        "word/vbaProject\\.bin",
+        "word/activeX/.*"
+      ]
+    }
+  }
+}

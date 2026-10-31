@@ -1,0 +1,10 @@
+{
+  "description": "A columns directive applies to the table it wraps; the wrapped table is validated.",
+  "spec": [
+    "§1.5",
+    "§9.4",
+    "C8"
+  ],
+  "oracle": "corrected",
+  "format": "xlsx"
+}

@@ -1,0 +1,24 @@
+{
+  "format": "xlsx",
+  "sheets": [
+    {
+      "name": "Growth",
+      "ranges": [
+        {
+          "titleRow": null,
+          "noteRow": null,
+          "headerRow": 1,
+          "firstColumn": "A",
+          "lastColumn": "C",
+          "lastRow": 3,
+          "columnTypes": [
+            "text",
+            "percent",
+            "number"
+          ],
+          "formulas": {}
+        }
+      ]
+    }
+  ]
+}

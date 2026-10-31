@@ -1,266 +1,407 @@
 # Architecture
 
+> **Status (2026-10-31): re-founded on a Rust core (D10).** The TypeScript packages under `packages/`
+> are now the **reference prototype**. They proved the pipeline end to end and still act as the
+> oracle for the conformance fixtures wherever they agree with the spec. They are retired once the
+> Rust core and its hosts pass the same fixtures (see [roadmap.md](roadmap.md), Phase D). Sections
+> below describe the target architecture. Where the prototype differs, that is called out
+> explicitly.
+
 ## Context and Goals
 
-`Compyla` converts markdown into four output formats (docx, pdf, pptx, xlsx) through **native
-renderers** sharing one engine. The primary consumers are developers integrating a local library, CLI,
-web UI, or server, with LLM-generated markdown as the dominant input source. The engine is **hybrid**
-— the same TypeScript code runs locally (CLI, CI, offline, web) and powers a server, self-hosted or
-Compyla-managed — and shipped **open-core**.
+`Compyla` converts markdown into four output formats (docx, pdf, pptx, xlsx). LLM-generated
+markdown is the dominant input. Users reach the engine through **every** channel: agents over MCP,
+the CLI, an HTTP API, a library embedded in Node or Python apps, a browser or editor (live preview,
+VS Code extension, offline web app), and Compyla's hosted product. The engine is shipped
+**open-core**.
 
 Design goals, in priority order:
 
 1. A base dialect of plain CommonMark must produce reasonable output in any format with zero
    configuration; per-format styling only refines it.
-2. Adding an output format is adding a renderer package — it must not require touching the parser.
-3. Output is **pixel-perfect to a supplied template**, produced by binding to real Office files.
-4. Failures happen at validation time with actionable, line-referenced errors — never at render time.
-5. Output is **byte-reproducible**: identical input yields identical bytes.
+2. Output is **faithful to a supplied template**: the template *is* the output's skeleton (D12), not
+   a source of a few font and color values.
+3. Failures happen at validation time with actionable, line-referenced errors, never at render time.
+   Nothing the engine cannot represent is dropped silently.
+4. Output is **byte-reproducible**: identical input, template and fonts yield identical bytes.
+5. **One core, every platform**: the same engine runs natively in Node, Python, the browser, the
+   CLI, the MCP server and the HTTP server (D10).
+6. Adding an output format must not require touching the parser.
+
+## Spec-First Contracts
+
+The source of truth is the **spec**, not any implementation (D16). Implementations, including the
+prototype, conform to it, and every host must pass the same fixtures.
+
+| Artifact | Path | Role |
+|----------|------|------|
+| Dialect spec | [markdown-spec.md](markdown-spec.md) | Syntax, how markdown maps to the IR, per-format profiles |
+| IR schema | `spec/ir.schema.json` | The public, versioned document model (JSON Schema 2020-12) |
+| Diagnostics registry | `spec/diagnostics.json` | Every diagnostic code: severity, stage, strict promotion, meaning |
+| Conformance fixtures | `spec/conformance/` | The executable definition of correct behavior |
+
+Diagnostic *message wording* is not normative. Code, severity and source position are. Changes to
+any of these artifacts follow the versioning rules in markdown-spec.md §14.
 
 ## High-Level Design
 
 ```
-markdown ─▶ @compyla/core ─────────────────────────────────────────────────┐
-            ┌────────────┐   ┌──────────────────┐   ┌────────────────┐      │
-            │   Parser   │──▶│  Token/IR Builder │──▶│   Validator    │      │
-            │ CommonMark │   │  base tokens +    │   │ per-format     │      │
-            │ +GFM +front│   │  per-format       │   │ profile rules  │      │
-            │ +directives│   │  override tokens  │   │ (line-level)   │      │
-            └────────────┘   └──────────────────┘   └───────┬────────┘      │
-                                                            │ valid tokens  │
-     ┌──────────────┬──────────────┬──────────────┬─────────┴────┐          │
-     ▼              ▼              ▼              ▼               │          │
-┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  opt-in native       │
-│@compyla/ │  │@compyla/ │  │@compyla/ │  │@compyla/ │  renderer packages    │
-│  docx    │  │  pptx    │  │  xlsx    │  │  pdf     │  (also the plugin      │
-└────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘   boundary)            │
-     └─────────────┴──────┬───────┴────────────┘                             │
-                          ▼                                                  │
-                 ┌─────────────────────┐                                     │
-                 │ Template + Font Engine│ ◀───────────────────────────────────┘
-                 │ (Office introspection │
-                 │  + Google Fonts)      │
-                 └─────────────────────┘
-                          ▼
-                  byte-reproducible artifact
+                 ┌────────────────────────── compyla core (no I/O, D11) ──────────────────────────┐
+  markdown ─────▶│  parse ──▶ IR ──▶ validate ──▶ compose ──▶ serialize (per-format feature)        │──▶ bytes
+  or IR JSON ───▶│              ▲         ▲            ▲              ▲                             │    + diagnostics
+                 └──────────────┼─────────┼────────────┼──────────────┼─────────────────────────────┘
+                                │   template model   font metrics   template package · font bytes · images
+                                └───────────────────── host-supplied resolvers ───────────────────────
+                  hosts:  Node (napi-rs) · Python (PyO3) · browser (WASM) · CLI · MCP · HTTP server
 ```
 
-Everything is a **pnpm/turbo monorepo**, and it layers strictly: **core packages → SDK → apps &
-services** (see D8). `@compyla/core` (parser + tokens + validator) has **zero dependency on any
-renderer**; renderers are installed opt-in (see D7). Neither layer knows anything above it — apps
-depend on the SDK, never the reverse, and nothing outside `@compyla/core` reaches back into the parser.
+### Stage 1 — Parse
 
-### Interface Surfaces
+- CommonMark + GFM (tables, task lists, strikethrough, autolinks), YAML frontmatter, and Compyla
+  directives (`::: name args` fences and `<!-- name -->` markers), as specified in
+  markdown-spec.md §1–§2.
+- Every IR node carries its 1-based source line and column. Diagnostics depend on it.
+- Produces **parse diagnostics** for anything the IR cannot represent (`unsupported_content`),
+  malformed frontmatter, and unclosed directive fences. Nothing is dropped silently.
+- Format-agnostic: the parser knows nothing about output formats. Candidate crate: `comrak` (a
+  port of GitHub's cmark-gfm, with full source positions). The directive grammar is a pre-pass,
+  exactly as in the prototype.
 
-Every app or service is a thin consumer of `@compyla/sdk` — none hold engine orchestration of their
-own, and none import `@compyla/core` or a renderer package directly:
+### Stage 2 — Intermediate Representation (IR)
 
-| Surface | Package | Notes |
-|---------|---------|-------|
-| CLI | `@compyla/cli` | `compyla convert` / `compyla lint` / `compyla template inspect`. Local, offline. Owns argv parsing, file I/O, and terminal-formatted diagnostics only. |
-| Web | `@compyla/web` | Tiny local UI for interactive lint feedback — paste/drop markdown, see line-level diagnostics live. Diagnostics only, no rendered-document preview (that's the Phase 3 live preview editor — see Non-Goals). |
-| Server | `@compyla/server` | Thin, **self-hostable** HTTP wrapper (`POST /convert`, `POST /validate`, `/templates`) — OSS, deploy to any Node host, no Compyla account required. Distinct from Compyla's own managed hosting of it (D5). |
-
-The SDK is also the **programmatic interface** in its own right — embed `@compyla/sdk` directly in
-any Node app or CI script (`convert()` / `lint()` / `inspectTemplate()`) without going through a CLI
-subprocess or an HTTP hop. All surfaces share one diagnostics shape (see [cli.md](cli.md)).
-
-### Stage 1 — Parser (`@compyla/core`)
-
-- CommonMark + GFM (tables, strikethrough, task lists, autolinks).
-- YAML frontmatter extraction.
-- Directive extension: fenced `::: name args` blocks and `<!-- name -->` inline markers.
-- Output: a standard markdown AST annotated with source line/column positions (required for validator
-  error messages).
-- The parser knows nothing about output formats. Candidate stack: `remark` + `remark-gfm` +
-  `remark-directive` + a frontmatter step.
-
-### Stage 2 — Token/IR Builder
-
-Transforms the AST into the **Semantic IR** — a format-agnostic document model of **base tokens**,
-with optional **per-format override tokens** layered on top. This is how "one file → four outputs"
-coexists with per-format styling: the base always renders everywhere; overrides refine a specific
-target.
+The IR is a format-agnostic document model of **base tokens** (D1), published as JSON and defined
+by `spec/ir.schema.json`. Hosts may submit IR JSON directly instead of markdown. This is the path
+for agents and programs that emit structured output.
 
 ```
-Document
-├─ meta            (frontmatter: title, template, format, author…)
+Document { irVersion, meta, body }
 └─ body: Node[]
-   ├─ Section      (heading level, title, children)
-   ├─ Paragraph    (rich-text inline runs: bold, italic, code, links)
-   ├─ TableBlock   (rows, header row, column hints, cell content incl. formula cells)
-   ├─ ListBlock    (ordered/unordered/task, nesting)
-   ├─ MediaBlock   (image ref, alt, sizing hints)
-   ├─ CodeBlock    (language, content)
-   ├─ QuoteBlock
-   ├─ Break        (from ---; meaning assigned per profile: page vs slide)
-   └─ DirectiveBlock (name, args, children — resolved per profile)
-
-+ overrides: per-format styling tokens scoped to a target (e.g. a `::: pptx` block or
-  format-scoped frontmatter keys) that a single renderer consumes and others ignore.
+   ├─ section    (heading level, title runs, children: the content it governs)
+   ├─ paragraph  (inline runs: bold, italic, code, strike, link)
+   ├─ table      (header cells, column alignment, rows; each cell has inline runs + raw source)
+   ├─ list       (ordered, items with optional task-list checkbox state)
+   ├─ media      (image src, alt)
+   ├─ code       (language, content)
+   ├─ quote      (children)
+   ├─ break      (from ---; meaning assigned per profile: page vs. slide)
+   └─ directive  (name, args, children; resolved per profile)
 ```
 
-Key property: base tokens preserve *intent*, not layout. "Break" is not "page break" or "slide break"
-until a profile interprets it. Override tokens are the escape hatch for format-specific control.
+Base tokens preserve *intent*, not layout. A `break` is not a page break or a slide break until a
+profile interprets it.
 
-### Stage 3 — Validator
+### Stage 3 — Validate
 
-Validates tokens against the target **format profile** (see [markdown-spec.md](markdown-spec.md)).
-Examples:
+Profile rules run over the IR, plus the **template model when one is supplied**. That lets pptx
+layout names be checked against the template's real layouts, not just the built-in set. Examples:
+rectangular xlsx tables, the formula allowlist, unique sheet names, heading structure, resolvable
+images. Every diagnostic carries a registered code, a severity and a source position.
 
-- `xlsx`: every table must be rectangular; **formulas are parsed and checked against a function
-  allowlist** (see D-formula); sheet names (H1s) unique and ≤ 31 chars.
-- `pptx`: content between breaks must fit a known layout, or a layout directive must resolve.
-- All profiles: image references must resolve; directive names must exist in the profile.
+**Severity policy** (markdown-spec.md §11.1): an error means no safe or faithful output is possible
+(an unresolvable brand template, a limit exceeded). Every other problem is a warning with a defined
+fallback, so plain markdown always renders. Under `--strict`, every non-advisory warning becomes an
+error, so strict means nothing was dropped, guessed or substituted. Validation runs fully offline and
+is exposed as `lint`.
 
-Every diagnostic carries severity (`error` | `warning`), source position, and a suggested fix. A
-**fidelity level** (`--strict`) escalates "won't be pixel-perfect" situations — missing font,
-unresolved layout, overflow — from silent drift to warnings/errors. The validator is exposed
-standalone as `compyla lint` and runs fully **offline**.
+### Stage 4 — Compose (D15)
 
-### Stage 4 — Renderers (native, per-format packages)
+Each format gets its own composed model:
 
-One renderer package per format, each consuming the same tokens and emitting the format **natively —
-no LibreOffice, no format-to-format conversion**:
+| Format | Composed model |
+|--------|----------------|
+| pptx | Slides bound to template layouts, content assigned to placeholders, text **measured** against placeholder boxes |
+| xlsx | Sheets, placed ranges, typed cells, formulas with resolved addresses |
+| docx / pdf | A flow of blocks bound to the template's named styles; page geometry from the template |
 
-| Package | Approach |
-|---------|----------|
-| `@compyla/docx` | Map tokens to Word named styles in the template (`Heading 1–6`, `Normal`, `Quote`, table styles). Candidate lib: `docx`. |
-| `@compyla/pdf`  | **Native page layout** (candidate: `pdf-lib`/`pdfkit` or a layout engine). No docx→PDF conversion. |
-| `@compyla/pptx` | Break-delimited slide groups → template layouts. Layout by directive, else inferred from content shape. |
-| `@compyla/xlsx` | H1 sections → sheets; TableBlocks → ranges; **allowlisted formulas** passed through; column-type directives → number formats and widths. Candidate lib: `exceljs`. |
+Composition-time diagnostics (measured overflow, font substitution, unbound layout) come from the
+same code that places content, so validation and rendering can never disagree. Text measurement uses
+the pinned font files (shaping via `harfrust`). It is a diagnostic tool. Word and PowerPoint still do
+the final layout of flowing text.
 
-All renderers produce **byte-reproducible** output: pinned timestamps, sorted zip entries,
-deterministic relationship IDs.
+### Stage 5 — Serialize (one feature per format)
 
-### Template + Font Engine
+| Format | Approach |
+|--------|----------|
+| docx | **Template-first** (D12): the template's package is copied, its body replaced, and IR content written against its named styles |
+| pptx | **Template-first** (D12): the template's sample slides are removed, and each composed slide is written against one of its real layouts |
+| xlsx | `rust_xlsxwriter`, with a house style plus theme tokens taken from a supplied docx/pptx template. Template-first xlsx comes later, since the writer can't open existing files |
+| pdf | **Typst** (D13): the composed flow becomes Typst markup with a theme generated from the template, compiled in-process |
 
-- Users supply a real `.docx`/`.pptx` as a template. Compyla introspects it: named styles, slide
-  layouts and placeholder shapes, theme colors/fonts.
-- Renderers bind tokens to template styles/placeholders by convention (IR `Section level=1` → Word
-  style `Heading 1`; pptx layout `two-col` → template layout `Two Content`).
-- **Fonts are never named in markdown.** The template declares font families; the engine resolves each
-  family through a fallback chain: (1) font embedded in the template → use it; (2) name matches
-  **Google Fonts** → download, embed, and subset (OFL/Apache licensing permits redistribution);
-  (3) user-supplied font file; (4) substitute + **fidelity warning**.
-- A default house template ships for every format so templates are optional.
+No LibreOffice and no format-to-format conversion in the pipeline (D4).
+
+## The Core Does No I/O (D11)
+
+The core's API is pure: `(markdown | IR, options, resolvers) → (bytes?, diagnostics)`. Hosts supply
+the resolvers:
+
+| Resolver | Supplies |
+|----------|----------|
+| Asset | Image bytes for a `src` (also used by `lint` to check existence) |
+| Template | Template package bytes |
+| Font | Font bytes for a family/style, from the local font cache (D14) |
+
+The core never touches the network or the filesystem. That is what lets one codebase compile to a
+native binary, a napi-rs addon, a PyO3 extension and WebAssembly, and it is half of what makes
+output reproducible.
+
+## Operations
+
+Every host exposes the same four operations, with the same names, inputs and outputs:
+
+| Operation | Input | Output |
+|-----------|-------|--------|
+| `parse` | markdown | IR JSON + parse diagnostics |
+| `lint` | markdown or IR, format, optional template, `strict` | diagnostics |
+| `convert` | markdown or IR, format, optional template, `strict`, resolvers | bytes (absent on blocking error) + diagnostics |
+| `inspect_template` | template bytes | template report: layouts, named styles, theme colors/fonts, referenced fonts |
+
+All hosts share one diagnostics shape (see `spec/diagnostics.json`).
+
+## Code Layout (planned)
+
+```
+crates/
+  compyla-core     parser, IR, validator, profiles, formula allowlist (no renderer deps)
+  compyla-ooxml    zip + XML, template package model, deterministic writer, template inspection
+  compyla-fonts    font lockfile model, measurement, subsetting
+  compyla-docx     template-first docx serializer
+  compyla-pptx     template-first pptx serializer
+  compyla-xlsx     xlsx serializer
+  compyla-pdf      Typst-backed pdf serializer
+  compyla          facade: the four operations, renderer dispatch, strict escalation (D8)
+hosts/
+  node             @compyla npm package (napi-rs native addon)
+  wasm             browser builds: core-only (lint) and full (preview)
+  python           compyla on PyPI (PyO3 + maturin)
+  cli              the `compyla` binary
+  mcp              MCP server (rmcp)
+  server           HTTP server
+spec/              the contracts above
+packages/          TypeScript reference prototype (retired at the end of Phase D)
+```
+
+Layering is strict (D8): **core crates → `compyla` facade → hosts**. Hosts hold only their own I/O
+and presentation: argv and terminal output, HTTP request handling, MCP tool plumbing, DOM. They never
+reach past the facade.
+
+## Template-First Rendering (D12)
+
+The output package is the template package with generated content written into it:
+
+- **docx**: the template's `styles.xml`, `numbering.xml`, theme, settings, headers, footers and final
+  section properties (page size, margins, header/footer references) are kept. Only the body is
+  replaced. IR nodes map to named styles by **style name** (`Heading 1`–`Heading 6`, `Normal`,
+  `Quote`, a code style, the default table style), resolved to the template's own style IDs. A style
+  the template lacks is added from the house template. `.dotx` input is written out as a `.docx`.
+- **pptx**: the template's masters, layouts and theme are kept, and its sample slides are removed.
+  Each composed slide is a new slide part referencing one of the template's layouts. Placeholders are
+  written without position or formatting of their own, so they inherit geometry and style from the
+  layout and master, which is how OOXML is designed. Logos, backgrounds, footers and fonts therefore
+  carry over unchanged.
+- **House templates are real bundled `.dotx` / `.potx` files.** With no template supplied, the same
+  code path runs against the house file. There is one path, not "template layouts" vs. "house layouts
+  defined in code".
+- **Layout binding** (markdown-spec.md §8.5): explicit alias, then name match against the template's
+  layouts, then a match by OOXML layout type (so localized templates bind), else the template's own
+  Title and Content layout with a `layout_not_in_template` warning. A second master is never imported.
+- **Sanitized** (markdown-spec.md §10.4): macro-enabled, encrypted or DTD-bearing templates are
+  rejected. External relationships, ActiveX and embedded OLE objects are stripped, and document
+  properties are written from the document, never copied from the template.
+
+**Design tokens across formats.** From a docx or pptx template the engine reads theme fonts
+(major/minor), theme colors and, for docx, page size and margins. These drive the pdf theme and the
+xlsx header style, so one brand looks the same in all four outputs without a theming DSL (D3).
+
+> *Prototype difference:* the TypeScript renderers generate fresh files with `docx` / `pptxgenjs` and
+> take only two theme fonts, one accent color and (pptx) placeholder boxes from the template.
+> Masters, backgrounds, logos, headers and footers are lost. D12 exists to fix this.
+
+## Fonts (D14)
+
+Fonts are never named in markdown (unchanged). Resolution moves **out of the render path**.
+Installing a template (or running `compyla fonts sync`) resolves each family the template references
+through the chain: (1) font embedded in the template, (2) user-supplied file, (3) **Google Fonts**
+(OFL/Apache licensing permits redistribution). Each resolved file goes into a content-addressed local
+cache and is recorded in a lockfile (`compyla.lock`: family, style, source, SHA-256). Renders read
+fonts only through the font resolver, so they run **offline and pinned**. A family that cannot be
+resolved produces `font_unresolved` (a warning, an error under `--strict`), and the viewer substitutes
+a font.
+
+Embedding: docx embeds fonts the way Word does, and pdf embeds subsets via Typst. pptx sets fonts by
+name; pptx embedding is an open question.
+
+> *Prototype difference:* the prototype fetches Google Fonts on every docx/pptx render with no cache
+> and does not subset, despite earlier docs claiming subsetting. Its output therefore depends on the
+> network and on Google's file never changing.
+
+## PDF via Typst (D13)
+
+The composed flow model is emitted as Typst markup together with a Typst theme generated from the
+template's tokens, then compiled in-process with the `typst` crate. Fonts come from the font
+resolver. This provides font embedding and subsetting, full Unicode (including CJK and right-to-left
+text), a table of contents with real page numbers, headers and footers, table headers repeated across
+pages, and hyphenation. Determinism is enforced by a fixed document date and fixed inputs, and is
+verified by a toolchain check before Phase C (roadmap).
+
+Typst runs **sandboxed** (markdown-spec.md §12.2). Document text reaches it only as data, never
+spliced into markup. Its file access exposes only the generated document, resolved assets and fonts,
+and package downloads are disabled.
+
+> *Prototype difference:* `@compyla/pdf` hand-lays pages on `pdfkit` with the 14 standard PDF fonts
+> (WinAnsi only; hence ASCII task-list checkboxes), with no template binding and no font embedding.
 
 ## Key Decisions and Trade-offs
 
+Decisions keep their numbers for life. Superseded or amended decisions say so in place.
+
 ### D1 — Shared base tokens + per-format override tokens
-**Chosen.** One parser and N renderers keeps the dialect coherent and makes new formats cheap. Base
-tokens carry format-agnostic intent; override tokens add per-format control without forking the
-dialect. Cost: the token model must express both layers, and profile-specific meaning (what `---`
-means) is deferred to interpretation. Accepted.
+**Retained.** One parser and N renderers keeps the dialect coherent and makes new formats cheap. Base
+tokens carry format-agnostic intent. Override tokens add per-format control without forking the
+dialect. *Amended by markdown-spec.md 0.2:* the override block syntax is reserved, not yet specified
+(§3). The prototype never implemented it.
 
 ### D2 — Directives refine, never gatekeep
-Plain CommonMark always renders. Directives and override tokens only add control. Rationale: LLM
-output is the primary input and cannot reliably emit custom syntax. Consequence: every profile needs
-sensible inference defaults, which is real engineering effort. Accepted — this is core differentiation.
+**Retained and strengthened.** Plain CommonMark always renders, and directives only add control. The
+rationale holds: LLM output is the primary input and cannot reliably emit custom syntax. Added in
+0.2: anything the engine cannot represent produces a diagnostic, and only problems with no safe
+fallback block output (the severity policy, markdown-spec.md §11.1). Graceful degradation never means
+silent loss.
 
-### D3 — Real Office files as templates + Google Fonts resolution
-No bespoke theming DSL. Brand assets already exist as `.docx`/`.pptx`; introspecting them meets users
-where they are. Fonts resolve from the template via Google Fonts, sidestepping the licensing trap of
-bundling corporate fonts. Cost: template introspection is fiddly and font resolution fails for
-proprietary faces not on Google Fonts. Mitigation: `compyla template inspect` and an explicit fidelity
-warning.
+### D3 — Real Office files as templates; no theming DSL
+**Retained, deepened by D12.** Brand assets already exist as `.docx` / `.pptx`, and introspecting
+them meets users where they are. A portable YAML/JSON template package was considered and rejected:
+it asks users to rebuild their brand in a new format. Its main benefit, one brand across every
+format, is delivered instead by deriving design tokens from the Office template. Font resolution is
+amended by D14.
 
-### D4 — Native renderers, including native PDF (no LibreOffice)
-**Chosen: native generation for all four formats, each its own TS package.** PDF is laid out natively
-rather than converted from docx. Pros: no heavyweight/stateful LibreOffice or Office dependency (pure
-JS workers scale cleanly), full pixel control, one distribution story. Cost: native PDF layout is the
-most work of the four (effectively a layout engine), and each renderer owns its fidelity. Accepted.
+### D4 — Native renderers, no LibreOffice in the pipeline
+**Retained; PDF approach amended by D13.** No heavyweight, stateful office suite at render time.
+LibreOffice (or real Office) may be used **in CI only**, to verify that outputs open and render, never
+to produce them.
 
-### D5 — Hybrid engine, local-first; self-hosted server is OSS, managed hosting is paid (open-core)
-The engine runs locally (CLI/CI/offline/web) and also powers a server — same code, every path.
-Self-hosting is a first-class free path, not a fallback: `@compyla/server` (the thin HTTP wrapper
-over the engine, see "Interface Surfaces") is OSS like everything else — anyone can run it on their
-own infrastructure with no Compyla account. The **paid** surface is Compyla's own *managed* deployment
-of that same server, plus governance/enterprise features (auth, usage metering/billing, multi-tenancy,
-org template sharing — see Phase 3) that don't make sense to self-host. Sync execution is sufficient
-for the initial use case; async jobs/webhooks are added when workload demands.
+### D5 — Hybrid engine, local-first, open-core
+**Retained.** The engine runs locally and powers a server, with the same code on every path. The
+self-hosted server is OSS. The paid surface is Compyla's managed deployment plus governance features
+(auth, metering, multi-tenancy, org template registry and locked templates). Whether the org template
+registry ships before or with Phase F is open (see roadmap).
 
 ### D6 — Byte-reproducible output
-Identical markdown + template → identical file bytes. Enables render caching, trivial CI diffing, and
-golden-file tests. Requires deliberate discipline in every renderer (pin timestamps, sort zip entries,
-deterministic IDs). Accepted — fits the validation-first, CI-friendly positioning.
+**Retained; extended by D14.** Pinned zip entry order and timestamps, deterministic relationship IDs,
+fixed PDF dates, and fonts from the lockfile. Enables render caching, trivial CI diffing and golden
+tests.
 
-### D7 — Core + opt-in renderer packages; plugin platform
-Users install `@compyla/core` plus only the format packages they need. Requesting a format whose
-renderer package is absent errors helpfully (see D8 — this check lives in the SDK, not each app).
-Renderer packages are the primary **plugin boundary**; the platform (phased) supports four extension
-points: new output formats, custom directives/styling tokens, custom validation rules, and
-template-binding adapters. Local plugins ship first; running untrusted plugins inside the hosted
-service (a sandboxing problem) is deferred.
+### D7 — Opt-in renderers; plugin platform
+**Amended by D10.** Renderers are compile-time features of the facade crate. Native hosts (npm,
+PyPI, CLI) ship all four renderers in one binary, since size is not a concern there. The browser
+build is split: **core-only** for lint, **full** for preview. The four plugin extension points (output
+formats, directives/tokens, validation rules, template-binding adapters) stand. The *mechanism* is
+reopened: portable plugins across native and WASM hosts most likely means WASM components. Decided in
+Phase E.
 
-### D8 — Core packages → SDK → apps & services (strict layering)
-**Chosen.** `@compyla/sdk` sits between the engine and every consumer. It owns everything an app would
-otherwise have to duplicate: the `parse → validate → render` sequence, opt-in renderer loading with a
-helpful "package not installed" error, `--strict` fidelity escalation, template-kind introspection
-dispatch, and the uniform diagnostics shape. Apps (`@compyla/cli`, `@compyla/web`, and
-`@compyla/server`) depend only on the SDK — never on `@compyla/core` or a renderer package directly —
-and hold nothing but their own I/O and presentation: argv parsing and terminal output for the CLI,
-HTTP request/response handling for the server, DOM rendering for the web UI. Rationale: without this
-layer, adding a second app (the original motivation — see "Interface Surfaces") means either
-duplicating orchestration logic per app or reaching past a thin app into the renderer packages
-directly, both of which defeat the point of one engine, many surfaces. Cost: one more package to
-version and keep in sync with core/renderer releases. Accepted — the CLI was refactored onto this
-layer as the first consumer, proving it by removing all engine logic that previously lived in
-`packages/cli` (renderer dynamic-loading, convert/lint orchestration, template-kind dispatch).
+### D8 — Core → facade → hosts (strict layering)
+**Retained in new form.** The `compyla` facade crate is the old SDK's role: it owns the
+`parse → validate → compose → serialize` sequence, renderer dispatch, strict escalation and the
+uniform diagnostics shape. Hosts depend only on the facade, never on a renderer crate or core
+internals.
 
-### D9 — Docs site: hand-rolled static generator dogfooding `@compyla/core`, not a docs framework
-**Chosen.** `packages/docs-site` reads `docs/*.md` and renders each page by calling `@compyla/core`'s
-own `parse()` and walking the resulting `CompylaDocument` body — the same token model every renderer
-consumes — into HTML with a small, private, non-exported walker (`packages/docs-site/src/render-html.ts`),
-rather than adopting a docs framework (Docusaurus/VitePress) or a GitHub Wiki. Rationale: mirrors D2/D7's
-own house style (native, dependency-light, one shared token model driving every surface) and doubles as
-a continuous correctness check that `@compyla/core` handles real-world CommonMark+GFM cleanly, since the
-docs corpus becomes a de facto fixture set. Search is a small build-time JSON index (one record per
-heading) plus vanilla debounced client-side substring matching (no Algolia/Lunr); navigation, mobile
-toggling, and theming (light/dark via CSS custom properties) are hand-authored, following
-`packages/web`'s existing no-framework precedent (`browser/*.ts` + esbuild, no bundler-heavy SSG).
-Versioning is a `/latest/` path prefix — a structural hook, not a version-selector UI, appropriate for a
-project with zero released versions. Cost: no off-the-shelf i18n, plugin ecosystem, or incremental-build
-story — acceptable at 6 pages / ~1,000 lines / a single pre-1.0 version. This produces an HTML *site*,
-distinct from the still-open Phase 2 "HTML renderer... for previews" roadmap item: that item is a public
-`.md → .html` **output format** (a fifth renderer package, publicly exported, general-purpose, alongside
-docx/pdf/pptx/xlsx), whereas this walker is a private, docs-site-scoped tool with no ambition to become a
-general renderer. Accepted.
+### D9 — Docs site: hand-rolled static generator dogfooding the engine
+**Retained for now.** `packages/docs-site` renders `docs/*.md` through the prototype's `parse()`.
+Revisited in Phase D: either it dogfoods the Node host or it moves to an off-the-shelf generator. It
+must not become a reason to keep the TypeScript prototype alive.
 
-## The pixel-perfect tension
+### D10 — Rust core with native hosts *(new, 2026-10-31)*
+**Chosen.** Requirements: users reach the engine through every channel. Native packages on **both**
+npm and PyPI, from one core. The full engine must run **in-process in browsers and editors**. Optimize
+for one core on every platform, accepting slower development.
 
-Pixel-perfect output (D3/D4), messy LLM markdown (D2), and a shared base dialect (D1) pull against
-each other. Resolution: the **base dialect always renders acceptably** — not necessarily
-pixel-perfect. **Pixel-perfect fidelity is reached by binding to a known template** plus normalization
-and layout inference; the **fidelity validation level** (`--strict`) surfaces anything that would
-drift (missing fonts, unresolved layouts, overflow) as diagnostics rather than silent degradation.
+| | TypeScript | Python | Rust |
+|---|---|---|---|
+| Native npm **and** PyPI | ✗ (Python gets a wrapper) | ✗ (Node gets a wrapper) | ✓ napi-rs + PyO3 |
+| Full engine in browser/editor | ✓ | ✗ | ✓ WASM |
+| One core, single CLI binary | ✗ | ✗ | ✓ |
+| Typst for PDF | via binding | via binding | native library |
 
-## Data Flow and Integration Points
+Only Rust meets every requirement. Costs: slower iteration; a release matrix (macOS, Linux, Windows ×
+x64, arm64, plus WASM); no Office libraries to lean on (D12 requires owning the XML anyway); the
+TypeScript prototype is retired, though its spec, fixtures and diagnostics design carry over.
+**Revisit if** the Phase A toolchain check fails: one crate must build cleanly for napi-rs, PyO3 and
+`wasm32` in CI. *Passed (2026-10-31):* the core, with comrak inside, builds unchanged for all three and
+returns identical results ([spikes/README.md](../spikes/README.md), check 3).
 
-1. Caller invokes an app or the SDK directly (CLI, embedded library use, web UI, self-hosted server,
-   or Compyla's managed hosting) with markdown (+ optional template).
-2. `@compyla/sdk` runs the engine: Parse → Tokens → Validate → Render (D8).
-3. Validation errors surface the diagnostic list (CLI: non-zero exit; server: `422`).
-4. Success writes the artifact (local path) or stores it and returns a signed URL (server).
+### D11 — The core does no I/O *(new)*
+**Chosen.** All file, network and font access goes through host-supplied resolvers. Required for
+WASM and the bindings. It also makes renders reproducible and keeps the core trivially sandboxable.
+Cost: every host implements resolvers. Accepted; they are small.
 
-Module boundaries mirror **core packages → SDK → apps & services** (D8): `packages/core` (`parser/`,
-`ir/`, `profiles/`, validator) and `packages/{docx,pptx,xlsx,pdf}` (renderers) are the core layer —
-`core` has no dependency on any renderer, and renderers depend only on `core` (+ `fonts`/`ooxml`
-below), never on each other. `packages/sdk` is the sole layer between them and every app; it depends
-on `core` and, opt-in, on the renderer packages (D7). `packages/cli` and the other two
-consumption-surface packages — `packages/server` (self-hostable HTTP API, OSS) and `packages/web`
-(lint UI, OSS) — depend only on `packages/sdk`, never reaching past it.
+### D12 — Template-first rendering *(new)*
+**Chosen.** The output is the template package with content written in, not a fresh file styled to
+resemble the template. This is the only way to keep masters, logos, backgrounds, headers, footers,
+page setup and the full style sheet. Cost: we write and own the docx/pptx XML ourselves (roughly
+1–1.5k lines per format for text, lists, tables, images and notes), and native charts later need
+their own XML. Accepted. Owning the XML also makes D6 simpler.
 
-Two more packages exist purely to avoid duplicating logic that turned out to be needed by more
-than one renderer, discovered empirically once a second OOXML renderer (pptx) was built alongside
-docx: `packages/fonts` (the Google Fonts resolution chain — §"Template + Font Engine") and
-`packages/ooxml` (the deterministic zip repackaging step from D6, and the DrawingML theme parser,
-since docx and pptx templates share the identical `<a:theme>` schema). Both are internal
-implementation-sharing packages, not renderers in their own right.
+### D13 — PDF via Typst *(new)*
+**Chosen over** hand layout (the prototype's approach, which would mean building a typesetting
+engine) and over Office-to-PDF conversion (rejected by D4). Typst is a real typesetting engine,
+Apache-2.0 licensed, and a native Rust library. Cost: a large dependency, which only the full WASM
+build carries (D7), plus generating Typst markup from the composed model. **Revisit if** the
+determinism check fails. *Passed (2026-10-31):* byte-identical PDFs across separate processes, with the
+sandbox holding ([spikes/README.md](../spikes/README.md), check 2).
+
+### D14 — Fonts resolved ahead of render, pinned in a lockfile *(new)*
+**Chosen.** Renders must work offline and give identical bytes, and the prototype's per-render
+network fetch broke both. Cost: a `fonts sync` step and a cache directory per user or project.
+
+### D15 — Explicit compose stage; diagnostics from the composed model *(new)*
+**Chosen.** The prototype's validator and renderers each reasoned about layout separately (block
+counts in core vs. placeholder filling in pptx), with a shared helper as the only guard against drift.
+A compose stage that both validation and serialization consume makes "validate what you render"
+exact, and is where measured overflow lives.
+
+### D16 — Spec-first contracts *(new)*
+**Chosen.** The dialect spec, IR schema, diagnostics registry and conformance fixtures are the
+source of truth. Every implementation and host must pass the fixtures. This makes the language choice
+(D10) recoverable rather than permanent, and it is how the move from TypeScript to Rust is verified.
+Cost: spec changes need fixture changes. Accepted. That is the point.
+
+### D17 — MCP is a first-class host *(new)*
+**Chosen.** Agents are a primary channel, and the lint → fix → re-lint loop over registered
+diagnostic codes with hints is how an agent corrects its own markdown. The MCP server exposes the four
+operations as tools, and the dialect spec, diagnostics registry and template reports as resources. It
+ships in the first release (Phase D), not later.
+
+## The Pixel-Perfect Tension
+
+Template fidelity (D3/D12), messy LLM markdown (D2) and a shared base dialect (D1) pull against each
+other. Resolution: the **base dialect always renders acceptably**, not necessarily pixel-perfect.
+**Pixel-perfect fidelity is reached by writing into a known template** (D12) plus layout inference and
+measurement (D15). `--strict` turns every non-advisory warning (missing fonts, unbound layouts,
+overflow, dropped content) into an error, rather than allowing silent degradation.
+
+## Data Flow
+
+1. A host receives markdown or IR JSON, plus an optional template and options.
+2. The host calls the facade with its resolvers (D11).
+3. The facade runs parse → validate → compose → serialize (D8).
+4. Blocking errors return diagnostics without bytes (CLI: non-zero exit; HTTP: `422`; MCP: a tool
+   result carrying the diagnostics).
+5. On success the host writes or returns the bytes, together with the non-blocking diagnostics.
+
+## Reference Prototype (TypeScript)
+
+`packages/` contains the prototype: `core` (parser, tokens, validator), `docx`, `pdf`, `pptx`, `xlsx`
+renderers, `fonts`, `ooxml`, `sdk`, `cli`, `server`, `web` and `docs-site`. It stays buildable and
+tested until Phase D. Its roles until then:
+
+- **Oracle:** `spec/tools/oracle.mjs` regenerates conformance expectations from it, except for
+  fixtures marked as diverging from the prototype, where the spec deliberately corrects it.
+- **Reference:** a readable record of decisions already made (placement rules, inference rules, the
+  formula allowlist), all of which are now written into the spec.
+
+It is not published to npm. The first public release ships from the Rust core.
 
 ## Non-Goals (for now)
 
-- WYSIWYG editing or live *document* preview (teams-phase feature) — distinct from the Phase 1 web
-  lint UI, which shows diagnostics only, never a rendered preview.
-- HTML/ePub output (cheap later thanks to the token model, but not MVP).
+- WYSIWYG editing of output files. A live *preview* editor is planned (Phase F).
+- HTML/ePub output (cheap later thanks to the IR, but not in the first release).
 - Two-way conversion (Office → markdown).

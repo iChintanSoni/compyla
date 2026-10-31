@@ -1,0 +1,9 @@
+{
+  "diagnostics": [
+    {
+      "code": "image_unsupported",
+      "severity": "warning",
+      "line": 1
+    }
+  ]
+}

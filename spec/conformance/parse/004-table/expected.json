@@ -1,0 +1,126 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "table",
+        "header": [
+          {
+            "runs": [
+              {
+                "text": "Name"
+              }
+            ],
+            "raw": "Name"
+          },
+          {
+            "runs": [
+              {
+                "text": "Qty"
+              }
+            ],
+            "raw": "Qty"
+          },
+          {
+            "runs": [
+              {
+                "text": "Price"
+              }
+            ],
+            "raw": "Price"
+          },
+          {
+            "runs": [
+              {
+                "text": "Note"
+              }
+            ],
+            "raw": "Note"
+          }
+        ],
+        "align": [
+          "left",
+          "center",
+          "right",
+          null
+        ],
+        "rows": [
+          [
+            {
+              "runs": [
+                {
+                  "text": "Apple"
+                }
+              ],
+              "raw": "Apple"
+            },
+            {
+              "runs": [
+                {
+                  "text": "3"
+                }
+              ],
+              "raw": "3"
+            },
+            {
+              "runs": [
+                {
+                  "text": "1.50"
+                }
+              ],
+              "raw": "1.50"
+            },
+            {
+              "runs": [
+                {
+                  "text": "fresh"
+                }
+              ],
+              "raw": "fresh"
+            }
+          ],
+          [
+            {
+              "runs": [
+                {
+                  "text": "Pear"
+                }
+              ],
+              "raw": "Pear"
+            },
+            {
+              "runs": [
+                {
+                  "text": "10"
+                }
+              ],
+              "raw": "10"
+            },
+            {
+              "runs": [
+                {
+                  "text": "0.75"
+                }
+              ],
+              "raw": "0.75"
+            },
+            {
+              "runs": [
+                {
+                  "text": "ripe"
+                }
+              ],
+              "raw": "ripe"
+            }
+          ]
+        ],
+        "position": {
+          "line": 1,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": []
+}

@@ -1,0 +1,8 @@
+{
+  "description": "Valid pdf page geometry produces no diagnostics.",
+  "spec": [
+    "§7"
+  ],
+  "oracle": "prototype",
+  "format": "pdf"
+}

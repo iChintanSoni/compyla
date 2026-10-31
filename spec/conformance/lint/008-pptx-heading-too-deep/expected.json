@@ -1,0 +1,9 @@
+{
+  "diagnostics": [
+    {
+      "code": "heading_too_deep",
+      "severity": "warning",
+      "line": 11
+    }
+  ]
+}

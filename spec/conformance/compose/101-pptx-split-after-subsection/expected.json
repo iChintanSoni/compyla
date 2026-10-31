@@ -1,0 +1,23 @@
+{
+  "format": "pptx",
+  "slides": [
+    {
+      "title": "A",
+      "layout": "Title Slide",
+      "notes": false,
+      "content": [
+        "paragraph",
+        "heading",
+        "paragraph"
+      ]
+    },
+    {
+      "title": "C",
+      "layout": "Title and Content",
+      "notes": false,
+      "content": [
+        "paragraph"
+      ]
+    }
+  ]
+}

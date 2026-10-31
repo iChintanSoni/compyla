@@ -1,0 +1,10 @@
+{
+  "description": "pptx checks image references.",
+  "spec": [
+    "§8.7",
+    "C18"
+  ],
+  "oracle": "corrected",
+  "format": "pptx",
+  "assets": []
+}

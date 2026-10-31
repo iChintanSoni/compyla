@@ -1,0 +1,7 @@
+{
+  "description": "Table rows keep their source cell counts (no GFM padding or truncation).",
+  "spec": [
+    "§4.6"
+  ],
+  "oracle": "prototype"
+}

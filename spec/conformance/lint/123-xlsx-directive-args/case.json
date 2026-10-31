@@ -1,0 +1,10 @@
+{
+  "description": "Malformed directive arguments and unknown options are warnings with fallbacks.",
+  "spec": [
+    "§1.6",
+    "§9.4",
+    "C32"
+  ],
+  "oracle": "corrected",
+  "format": "xlsx"
+}

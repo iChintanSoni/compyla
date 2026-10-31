@@ -1,0 +1,401 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:compyla:ir:0.1",
+  "title": "Compyla IR 0.1",
+  "description": "The format-agnostic Compyla document model. Markdown maps to it as defined in docs/markdown-spec.md §4. Hosts may also submit it directly as JSON.",
+  "type": "object",
+  "required": [
+    "irVersion",
+    "meta",
+    "body"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "irVersion": {
+      "const": "0.1"
+    },
+    "meta": {
+      "description": "The frontmatter mapping (markdown-spec.md §2). Unknown keys are preserved.",
+      "type": "object"
+    },
+    "body": {
+      "$ref": "#/$defs/blocks"
+    }
+  },
+  "$defs": {
+    "position": {
+      "description": "1-based line; 1-based column in Unicode scalar values, counted from the start of the physical line. Always present in parse output; optional in IR input (markdown-spec.md §4.1, §10.7).",
+      "type": "object",
+      "required": [
+        "line",
+        "column"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "run": {
+      "description": "A span of text with uniform marks. A mark that isn't set is absent, never false. \"\\n\" in text is a hard line break.",
+      "type": "object",
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "bold": {
+          "const": true
+        },
+        "italic": {
+          "const": true
+        },
+        "code": {
+          "const": true
+        },
+        "strike": {
+          "const": true
+        },
+        "link": {
+          "type": "string",
+          "description": "The resolved link destination."
+        }
+      }
+    },
+    "runs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/run"
+      }
+    },
+    "cell": {
+      "type": "object",
+      "required": [
+        "runs",
+        "raw"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "runs": {
+          "$ref": "#/$defs/runs"
+        },
+        "raw": {
+          "type": "string",
+          "description": "The cell's source text between its delimiting pipes, trimmed, with \\| unescaped to |. Formula detection uses it (markdown-spec.md §4.5, §9.3)."
+        }
+      }
+    },
+    "blocks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/block"
+      }
+    },
+    "block": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/section"
+        },
+        {
+          "$ref": "#/$defs/paragraph"
+        },
+        {
+          "$ref": "#/$defs/table"
+        },
+        {
+          "$ref": "#/$defs/list"
+        },
+        {
+          "$ref": "#/$defs/media"
+        },
+        {
+          "$ref": "#/$defs/code"
+        },
+        {
+          "$ref": "#/$defs/quote"
+        },
+        {
+          "$ref": "#/$defs/break"
+        },
+        {
+          "$ref": "#/$defs/directive"
+        }
+      ]
+    },
+    "section": {
+      "description": "A heading and the blocks it governs (markdown-spec.md §4.2).",
+      "type": "object",
+      "required": [
+        "type",
+        "level",
+        "title",
+        "children"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "section"
+        },
+        "level": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 6
+        },
+        "title": {
+          "$ref": "#/$defs/runs"
+        },
+        "children": {
+          "$ref": "#/$defs/blocks"
+        },
+        "position": {
+          "$ref": "#/$defs/position"
+        }
+      }
+    },
+    "paragraph": {
+      "type": "object",
+      "required": [
+        "type",
+        "runs"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "paragraph"
+        },
+        "runs": {
+          "$ref": "#/$defs/runs"
+        },
+        "position": {
+          "$ref": "#/$defs/position"
+        }
+      }
+    },
+    "table": {
+      "description": "Rows keep their source cell counts; no GFM padding or truncation (markdown-spec.md §4.5).",
+      "type": "object",
+      "required": [
+        "type",
+        "header",
+        "align",
+        "rows"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "table"
+        },
+        "header": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/cell"
+          }
+        },
+        "align": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "left",
+              "center",
+              "right",
+              null
+            ]
+          }
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/cell"
+            }
+          }
+        },
+        "position": {
+          "$ref": "#/$defs/position"
+        }
+      }
+    },
+    "list": {
+      "type": "object",
+      "required": [
+        "type",
+        "ordered",
+        "items"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "list"
+        },
+        "ordered": {
+          "type": "boolean"
+        },
+        "start": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The first item's number; present only on an ordered list that doesn't start at 1."
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/listItem"
+          }
+        },
+        "position": {
+          "$ref": "#/$defs/position"
+        }
+      }
+    },
+    "listItem": {
+      "type": "object",
+      "required": [
+        "children",
+        "checked"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "children": {
+          "$ref": "#/$defs/blocks"
+        },
+        "checked": {
+          "description": "true/false for a task-list item, null otherwise.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "position": {
+          "$ref": "#/$defs/position"
+        }
+      }
+    },
+    "media": {
+      "description": "An image in a paragraph made only of images (markdown-spec.md §4.7).",
+      "type": "object",
+      "required": [
+        "type",
+        "src",
+        "alt"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "media"
+        },
+        "src": {
+          "type": "string"
+        },
+        "alt": {
+          "type": "string"
+        },
+        "link": {
+          "type": "string",
+          "description": "The destination of a link around the image, when allowed (§4.5)."
+        },
+        "position": {
+          "$ref": "#/$defs/position"
+        }
+      }
+    },
+    "code": {
+      "type": "object",
+      "required": [
+        "type",
+        "value"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "code"
+        },
+        "lang": {
+          "type": "string",
+          "description": "First word of the info string; absent when there is none."
+        },
+        "value": {
+          "type": "string",
+          "description": "Content without the trailing newline."
+        },
+        "position": {
+          "$ref": "#/$defs/position"
+        }
+      }
+    },
+    "quote": {
+      "type": "object",
+      "required": [
+        "type",
+        "children"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "quote"
+        },
+        "children": {
+          "$ref": "#/$defs/blocks"
+        },
+        "position": {
+          "$ref": "#/$defs/position"
+        }
+      }
+    },
+    "break": {
+      "description": "A thematic break; its meaning is assigned per profile (markdown-spec.md §5).",
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "break"
+        },
+        "position": {
+          "$ref": "#/$defs/position"
+        }
+      }
+    },
+    "directive": {
+      "description": "A directive fence or marker (markdown-spec.md §1.2–§1.4). Position is the opener line, column 1, or a marker's '<'.",
+      "type": "object",
+      "required": [
+        "type",
+        "name",
+        "args",
+        "children"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "directive"
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$",
+          "description": "Lowercase; directive names are case-insensitive (markdown-spec.md §1.3)."
+        },
+        "args": {
+          "type": "string",
+          "description": "The unsplit argument string; empty when absent."
+        },
+        "children": {
+          "$ref": "#/$defs/blocks"
+        },
+        "position": {
+          "$ref": "#/$defs/position"
+        }
+      }
+    }
+  }
+}

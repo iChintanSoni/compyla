@@ -1,0 +1,8 @@
+{
+  "description": "Enumerated known keys are matched case-insensitively and stored in canonical case.",
+  "spec": [
+    "§2",
+    "C28"
+  ],
+  "oracle": "corrected"
+}

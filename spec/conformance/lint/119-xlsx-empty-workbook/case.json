@@ -1,0 +1,9 @@
+{
+  "description": "A document that yields no sheets gets one empty sheet, with a document-level warning.",
+  "spec": [
+    "§9.1",
+    "C27"
+  ],
+  "oracle": "corrected",
+  "format": "xlsx"
+}

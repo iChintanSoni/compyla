@@ -1,0 +1,10 @@
+{
+  "description": "Frontmatter key diagnostics point at the key's line.",
+  "spec": [
+    "§2",
+    "§7",
+    "C28"
+  ],
+  "oracle": "corrected",
+  "format": "pdf"
+}

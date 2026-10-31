@@ -1,0 +1,25 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "paragraph",
+        "runs": [
+          {
+            "text": "https://example.com",
+            "link": "https://example.com"
+          },
+          {
+            "text": " end."
+          }
+        ],
+        "position": {
+          "line": 1,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": []
+}

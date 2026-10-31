@@ -1,0 +1,8 @@
+{
+  "description": "Link reference definitions apply document-wide, including inside directive bodies.",
+  "spec": [
+    "§4.5",
+    "C23"
+  ],
+  "oracle": "corrected"
+}

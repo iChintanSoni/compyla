@@ -1,0 +1,11 @@
+{
+  "description": "A deck whose slides all fit their layouts produces no diagnostics.",
+  "spec": [
+    "§8"
+  ],
+  "oracle": "prototype",
+  "format": "pptx",
+  "assets": [
+    "map.png"
+  ]
+}

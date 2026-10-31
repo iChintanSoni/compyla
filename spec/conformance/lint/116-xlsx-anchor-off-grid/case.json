@@ -1,0 +1,9 @@
+{
+  "description": "An anchor whose range would leave Excel's grid is ignored with a warning; the table is stacked.",
+  "spec": [
+    "§9.2",
+    "C27"
+  ],
+  "oracle": "corrected",
+  "format": "xlsx"
+}

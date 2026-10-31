@@ -1,0 +1,9 @@
+{
+  "description": "Invalid YAML frontmatter is a diagnostic at line 1, not a crash; meta is empty.",
+  "spec": [
+    "§2",
+    "C7",
+    "C32"
+  ],
+  "oracle": "corrected"
+}

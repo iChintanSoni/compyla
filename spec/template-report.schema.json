@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:compyla:template-report:0.2",
+  "title": "Compyla template report",
+  "description": "Output of the inspect_template operation (markdown-spec.md §10.5). Agents use it to write markdown that targets a template's real layouts and styles. Lengths are in points (1/72 inch).",
+  "type": "object",
+  "required": ["kind", "theme", "fonts", "issues"],
+  "additionalProperties": false,
+  "properties": {
+    "kind": { "enum": ["docx", "pptx", "xlsx"] },
+    "theme": {
+      "type": "object",
+      "required": ["fonts", "colors"],
+      "additionalProperties": false,
+      "properties": {
+        "fonts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "major": { "type": "string", "description": "Heading font family." },
+            "minor": { "type": "string", "description": "Body font family." }
+          }
+        },
+        "colors": {
+          "description": "Theme color scheme, as 6-digit uppercase hex without '#'.",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^(dk1|lt1|dk2|lt2|accent[1-6]|hlink|folHlink)$": { "type": "string", "pattern": "^[0-9A-F]{6}$" }
+          }
+        }
+      }
+    },
+    "fonts": {
+      "description": "Every font family the template references, with whether the template embeds it.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["family", "embedded"],
+        "additionalProperties": false,
+        "properties": {
+          "family": { "type": "string" },
+          "embedded": { "type": "boolean" }
+        }
+      }
+    },
+    "styles": {
+      "description": "docx: the template's styles, by their stored name (Word stores built-in names in English, e.g. \"heading 1\").",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "id", "type"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "id": { "type": "string" },
+          "type": { "enum": ["paragraph", "character", "table", "numbering"] }
+        }
+      }
+    },
+    "page": {
+      "description": "docx: page setup of the final section.",
+      "type": "object",
+      "required": ["width", "height", "margins"],
+      "additionalProperties": false,
+      "properties": {
+        "width": { "type": "number", "exclusiveMinimum": 0 },
+        "height": { "type": "number", "exclusiveMinimum": 0 },
+        "margins": {
+          "type": "object",
+          "required": ["top", "right", "bottom", "left"],
+          "additionalProperties": false,
+          "properties": {
+            "top": { "type": "number", "minimum": 0 },
+            "right": { "type": "number", "minimum": 0 },
+            "bottom": { "type": "number", "minimum": 0 },
+            "left": { "type": "number", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "slideSize": {
+      "description": "pptx: slide dimensions.",
+      "type": "object",
+      "required": ["width", "height"],
+      "additionalProperties": false,
+      "properties": {
+        "width": { "type": "number", "exclusiveMinimum": 0 },
+        "height": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "layouts": {
+      "description": "pptx: slide layouts in master order.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "placeholders"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "placeholders": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["type", "name"],
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "description": "OOXML ST_PlaceholderType; obj when the template omits it.",
+                  "enum": ["title", "body", "ctrTitle", "subTitle", "dt", "sldNum", "ftr", "hdr", "obj", "chart", "tbl", "clipArt", "dgm", "media", "sldImg", "pic"]
+                },
+                "index": { "type": "integer", "minimum": 0 },
+                "name": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "issues": {
+      "description": "Template-level diagnostics (no source line).",
+      "type": "array",
+      "items": { "$ref": "urn:compyla:diagnostic:0.2" }
+    }
+  },
+  "allOf": [
+    { "if": { "properties": { "kind": { "const": "docx" } } }, "then": { "required": ["styles", "page"] } },
+    { "if": { "properties": { "kind": { "const": "pptx" } } }, "then": { "required": ["slideSize", "layouts"] } }
+  ]
+}

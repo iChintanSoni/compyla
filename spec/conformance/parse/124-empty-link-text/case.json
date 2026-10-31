@@ -1,0 +1,8 @@
+{
+  "description": "A link with no text shows its destination.",
+  "spec": [
+    "§4.4",
+    "C34"
+  ],
+  "oracle": "corrected"
+}

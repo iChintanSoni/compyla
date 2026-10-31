@@ -1,0 +1,10 @@
+{
+  "description": "Three blocks infer Title and Content, which overflows at the first block that doesn't fit.",
+  "spec": [
+    "§8.3",
+    "§8.6",
+    "C10"
+  ],
+  "oracle": "corrected",
+  "format": "pptx"
+}

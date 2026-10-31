@@ -1,0 +1,10 @@
+{
+  "description": "Overlong and duplicate sheet names are repaired with warnings.",
+  "spec": [
+    "§9.6",
+    "C14",
+    "C32"
+  ],
+  "oracle": "corrected",
+  "format": "xlsx"
+}

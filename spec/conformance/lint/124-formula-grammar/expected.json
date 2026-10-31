@@ -1,0 +1,34 @@
+{
+  "diagnostics": [
+    {
+      "code": "formula_error",
+      "severity": "warning",
+      "line": 5
+    },
+    {
+      "code": "formula_error",
+      "severity": "warning",
+      "line": 6
+    },
+    {
+      "code": "formula_error",
+      "severity": "warning",
+      "line": 7
+    },
+    {
+      "code": "formula_error",
+      "severity": "warning",
+      "line": 8
+    },
+    {
+      "code": "formula_error",
+      "severity": "warning",
+      "line": 9
+    },
+    {
+      "code": "formula_error",
+      "severity": "warning",
+      "line": 11
+    }
+  ]
+}

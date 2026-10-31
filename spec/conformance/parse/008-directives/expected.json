@@ -1,0 +1,85 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "directive",
+        "name": "layout",
+        "args": "Two Content",
+        "children": [
+          {
+            "type": "paragraph",
+            "runs": [
+              {
+                "text": "Left column."
+              }
+            ],
+            "position": {
+              "line": 3,
+              "column": 1
+            }
+          },
+          {
+            "type": "directive",
+            "name": "col",
+            "args": "",
+            "children": [],
+            "position": {
+              "line": 5,
+              "column": 1
+            }
+          },
+          {
+            "type": "paragraph",
+            "runs": [
+              {
+                "text": "Right column."
+              }
+            ],
+            "position": {
+              "line": 7,
+              "column": 1
+            }
+          },
+          {
+            "type": "directive",
+            "name": "notes",
+            "args": "",
+            "children": [
+              {
+                "type": "paragraph",
+                "runs": [
+                  {
+                    "text": "Speaker note."
+                  }
+                ],
+                "position": {
+                  "line": 11,
+                  "column": 1
+                }
+              }
+            ],
+            "position": {
+              "line": 9,
+              "column": 1
+            }
+          }
+        ],
+        "position": {
+          "line": 1,
+          "column": 1
+        }
+      },
+      {
+        "type": "code",
+        "value": "::: not-a-directive",
+        "position": {
+          "line": 17,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": []
+}

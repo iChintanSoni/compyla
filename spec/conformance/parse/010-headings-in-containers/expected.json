@@ -1,0 +1,130 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "section",
+        "level": 1,
+        "title": [
+          {
+            "text": "Outer"
+          }
+        ],
+        "children": [
+          {
+            "type": "quote",
+            "children": [
+              {
+                "type": "section",
+                "level": 2,
+                "title": [
+                  {
+                    "text": "Quoted heading"
+                  }
+                ],
+                "children": [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "Quoted text."
+                      }
+                    ],
+                    "position": {
+                      "line": 5,
+                      "column": 3
+                    }
+                  }
+                ],
+                "position": {
+                  "line": 3,
+                  "column": 3
+                }
+              }
+            ],
+            "position": {
+              "line": 3,
+              "column": 1
+            }
+          },
+          {
+            "type": "list",
+            "ordered": false,
+            "items": [
+              {
+                "children": [
+                  {
+                    "type": "section",
+                    "level": 2,
+                    "title": [
+                      {
+                        "text": "Item heading"
+                      }
+                    ],
+                    "children": [],
+                    "position": {
+                      "line": 7,
+                      "column": 3
+                    }
+                  }
+                ],
+                "checked": null,
+                "position": {
+                  "line": 7,
+                  "column": 1
+                }
+              }
+            ],
+            "position": {
+              "line": 7,
+              "column": 1
+            }
+          },
+          {
+            "type": "directive",
+            "name": "notes",
+            "args": "",
+            "children": [
+              {
+                "type": "section",
+                "level": 2,
+                "title": [
+                  {
+                    "text": "Directive heading"
+                  }
+                ],
+                "children": [],
+                "position": {
+                  "line": 11,
+                  "column": 1
+                }
+              }
+            ],
+            "position": {
+              "line": 9,
+              "column": 1
+            }
+          },
+          {
+            "type": "paragraph",
+            "runs": [
+              {
+                "text": "Back in Outer."
+              }
+            ],
+            "position": {
+              "line": 15,
+              "column": 1
+            }
+          }
+        ],
+        "position": {
+          "line": 1,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": []
+}

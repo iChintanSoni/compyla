@@ -1,0 +1,42 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "paragraph",
+        "runs": [
+          {
+            "text": "See "
+          },
+          {
+            "text": "the docs",
+            "link": "https://example.com/docs"
+          },
+          {
+            "text": " and "
+          },
+          {
+            "text": "Example",
+            "link": "https://example.com"
+          },
+          {
+            "text": " and "
+          },
+          {
+            "text": "example",
+            "link": "https://example.com"
+          },
+          {
+            "text": "."
+          }
+        ],
+        "position": {
+          "line": 1,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": []
+}

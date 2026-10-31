@@ -1,0 +1,21 @@
+{
+  "diagnostics": [],
+  "output": {
+    "paragraphs": [
+      {
+        "style": "heading 1",
+        "text": "Report"
+      },
+      {
+        "style": "normal",
+        "text": "Before."
+      },
+      {
+        "style": "normal",
+        "text": "After."
+      }
+    ],
+    "pageBreaks": 0,
+    "horizontalRules": 1
+  }
+}

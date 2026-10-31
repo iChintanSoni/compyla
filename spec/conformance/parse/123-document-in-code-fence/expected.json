@@ -1,0 +1,24 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "code",
+        "lang": "markdown",
+        "value": "# Title\n\nBody.",
+        "position": {
+          "line": 1,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": [
+    {
+      "code": "document_in_code_fence",
+      "severity": "warning",
+      "line": 1
+    }
+  ]
+}

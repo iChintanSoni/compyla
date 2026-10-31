@@ -1,0 +1,14 @@
+{
+  "diagnostics": [
+    {
+      "code": "sheet_name_too_long",
+      "severity": "warning",
+      "line": 1
+    },
+    {
+      "code": "duplicate_sheet_name",
+      "severity": "warning",
+      "line": 13
+    }
+  ]
+}

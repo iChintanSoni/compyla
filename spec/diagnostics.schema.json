@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:compyla:diagnostics-registry:0.2",
+  "title": "Compyla diagnostics registry",
+  "description": "Schema for spec/diagnostics.json.",
+  "type": "object",
+  "required": ["specVersion", "description", "diagnostics", "operationErrors"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "specVersion": { "type": "string" },
+    "description": { "type": "string" },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "severity", "stage", "profiles", "strictPromotable", "position", "since", "status", "spec", "summary"],
+        "additionalProperties": false,
+        "properties": {
+          "code": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "severity": { "enum": ["error", "warning"] },
+          "stage": { "enum": ["parse", "validate", "render", "any"] },
+          "profiles": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "enum": ["*", "docx", "pdf", "pptx", "xlsx"] }
+          },
+          "strictPromotable": { "type": "boolean", "description": "false for errors and advisory warnings (markdown-spec.md §11.1)." },
+          "position": { "enum": ["node", "row", "table", "key", "frontmatter", "underline", "construct", "char", "fence", "none"] },
+          "since": { "type": "string" },
+          "status": { "enum": ["active", "reserved", "retired"] },
+          "spec": { "type": "string" },
+          "summary": { "type": "string" }
+        }
+      }
+    },
+    "operationErrors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "since", "status", "spec", "summary"],
+        "additionalProperties": false,
+        "properties": {
+          "code": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "since": { "type": "string" },
+          "status": { "enum": ["active", "reserved", "retired"] },
+          "spec": { "type": "string" },
+          "summary": { "type": "string" }
+        }
+      }
+    }
+  }
+}

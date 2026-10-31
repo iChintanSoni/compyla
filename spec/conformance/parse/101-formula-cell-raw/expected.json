@@ -1,0 +1,109 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "table",
+        "header": [
+          {
+            "runs": [
+              {
+                "text": "Item"
+              }
+            ],
+            "raw": "Item"
+          },
+          {
+            "runs": [
+              {
+                "text": "Calc"
+              }
+            ],
+            "raw": "Calc"
+          },
+          {
+            "runs": [
+              {
+                "text": "Label"
+              }
+            ],
+            "raw": "Label"
+          }
+        ],
+        "align": [
+          null,
+          null,
+          null
+        ],
+        "rows": [
+          [
+            {
+              "runs": [
+                {
+                  "text": "a"
+                }
+              ],
+              "raw": "a"
+            },
+            {
+              "runs": [
+                {
+                  "text": "=B2"
+                },
+                {
+                  "text": "C2",
+                  "italic": true
+                },
+                {
+                  "text": "D2"
+                }
+              ],
+              "raw": "=B2*C2*D2"
+            },
+            {
+              "runs": [
+                {
+                  "text": "=not a formula"
+                }
+              ],
+              "raw": "\\=not a formula"
+            }
+          ],
+          [
+            {
+              "runs": [
+                {
+                  "text": "b"
+                }
+              ],
+              "raw": "b"
+            },
+            {
+              "runs": [
+                {
+                  "text": "=A3"
+                }
+              ],
+              "raw": "=A3"
+            },
+            {
+              "runs": [
+                {
+                  "text": "Bold",
+                  "bold": true
+                }
+              ],
+              "raw": "**Bold**"
+            }
+          ]
+        ],
+        "position": {
+          "line": 1,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": []
+}

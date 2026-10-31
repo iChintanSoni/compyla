@@ -1,0 +1,8 @@
+{
+  "description": "Known keys are normalized and type-checked at the key's line; unknown keys are preserved.",
+  "spec": [
+    "§2",
+    "C28"
+  ],
+  "oracle": "corrected"
+}

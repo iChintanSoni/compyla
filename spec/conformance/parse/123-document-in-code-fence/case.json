@@ -1,0 +1,8 @@
+{
+  "description": "A body that is one markdown code block gets an advisory warning.",
+  "spec": [
+    "§4.9",
+    "C37"
+  ],
+  "oracle": "corrected"
+}

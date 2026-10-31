@@ -1,0 +1,8 @@
+{
+  "description": "Tags that aren't HTML elements stay literal; known element tags are dropped with a warning.",
+  "spec": [
+    "§4.8",
+    "C36"
+  ],
+  "oracle": "corrected"
+}

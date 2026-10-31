@@ -1,0 +1,132 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "section",
+        "level": 1,
+        "title": [
+          {
+            "text": "Report"
+          }
+        ],
+        "children": [
+          {
+            "type": "paragraph",
+            "runs": [
+              {
+                "text": "Intro paragraph."
+              }
+            ],
+            "position": {
+              "line": 3,
+              "column": 1
+            }
+          },
+          {
+            "type": "section",
+            "level": 2,
+            "title": [
+              {
+                "text": "Revenue"
+              }
+            ],
+            "children": [
+              {
+                "type": "paragraph",
+                "runs": [
+                  {
+                    "text": "Revenue grew."
+                  }
+                ],
+                "position": {
+                  "line": 7,
+                  "column": 1
+                }
+              }
+            ],
+            "position": {
+              "line": 5,
+              "column": 1
+            }
+          },
+          {
+            "type": "section",
+            "level": 2,
+            "title": [
+              {
+                "text": "Costs"
+              }
+            ],
+            "children": [
+              {
+                "type": "section",
+                "level": 3,
+                "title": [
+                  {
+                    "text": "Payroll"
+                  }
+                ],
+                "children": [
+                  {
+                    "type": "paragraph",
+                    "runs": [
+                      {
+                        "text": "Payroll is flat."
+                      }
+                    ],
+                    "position": {
+                      "line": 13,
+                      "column": 1
+                    }
+                  }
+                ],
+                "position": {
+                  "line": 11,
+                  "column": 1
+                }
+              }
+            ],
+            "position": {
+              "line": 9,
+              "column": 1
+            }
+          }
+        ],
+        "position": {
+          "line": 1,
+          "column": 1
+        }
+      },
+      {
+        "type": "section",
+        "level": 1,
+        "title": [
+          {
+            "text": "Appendix"
+          }
+        ],
+        "children": [
+          {
+            "type": "paragraph",
+            "runs": [
+              {
+                "text": "Closing paragraph."
+              }
+            ],
+            "position": {
+              "line": 17,
+              "column": 1
+            }
+          }
+        ],
+        "position": {
+          "line": 15,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": []
+}

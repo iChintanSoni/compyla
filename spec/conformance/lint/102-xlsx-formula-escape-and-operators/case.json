@@ -1,0 +1,9 @@
+{
+  "description": "Formulas keep their * operators and \\= escapes a literal.",
+  "spec": [
+    "§9.3",
+    "C1"
+  ],
+  "oracle": "corrected",
+  "format": "xlsx"
+}

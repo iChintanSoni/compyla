@@ -1,0 +1,9 @@
+{
+  "description": "Headings, paragraphs, a table and a link map to named styles, a native table and a hyperlink; properties come from meta.",
+  "spec": [
+    "§5",
+    "§6"
+  ],
+  "oracle": "prototype",
+  "format": "docx"
+}

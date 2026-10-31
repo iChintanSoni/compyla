@@ -1,0 +1,24 @@
+{
+  "diagnostics": [
+    {
+      "code": "sheet_name_invalid",
+      "severity": "warning",
+      "line": 1
+    },
+    {
+      "code": "invalid_directive_args",
+      "severity": "warning",
+      "line": 3
+    },
+    {
+      "code": "table_header_invalid",
+      "severity": "warning",
+      "line": 3
+    },
+    {
+      "code": "unknown_directive_option",
+      "severity": "warning",
+      "line": 3
+    }
+  ]
+}

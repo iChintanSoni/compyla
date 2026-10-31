@@ -1,0 +1,8 @@
+{
+  "description": "A demoted H4 inside a slide warns.",
+  "spec": [
+    "§8.7"
+  ],
+  "oracle": "prototype",
+  "format": "pptx"
+}

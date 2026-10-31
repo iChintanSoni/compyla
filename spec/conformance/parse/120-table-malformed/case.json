@@ -1,0 +1,8 @@
+{
+  "description": "A table whose delimiter row has a different cell count stays a paragraph, with table_malformed.",
+  "spec": [
+    "§4.9",
+    "C37"
+  ],
+  "oracle": "corrected"
+}

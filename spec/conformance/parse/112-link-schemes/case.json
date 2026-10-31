@@ -1,0 +1,8 @@
+{
+  "description": "Allowed link schemes are kept; others are removed with link_scheme_blocked, keeping their text.",
+  "spec": [
+    "§4.5",
+    "C24"
+  ],
+  "oracle": "corrected"
+}

@@ -1,0 +1,53 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "directive",
+        "name": "toc",
+        "args": "",
+        "children": [],
+        "position": {
+          "line": 1,
+          "column": 1
+        }
+      },
+      {
+        "type": "paragraph",
+        "runs": [
+          {
+            "text": "Text."
+          }
+        ],
+        "position": {
+          "line": 3,
+          "column": 1
+        }
+      },
+      {
+        "type": "directive",
+        "name": "pagebreak",
+        "args": "",
+        "children": [],
+        "position": {
+          "line": 5,
+          "column": 1
+        }
+      },
+      {
+        "type": "paragraph",
+        "runs": [
+          {
+            "text": "More."
+          }
+        ],
+        "position": {
+          "line": 8,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": []
+}

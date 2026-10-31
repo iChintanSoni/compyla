@@ -1,0 +1,9 @@
+{
+  "description": "Text, a link and metadata on an A4 page.",
+  "spec": [
+    "§5",
+    "§7"
+  ],
+  "oracle": "prototype",
+  "format": "pdf"
+}

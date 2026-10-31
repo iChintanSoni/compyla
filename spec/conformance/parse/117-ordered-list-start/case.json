@@ -1,0 +1,8 @@
+{
+  "description": "An ordered list records a start number other than 1.",
+  "spec": [
+    "§4.3",
+    "C35"
+  ],
+  "oracle": "corrected"
+}

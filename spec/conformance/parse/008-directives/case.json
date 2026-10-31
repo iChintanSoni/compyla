@@ -1,0 +1,8 @@
+{
+  "description": "Directive fences with args, nesting, a marker, and fence lines inside code are literal.",
+  "spec": [
+    "§1.3",
+    "§1.4"
+  ],
+  "oracle": "prototype"
+}

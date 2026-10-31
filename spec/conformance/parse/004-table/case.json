@@ -1,0 +1,7 @@
+{
+  "description": "GFM table: header, per-column alignment, rows; raw equals the source text for plain cells.",
+  "spec": [
+    "§4.6"
+  ],
+  "oracle": "prototype"
+}

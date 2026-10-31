@@ -1,0 +1,13 @@
+{
+  "description": "Picture with Caption holds at most one media block.",
+  "spec": [
+    "§8.6",
+    "C26"
+  ],
+  "oracle": "corrected",
+  "format": "pptx",
+  "assets": [
+    "a.png",
+    "b.png"
+  ]
+}

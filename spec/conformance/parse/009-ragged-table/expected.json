@@ -1,0 +1,101 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "table",
+        "header": [
+          {
+            "runs": [
+              {
+                "text": "A"
+              }
+            ],
+            "raw": "A"
+          },
+          {
+            "runs": [
+              {
+                "text": "B"
+              }
+            ],
+            "raw": "B"
+          },
+          {
+            "runs": [
+              {
+                "text": "C"
+              }
+            ],
+            "raw": "C"
+          }
+        ],
+        "align": [
+          null,
+          null,
+          null
+        ],
+        "rows": [
+          [
+            {
+              "runs": [
+                {
+                  "text": "1"
+                }
+              ],
+              "raw": "1"
+            },
+            {
+              "runs": [
+                {
+                  "text": "2"
+                }
+              ],
+              "raw": "2"
+            }
+          ],
+          [
+            {
+              "runs": [
+                {
+                  "text": "1"
+                }
+              ],
+              "raw": "1"
+            },
+            {
+              "runs": [
+                {
+                  "text": "2"
+                }
+              ],
+              "raw": "2"
+            },
+            {
+              "runs": [
+                {
+                  "text": "3"
+                }
+              ],
+              "raw": "3"
+            },
+            {
+              "runs": [
+                {
+                  "text": "4"
+                }
+              ],
+              "raw": "4"
+            }
+          ]
+        ],
+        "position": {
+          "line": 1,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": []
+}

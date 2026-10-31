@@ -33,3 +33,11 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Spec artifacts (registry, fixtures, schemas)
+        run: node spec/tools/check.mjs --schemas
+
+      - name: Spec conformance against the prototype oracle
+        run: node spec/tools/oracle.mjs

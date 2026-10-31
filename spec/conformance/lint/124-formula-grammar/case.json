@@ -1,0 +1,9 @@
+{
+  "description": "Formulas must parse; a name before ( is a function call; sheet qualifiers are checked.",
+  "spec": [
+    "§9.3",
+    "C33"
+  ],
+  "oracle": "corrected",
+  "format": "xlsx"
+}

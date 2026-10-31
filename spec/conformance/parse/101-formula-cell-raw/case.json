@@ -1,0 +1,8 @@
+{
+  "description": "A cell's raw is its source text, so formulas keep their * operators and \\= stays an escape; runs are the inline content.",
+  "spec": [
+    "§4.6",
+    "C1"
+  ],
+  "oracle": "corrected"
+}

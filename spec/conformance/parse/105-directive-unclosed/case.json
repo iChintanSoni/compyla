@@ -1,0 +1,8 @@
+{
+  "description": "An unclosed opener becomes a directive with no children; following lines parse normally.",
+  "spec": [
+    "§1.3",
+    "C4"
+  ],
+  "oracle": "corrected"
+}

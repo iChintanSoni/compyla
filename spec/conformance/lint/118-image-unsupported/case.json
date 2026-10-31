@@ -1,0 +1,13 @@
+{
+  "description": "Image formats are detected from bytes; WebP is unsupported, PNG is fine.",
+  "spec": [
+    "§4.7",
+    "C30"
+  ],
+  "oracle": "corrected",
+  "format": "docx",
+  "assets": [
+    "chart.webp",
+    "logo.png"
+  ]
+}

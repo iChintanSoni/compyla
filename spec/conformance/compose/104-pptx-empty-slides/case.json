@@ -1,0 +1,10 @@
+{
+  "description": "Empty slides are omitted; Two Content without col markers takes two blocks.",
+  "spec": [
+    "§8.1",
+    "§8.6",
+    "C26"
+  ],
+  "oracle": "corrected",
+  "format": "pptx"
+}

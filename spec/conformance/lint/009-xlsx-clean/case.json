@@ -1,0 +1,8 @@
+{
+  "description": "A sheet with a typed table and in-range formulas produces no diagnostics.",
+  "spec": [
+    "§9"
+  ],
+  "oracle": "prototype",
+  "format": "xlsx"
+}

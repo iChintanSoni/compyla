@@ -1,0 +1,8 @@
+{
+  "diagnostics": [
+    {
+      "code": "xlsx_empty_workbook",
+      "severity": "warning"
+    }
+  ]
+}

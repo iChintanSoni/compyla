@@ -1,0 +1,27 @@
+{
+  "ir": {
+    "irVersion": "0.1",
+    "meta": {},
+    "body": [
+      {
+        "type": "paragraph",
+        "runs": [
+          {
+            "text": "| A | B | |---|---|---| | 1 | 2 |"
+          }
+        ],
+        "position": {
+          "line": 1,
+          "column": 1
+        }
+      }
+    ]
+  },
+  "diagnostics": [
+    {
+      "code": "table_malformed",
+      "severity": "warning",
+      "line": 1
+    }
+  ]
+}

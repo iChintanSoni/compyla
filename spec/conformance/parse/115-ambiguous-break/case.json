@@ -1,0 +1,8 @@
+{
+  "description": "A paragraph line directly above --- becomes a heading, with ambiguous_break at the underline.",
+  "spec": [
+    "§4.9",
+    "C29"
+  ],
+  "oracle": "corrected"
+}

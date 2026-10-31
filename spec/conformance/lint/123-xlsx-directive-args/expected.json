@@ -1,0 +1,24 @@
+{
+  "diagnostics": [
+    {
+      "code": "invalid_directive_args",
+      "severity": "warning",
+      "line": 3
+    },
+    {
+      "code": "invalid_directive_args",
+      "severity": "warning",
+      "line": 10
+    },
+    {
+      "code": "unknown_directive_option",
+      "severity": "warning",
+      "line": 17
+    },
+    {
+      "code": "unknown_directive_option",
+      "severity": "warning",
+      "line": 24
+    }
+  ]
+}

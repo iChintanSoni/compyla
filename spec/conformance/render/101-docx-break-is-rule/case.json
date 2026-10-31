@@ -1,0 +1,9 @@
+{
+  "description": "--- is a horizontal rule in docx, not a page break.",
+  "spec": [
+    "§5",
+    "C19"
+  ],
+  "oracle": "corrected",
+  "format": "docx"
+}

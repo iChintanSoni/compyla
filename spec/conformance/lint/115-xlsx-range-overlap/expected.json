@@ -1,0 +1,9 @@
+{
+  "diagnostics": [
+    {
+      "code": "xlsx_range_overlap",
+      "severity": "warning",
+      "line": 13
+    }
+  ]
+}

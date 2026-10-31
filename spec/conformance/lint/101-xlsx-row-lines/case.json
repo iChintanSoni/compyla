@@ -1,0 +1,10 @@
+{
+  "description": "Row and cell diagnostics are reported at the row's own line.",
+  "spec": [
+    "§9.7",
+    "C15",
+    "C32"
+  ],
+  "oracle": "corrected",
+  "format": "xlsx"
+}

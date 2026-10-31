@@ -1,0 +1,9 @@
+{
+  "description": "The first slide is Title Slide only if its content fits; an image-only first slide is inferred.",
+  "spec": [
+    "§8.3",
+    "C38"
+  ],
+  "oracle": "corrected",
+  "format": "pptx"
+}
