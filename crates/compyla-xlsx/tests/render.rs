@@ -148,8 +148,40 @@ fn text_that_reads_as_a_number_isnt_flagged() {
     );
     let sheet = part(&bytes, "xl/worksheets/sheet1.xml");
     assert!(
-        sheet.contains("<ignoredErrors><ignoredError sqref=\"A2 B2 B3\" numberStoredAsText=\"1\"/></ignoredErrors>"),
+        sheet.contains("<ignoredErrors><ignoredError sqref=\"A2 B2:B3\" numberStoredAsText=\"1\"/></ignoredErrors>"),
         "{sheet}"
     );
     assert!(sheet.find("<pageMargins").unwrap() < sheet.find("<ignoredErrors>").unwrap());
+}
+
+#[test]
+fn a_title_or_note_above_an_excel_table_keeps_the_link_color() {
+    // The table's range starts at its header row: the title and note above it aren't in it.
+    let bytes = render(
+        "# S\n\n## See [the site](https://e.example)\n\nA note with [a link](https://n.example).\n\n\
+         ::: table autofilter\n| A | B |\n|---|---|\n| [x](https://e.example) | y |\n:::\n",
+    );
+    for title_or_note in ["A1", "A2"] {
+        let font = font(&bytes, title_or_note);
+        assert!(font.contains("<color"), "{title_or_note}: {font}");
+    }
+    assert!(!font(&bytes, "A4").contains("<color"));
+}
+
+#[test]
+fn a_column_of_formulas_is_as_wide_as_what_they_may_show() {
+    // C and D hold only formulas: C takes its table's widest number (`$120,000.00`) plus 2, and D,
+    // a date, 10.
+    let bytes = render(
+        "# S\n\n::: columns B:currency, C:currency, D:date\n:::\n\n| Item | Price | Total | Due |\n|---|---|---|---|\n\
+         | Tea | 120000 | =B2*10 | =DATE(2026,1,31) |\n",
+    );
+    let sheet = part(&bytes, "xl/worksheets/sheet1.xml");
+    let cols = &sheet[sheet.find("<cols>").unwrap()..sheet.find("</cols>").unwrap()];
+    assert_eq!(
+        cols,
+        "<cols><col min=\"2\" max=\"2\" width=\"13\" customWidth=\"1\"/>\
+         <col min=\"3\" max=\"3\" width=\"15\" customWidth=\"1\"/>\
+         <col min=\"4\" max=\"4\" width=\"12\" customWidth=\"1\"/>"
+    );
 }

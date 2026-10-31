@@ -6,7 +6,7 @@
 //! first appear, and parts are written in a fixed order, so the bytes are reproducible (§13).
 
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 
 use compyla_core::ir::Run;
 use compyla_core::validate::xlsx::{Cell, CellValue, Link, Role, Workbook, builtin_format};
@@ -145,7 +145,9 @@ fn worksheet(
     let mut merges = Vec::new();
     for range in &sheet.ranges {
         for cell in &range.cells {
-            cells.insert((cell.row, cell.column), (cell, range.excel_table.is_some()));
+            // An Excel table runs from the header row down; a title and note sit above it.
+            let in_table = range.excel_table.is_some() && cell.row >= range.header_row;
+            cells.insert((cell.row, cell.column), (cell, in_table));
         }
         if range.columns > 1 {
             let last = range.first_column + range.columns - 1;
@@ -198,7 +200,7 @@ fn worksheet(
     xml.open("sheetData", &[]);
     let mut hyperlinks = Vec::new();
     // Text that reads as a number, kept as text on purpose (§9.5): Excel would flag each.
-    let mut numeric_text = Vec::new();
+    let mut numeric_text: Vec<(u32, u32)> = Vec::new();
     let mut current_row = None;
     for (&(row, column), &(cell, in_table)) in &cells {
         if current_row != Some(row) {
@@ -226,7 +228,7 @@ fn worksheet(
                     .parse::<f64>()
                     .is_ok_and(f64::is_finite)
                 {
-                    numeric_text.push(reference.clone());
+                    numeric_text.push((column, row));
                 }
                 let index = strings.index(runs, &key.font).to_string();
                 attrs.push(("t", "s"));
@@ -298,10 +300,7 @@ fn worksheet(
         xml.open("ignoredErrors", &[]);
         xml.empty(
             "ignoredError",
-            &[
-                ("sqref", &numeric_text.join(" ")),
-                ("numberStoredAsText", "1"),
-            ],
+            &[("sqref", &runs(numeric_text)), ("numberStoredAsText", "1")],
         );
         xml.close("ignoredErrors");
     }
@@ -314,6 +313,28 @@ fn worksheet(
     }
     xml.close("worksheet");
     xml.finish()
+}
+
+/// Cells as a space-separated list of references, a column's consecutive cells as one range
+/// (`A2:A9`), by column.
+fn runs(mut cells: Vec<(u32, u32)>) -> String {
+    cells.sort_unstable();
+    let mut out: Vec<String> = Vec::new();
+    let mut start = 0;
+    for i in 0..cells.len() {
+        let (column, row) = cells[i];
+        if cells.get(i + 1) == Some(&(column, row + 1)) {
+            continue;
+        }
+        let first = cells[start].1;
+        out.push(if first == row {
+            address(column, row)
+        } else {
+            format!("{}:{}", address(column, first), address(column, row))
+        });
+        start = i + 1;
+    }
+    out.join(" ")
 }
 
 fn table_xml(
@@ -698,6 +719,7 @@ impl Strings {
 // Column widths (§9.2): wide enough for what the header and data cells display, so no number shows
 // as `####`.
 
+const DATE_FORMAT: &str = "yyyy-mm-dd";
 /// Excel's default column width (8.43 characters), in whole characters: a column needing no more
 /// keeps it.
 const DEFAULT_WIDTH: usize = 8;
@@ -708,18 +730,19 @@ const PADDING: usize = 2;
 /// The width of each column that needs more than the default, by 0-based column.
 fn widths(sheet: &compyla_core::validate::xlsx::Sheet) -> BTreeMap<u32, usize> {
     let mut widest: BTreeMap<u32, usize> = BTreeMap::new();
-    // The widest number in each column, and the columns holding formulas, whose results can
-    // outgrow the rows they total.
+    // The widest number in each column, and each formula with the widest number in its range: a
+    // formula's result isn't known, and can outgrow the numbers it is computed from.
     let mut numbers: HashMap<u32, usize> = HashMap::new();
-    let mut formulas: HashSet<u32> = HashSet::new();
+    let mut formulas: Vec<(&Cell, usize)> = Vec::new();
     for range in &sheet.ranges {
         let filter = range.excel_table.as_ref().is_some_and(|t| t.autofilter);
+        let (first_formula, mut range_numbers) = (formulas.len(), 0);
         for cell in &range.cells {
             let width = match (&cell.role, &cell.value) {
                 // Titles and notes are merged across their range, and widen nothing.
                 (Role::Title | Role::Note, _) => continue,
                 (_, CellValue::Formula(_)) => {
-                    formulas.insert(cell.column);
+                    formulas.push((cell, 0));
                     continue;
                 }
                 (_, CellValue::Text(runs)) => {
@@ -736,6 +759,7 @@ fn widths(sheet: &compyla_core::validate::xlsx::Sheet) -> BTreeMap<u32, usize> {
                     let width = number_width(number, &cell.format);
                     let widest = numbers.entry(cell.column).or_default();
                     *widest = (*widest).max(width);
+                    range_numbers = range_numbers.max(width);
                     width
                 }
                 (_, CellValue::Boolean(_)) => "FALSE".len(),
@@ -744,12 +768,19 @@ fn widths(sheet: &compyla_core::validate::xlsx::Sheet) -> BTreeMap<u32, usize> {
             let entry = widest.entry(cell.column).or_default();
             *entry = (*entry).max(width);
         }
-    }
-    for column in formulas {
-        if let Some(&number) = numbers.get(&column) {
-            let entry = widest.entry(column).or_default();
-            *entry = (*entry).max(number + 2);
+        for formula in &mut formulas[first_formula..] {
+            formula.1 = range_numbers;
         }
+    }
+    for (cell, range_numbers) in formulas {
+        let width = if cell.format == DATE_FORMAT {
+            10
+        } else {
+            let known = numbers.get(&cell.column).copied().unwrap_or(range_numbers);
+            known.max(number_width("0", &cell.format)) + 2
+        };
+        let entry = widest.entry(cell.column).or_default();
+        *entry = (*entry).max(width);
     }
     widest
         .into_iter()
@@ -761,7 +792,7 @@ fn widths(sheet: &compyla_core::validate::xlsx::Sheet) -> BTreeMap<u32, usize> {
 /// How many characters a number shows in `format`, one of the formats the compose stage gives
 /// (§9.5): a date, a percent, a grouped number with an optional currency prefix, or as written.
 fn number_width(number: &str, format: &str) -> usize {
-    if format == "yyyy-mm-dd" {
+    if format == DATE_FORMAT {
         return 10;
     }
     let value: f64 = number.parse().unwrap_or(0.0);
@@ -770,7 +801,11 @@ fn number_width(number: &str, format: &str) -> usize {
         .rsplit_once('.')
         .map_or(0, |(_, f)| f.chars().take_while(|&c| c == '0').count());
     let fraction = if decimals > 0 { decimals + 1 } else { 0 };
-    let digits = |value: f64| format!("{:.0}", value.abs().trunc()).len();
+    // Integer digits once rounded to the format's decimals (999.995 shows as 1,000.00).
+    let digits = |value: f64| {
+        let shown = format!("{:.*}", decimals, value.abs());
+        shown.split('.').next().map_or(1, str::len)
+    };
     if format.ends_with('%') {
         return sign + digits(value * 100.0) + fraction + 1;
     }
@@ -884,6 +919,23 @@ mod tests {
         assert_eq!(number_width("46023", "yyyy-mm-dd"), 10);
         assert_eq!(number_width("42", "General"), 2);
         assert_eq!(number_width("123456789012345", "General"), 11);
+    }
+
+    #[test]
+    fn rounding_can_add_a_digit() {
+        assert_eq!(
+            number_width("999999.999", "\"$\"#,##0.00"),
+            "$1,000,000.00".len()
+        );
+        assert_eq!(number_width("0.99999", "0%"), "100%".len());
+    }
+
+    #[test]
+    fn runs_join_a_columns_consecutive_cells() {
+        assert_eq!(
+            runs(vec![(0, 3), (1, 2), (0, 2), (0, 4), (0, 7), (1, 3)]),
+            "A2:A4 A7 B2:B3"
+        );
     }
 
     #[test]

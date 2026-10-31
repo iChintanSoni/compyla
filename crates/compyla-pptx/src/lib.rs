@@ -259,6 +259,47 @@ fn rels_name(part: &str) -> String {
     format!("{folder}/_rels/{file}.rels")
 }
 
+/// The order to read areas in (§8.8): areas that overlap horizontally form a column (joined
+/// transitively), columns go left to right, and each column top to bottom. So a caption beside a
+/// picture is read after the title above it, not after the picture, and a placeholder nudged off a
+/// column's edge stays in its column. Areas not known come last, in order.
+fn reading_order(areas: &[Option<Rect>]) -> Vec<usize> {
+    fn root(parent: &mut [usize], mut i: usize) -> usize {
+        while parent[i] != i {
+            parent[i] = parent[parent[i]];
+            i = parent[i];
+        }
+        i
+    }
+    let mut parent: Vec<usize> = (0..areas.len()).collect();
+    for i in 0..areas.len() {
+        for j in i + 1..areas.len() {
+            if let (Some(a), Some(b)) = (areas[i], areas[j])
+                && a.x < b.x + b.cx
+                && b.x < a.x + a.cx
+            {
+                let (ri, rj) = (root(&mut parent, i), root(&mut parent, j));
+                parent[ri.max(rj)] = ri.min(rj);
+            }
+        }
+    }
+    let columns: Vec<usize> = (0..areas.len()).map(|i| root(&mut parent, i)).collect();
+    // Each column's left edge.
+    let mut left: HashMap<usize, i64> = HashMap::new();
+    for (area, &column) in areas.iter().zip(&columns) {
+        if let Some(area) = area {
+            let edge = left.entry(column).or_insert(area.x);
+            *edge = (*edge).min(area.x);
+        }
+    }
+    let mut order: Vec<usize> = (0..areas.len()).collect();
+    order.sort_by_key(|&i| match areas[i] {
+        Some(area) => (0, left[&columns[i]], columns[i], area.y, area.x),
+        None => (1, 0, i, 0, 0),
+    });
+    order
+}
+
 /// `target`, a part name, relative to the folder `from`.
 fn relative(from: &str, target: &str) -> String {
     let from: Vec<&str> = from.split('/').filter(|s| !s.is_empty()).collect();
@@ -357,22 +398,19 @@ impl SlideWriter<'_> {
             rect: Some(layout.master_body.unwrap_or(BODY_AREA)),
         };
         let content = layout.content();
-        let mut slots: Vec<(&[Content], Option<&Placeholder>)> = slide
+        let slots: Vec<(&[Content], Option<&Placeholder>)> = slide
             .slots
             .iter()
             .enumerate()
             .filter(|(_, blocks)| !blocks.is_empty())
             .map(|(index, blocks)| (blocks.as_slice(), content.get(index).copied()))
             .collect();
-        // Shapes are written in reading order (§8.8): by their areas' left edges, then top edges,
-        // so a caption beside a picture is read after the title above it, not after the picture.
-        slots.sort_by_key(|(_, placeholder)| {
-            placeholder
-                .unwrap_or(&free)
-                .rect
-                .map_or((i64::MAX, i64::MAX), |r| (r.x, r.y))
-        });
-        for (blocks, placeholder) in slots {
+        let areas: Vec<Option<Rect>> = slots
+            .iter()
+            .map(|(_, placeholder)| placeholder.unwrap_or(&free).rect)
+            .collect();
+        for index in reading_order(&areas) {
+            let (blocks, placeholder) = slots[index];
             match placeholder {
                 Some(placeholder) => self.slot(&mut shapes, blocks, placeholder),
                 None => self.free_slot(&mut shapes, blocks, &free),
@@ -1310,6 +1348,33 @@ mod tests {
         );
         let slide = String::from_utf8(parts["ppt/slides/slide1.xml"].clone()).unwrap();
         assert!(slide.contains(r#"<a:xfrm rot="5400000">"#), "{slide}");
+    }
+
+    #[test]
+    fn areas_are_read_by_column() {
+        let rect = |x, y, cx, cy| Some(Rect { x, y, cx, cy });
+        // Picture with Caption: the picture (right) is higher than the caption (left).
+        assert_eq!(
+            reading_order(&[
+                rect(5_183_188, 987_425, 6_172_200, 4_873_625),
+                rect(839_788, 2_057_400, 3_932_237, 3_811_588)
+            ]),
+            [1, 0]
+        );
+        // Comparison, with the right heading nudged one EMU: it stays in its column.
+        let comparison = [
+            rect(839_788, 1_681_163, 5_157_787, 823_912),
+            rect(839_788, 2_505_075, 5_157_787, 3_684_588),
+            rect(6_172_201, 1_681_163, 5_183_188, 823_912),
+            rect(6_172_200, 2_505_075, 5_183_188, 3_684_588),
+        ];
+        assert_eq!(reading_order(&comparison), [0, 1, 2, 3]);
+        // A full-width area joins both columns into one, read top to bottom, then left to right.
+        let mut joined = comparison.to_vec();
+        joined.insert(0, rect(839_788, 6_300_000, 10_515_600, 400_000));
+        assert_eq!(reading_order(&joined), [1, 3, 2, 4, 0]);
+        // An area not known comes last.
+        assert_eq!(reading_order(&[None, rect(0, 0, 10, 10)]), [1, 0]);
     }
 
     #[test]
