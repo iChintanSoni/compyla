@@ -41,8 +41,7 @@ Snapshot as of the last day of the quarter, placed off to the side rather than s
 ::: anchor F1
 :::
 
-| Metric         | Value |
-|----------------|-------|
-| Headcount      | 42    |
-| Open Reqs      | 5     |
-| Attrition Rate | 4%    |
+| Team        | Headcount | Open Reqs | Attrition |
+|-------------|-----------|-----------|-----------|
+| Engineering | 30        | 3         | 4%        |
+| Sales       | 12        | 2         | 6.5%      |

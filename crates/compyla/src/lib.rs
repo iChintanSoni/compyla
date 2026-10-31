@@ -59,12 +59,7 @@ pub fn lint(
         sidecar,
     } = compyla_core::parse(source);
     let format = resolve_format(options, &document)?;
-    let input = compyla_core::validate::Input {
-        document: &document,
-        sidecar: &sidecar,
-        assets,
-    };
-    diagnostics.extend(compyla_core::validate::validate(&input, format));
+    diagnostics.extend(validate(document, &sidecar, format, assets));
     finish(&mut diagnostics, options.strict);
     Ok(diagnostics)
 }
@@ -95,7 +90,8 @@ pub fn load_ir(json: &str) -> Result<(ir::Document, Vec<Diagnostic>), OperationE
     })
 }
 
-/// `lint` for IR input (§10.7). Its diagnostics carry IR paths rather than lines.
+/// `lint` for IR input (§10.7). Its diagnostics carry IR paths, and lines only where the IR has
+/// positions.
 pub fn lint_ir(
     json: &str,
     options: &Options,
@@ -104,14 +100,28 @@ pub fn lint_ir(
     let (document, mut diagnostics) = load_ir(json)?;
     let format = resolve_format(options, &document)?;
     let sidecar = compyla_core::Sidecar::default();
+    diagnostics.extend(validate(document, &sidecar, format, assets));
+    finish(&mut diagnostics, options.strict);
+    Ok(diagnostics)
+}
+
+/// The profile's diagnostics, each with the IR path of its node and its original position, if any
+/// (§10.7, §11.3).
+fn validate(
+    mut document: ir::Document,
+    sidecar: &compyla_core::Sidecar,
+    format: Format,
+    assets: &dyn Fn(&str) -> Asset,
+) -> Vec<Diagnostic> {
+    let (locator, sidecar) = compyla_core::locate::renumber(&mut document, sidecar);
     let input = compyla_core::validate::Input {
         document: &document,
         sidecar: &sidecar,
         assets,
     };
-    diagnostics.extend(compyla_core::validate::validate(&input, format));
-    finish(&mut diagnostics, options.strict);
-    Ok(diagnostics)
+    let mut diagnostics = compyla_core::validate::validate(&input, format);
+    locator.locate(&mut diagnostics);
+    diagnostics
 }
 
 /// The resolver of a host with none: in `lint`, every image exists without bytes (§10.3).

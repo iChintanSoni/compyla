@@ -237,9 +237,9 @@ impl<'a> Walker<'a, '_> {
             table,
             title: self.title.take(),
             note: self.note.take(),
-            anchor: self.attach(Slot::Anchor, table),
-            excel: self.attach(Slot::Table, table),
-            columns: self.attach(Slot::Columns, table),
+            anchor: self.attach(Slot::Anchor),
+            excel: self.attach(Slot::Table),
+            columns: self.attach(Slot::Columns),
         };
         if let Some(sheet) = self.walk.sheets.last_mut() {
             sheet.tables.push(attached);
@@ -247,9 +247,9 @@ impl<'a> Walker<'a, '_> {
     }
 
     /// The directive of `slot` that applies to `table`: the innermost wrapping one, else the waiting
-    /// empty one. A wrapping annotation overrides a waiting empty one of the same name, which is
-    /// consumed. A wrapping `anchor` or `table` applies to its first table only.
-    fn attach(&mut self, slot: Slot, table: &Table) -> Option<usize> {
+    /// empty one. A wrapping annotation overrides a waiting empty one of the same name, which is then
+    /// misplaced (§9.4). A wrapping `anchor` or `table` applies to its first table only.
+    fn attach(&mut self, slot: Slot) -> Option<usize> {
         let waiting = self.waiting[slot as usize].take();
         let mut chosen = None;
         let mut exhausted = None;
@@ -275,20 +275,26 @@ impl<'a> Walker<'a, '_> {
             }
         }
         if let Some(id) = exhausted {
-            let line = table
-                .position
-                .map(|p| format!(" at line {}", p.line))
-                .unwrap_or_default();
             self.misplaced(
                 id,
-                format!("applies only to the first table it wraps, not to the table{line}"),
+                "applies only to the first table it wraps, not to the ones after it".to_string(),
             );
         }
-        if chosen.is_none()
-            && let Some(id) = waiting
-        {
-            self.walk.applied[id] = true;
-            chosen = Some(id);
+        match (chosen, waiting) {
+            (Some(wrap), Some(id)) => {
+                self.misplaced(
+                    id,
+                    format!(
+                        "is overridden by a `{}` directive that wraps the next table",
+                        self.walk.directives[wrap].name
+                    ),
+                );
+            }
+            (None, Some(id)) => {
+                self.walk.applied[id] = true;
+                chosen = Some(id);
+            }
+            _ => {}
         }
         chosen
     }

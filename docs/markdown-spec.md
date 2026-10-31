@@ -98,6 +98,7 @@ prototype.
 | C43 | An indented code block's position is the first character of its content (§4.1) | Column 1 of its line | parse/125 |
 | C44 | Document properties come only from `meta`: a title or author it lacks is not written (§5) | The rendering library's defaults (`PptxGenJS Presentation`, `Unknown`) | render/103 |
 | C45 | pptx: a misplaced `layout` is ignored and entered like any annotation; an unresolved or missing layout name is selected as if absent, title-slide rule included; Quote holds only a quote or text (§8.1, §8.3, §8.6) | A misplaced `layout` was an opaque block; Quote accepted any one block | compose/111, compose/002, lint/128 |
+| C46 | xlsx: a column whose cells match different tests, or that has no literal values, is `general`: each cell keeps its own type. Percent formats default to just enough decimals. Currency codes are any three letters. A sheet qualifies both cells of a range. Booleans in formulas are written in uppercase. An overridden empty annotation is misplaced. Column parameters follow §1.6's unknown/invalid split. A misplaced directive's arguments aren't checked (§1.5, §9.3–§9.6) | Numbers mixed with percents became percents (`42` → 4200%); mixed and formula-only columns were text; `9.5%` showed as 10%; an overridden annotation vanished silently | compose/103, compose/105, compose/112, lint/129, lint/130 |
 
 0.2 also corrects 0.1's *text* in one place where the prototype was right: `---` in xlsx is ignored
 without a diagnostic (§5).
@@ -232,7 +233,8 @@ directives, but not of containers.
 A directive the profile uses, in a position where it can have no effect, produces
 `directive_misplaced` (warning) and is then treated as ignored. Examples: a `layout` that isn't the
 first block of a slide, a `col` inside a list, an `image` with no image to apply to. Each profile lists
-its cases.
+its cases. A misplaced directive produces nothing else: its arguments aren't checked until it is
+somewhere it has an effect. *(C46)*
 
 ### 1.6 Directive arguments
 
@@ -758,7 +760,8 @@ ignored and unknown directives (§1.5).
 | `break` | Ignored |
 | Anything else (quotes, code, media, lists) | Ignored, with `xlsx_ignored_content` |
 
-Sheets appear in document order. Content before the first H1 forms a default sheet named after
+Sheets appear in document order. An H1 inside a directive's body starts a sheet like any other, and
+the content after the directive stays in that sheet. Content before the first H1 forms a default sheet named after
 `meta.title`, else `Sheet1`. It exists only if it contains at least one table or produces
 `xlsx_ignored_content`. A document that yields no sheets gets one empty sheet named the same way, with
 `xlsx_empty_workbook` (warning, advisory). *(C27)*
@@ -806,8 +809,8 @@ postfix   = primary *( "%" )
 primary   = number / string / boolean / call / reference / "(" expr ")"
 call      = fname [ws] "(" [ arg *( "," arg ) ] ")"      ; empty arguments allowed: IF(A1,,1)
 arg       = [ expr ]
-reference = [ sheet "!" ] cell [ ":" [ sheet "!" ] cell ]
-cell      = ["$"] col ["$"] row                        ; col A..XFD, row 1..1048576
+reference = [ sheet "!" ] cell [ ":" cell ]            ; the sheet qualifies both cells
+cell      = ["$"] col ["$"] row                        ; col A..XFD, row 1..1048576; A01 is A1
 sheet     = uname / "'" 1*( qchar / "''" ) "'"
 uname     = ( ALPHA / "_" ) *( ALPHA / DIGIT / "_" )    ; must not itself be a valid cell
 qchar     = any character except ' : \ / ? * [ ]
@@ -819,12 +822,14 @@ cmp-op    = "=" / "<>" / "<=" / ">=" / "<" / ">"
 ```
 
 - Whitespace is allowed between tokens, but not between two operands, so the intersection operator
-  is not supported. Names, functions and booleans are case-insensitive.
+  is not supported. A reference is one token, with no whitespace inside it (`A1 : B2` is an error).
+  Names, functions and booleans are case-insensitive.
 - A name followed (optionally after whitespace) by `(` is **always a function call**, even if it looks
   like a cell (`LOG10(`).
 - Not supported, so a formula error: defined names, structured references (`Table1[Col]`), error
-  literals (`#N/A`), array constants (`{1,2}`), whole-column and whole-row ranges (`B:B`, `2:5`), and
-  3-D references.
+  literals (`#N/A`), array constants (`{1,2}`), whole-column and whole-row ranges (`B:B`, `2:5`),
+  3-D references, and a sheet name on a range's second cell (`A1:Revenue!B2`,
+  `Revenue!A1:Revenue!B2`).
 - A formula that doesn't match, calls a function not on the allowlist, or qualifies a sheet the
   workbook doesn't have produces `formula_error` (warning). The cell is then written as **literal
   text**, never as a formula.
@@ -862,11 +867,12 @@ first column were column A**, which is how a markdown table reads on its own:
   even to the same sheet, and is written unchanged. Referencing another table therefore requires
   knowing its placed address (§9.2).
 - An unqualified reference outside the table's own grid (columns A to the table's last column, rows
-  1 to *1 + data rows*) produces `formula_ref_out_of_range` (warning) and is still translated. A
-  translation past the sheet limits produces `xlsx_limit_exceeded`.
+  1 to *1 + data rows*) produces `formula_ref_out_of_range` (warning), once per reference, and is
+  still translated. A translation past the sheet limits produces `xlsx_limit_exceeded`.
 
-**Written form.** The written formula is the source text with references translated, and function
-names and cell references in uppercase. `IFS`, `IFNA`, `XOR` and `CONCAT` are stored with Excel's
+**Written form.** The written formula is the source text with references translated; function names,
+booleans and cell references in uppercase; and row numbers without leading zeros. Sheet names,
+strings and whitespace are kept as written. `IFS`, `IFNA`, `XOR` and `CONCAT` are stored with Excel's
 `_xlfn.` prefix, as Excel requires for functions newer than 2010.
 
 ### 9.4 Directives and attachment *(C8, C13, C39)*
@@ -880,7 +886,8 @@ names and cell references in uppercase. `IFS`, `IFNA`, `XOR` and `CONCAT` are st
 All three are **annotations** (§1.5):
 - `columns` applies to every table it wraps, or, when empty, to the next table in the same sheet.
 - `anchor` and `table` apply to exactly one table: the first table they wrap, or, when empty, the
-  next one in the same sheet. Any further wrapped tables produce `directive_misplaced`.
+  next one in the same sheet. Each further wrapped table produces `directive_misplaced` at the
+  directive's line.
 - An annotation never crosses a sheet boundary: an H1 inside or after it ends its effect.
 - Wrapping is the canonical form:
 
@@ -898,7 +905,9 @@ annotation.
 - An H2 or paragraph that is replaced by another of its kind before a table arrives, or is still
   waiting at the end of the sheet, produces `xlsx_ignored_content`.
 - An empty directive in the same situation produces `directive_misplaced`.
-- A wrapping annotation overrides a waiting empty one of the same name.
+- A wrapping annotation overrides a waiting empty one of the same name, which then produces
+  `directive_misplaced`: it was replaced before its table arrived. *(C46)*
+- An annotation that applies to no table produces only `directive_misplaced` (§1.5).
 
 **`columns` entries** are `KEY:type` or `KEY:type(param)`. `KEY` is a header cell's text
 (case-insensitive) if one matches, else a column letter (1–3 letters, A = the table's first column).
@@ -906,38 +915,53 @@ annotation.
 | Type | Param | Number format |
 |------|-------|---------------|
 | `number` | decimal places, 0–10 | `General`; with a param, `#,##0` plus that many decimals |
-| `currency` | ISO 4217 code (default `USD`) | The currency symbol (`$` USD, `€` EUR, `£` GBP, `¥` JPY, `₹` INR; else the code and a space) before `#,##0.00` (`#,##0` for JPY) |
-| `percent` | decimal places, 0–10 (default 0) | `0%`, plus that many decimals |
+| `currency` | A three-letter code, ASCII letters in any case (default `USD`) | The currency symbol (`$` USD, `€` EUR, `£` GBP, `¥` JPY, `₹` INR; else the uppercase code and a space) before `#,##0.00` (`#,##0` for JPY) |
+| `percent` | decimal places, 0–10 (default: just enough to show every value in the column as written, at most 10) | `0%`, plus that many decimals |
 | `date` | `iso` (the default and only value) | `yyyy-mm-dd` |
 | `text` | — | `@` |
 | `boolean` | — | `General` |
 
-- An unknown type or param produces `unknown_directive_option`. An unknown type ignores the entry;
-  an unknown param uses the type's default.
-- A key matching no column also produces `unknown_directive_option`, and the entry is ignored.
-- A malformed entry, or a column named twice in one directive, produces `invalid_directive_args`.
+- Currency codes aren't checked against a list, which changes over time: any three letters are a
+  code, written in uppercase. *(C46)*
+- Parameters follow §1.6. An unknown type, a param for a type that takes none (`text(x)`) or a `date`
+  param other than `iso` produces `unknown_directive_option`. A malformed or out-of-range param
+  (`number(12)`, `currency(EURO)`) produces `invalid_directive_args`. An unknown type ignores the
+  entry; a param problem leaves the type with its default.
+- A key matching no column also produces `unknown_directive_option`, and the entry is ignored. When
+  the directive applies to several tables, a key is matched in each one, and is reported once, only
+  if it matches no column in any of them.
+- A malformed entry, or a column named twice in one directive, produces `invalid_directive_args`, once
+  per offending entry.
 
 ### 9.5 Values *(C27, C39)*
 
 **Literal tests** (ASCII only):
 - **Number**: `-?[0-9]+(\.[0-9]+)?` with at most 15 significant digits and no leading zero before
-  other digits (`007` and `02134` are text; `0.5` is a number). Long IDs and zero-padded codes stay
-  intact.
+  other digits (`007` and `02134` are text; `0.5` is a number). Significant digits run from the first
+  non-zero digit to the last digit written, trailing zeros included, so `1000000000000000` is text.
+  Long IDs and zero-padded codes stay intact.
 - **Percent**: a number followed by `%`. Its value is the number divided by 100 (`14%` → 0.14).
 - **Date**: `[0-9]{4}-[0-9]{2}-[0-9]{2}`, a real Gregorian date from 1900-03-01 to 9999-12-31, written
   as a date serial in the 1900 date system with no time zone involved. `2026-02-30` is text.
 - **Boolean**: `true` or `false`, any case.
 
 **Inference.** Without a `columns` entry, a column's type is inferred from the plain text of its data
-cells, skipping formula cells and blank cells. All numbers → `number`; all numbers or percents with at
-least one percent → `percent`; all dates → `date`; all booleans → `boolean`; otherwise `text`.
-Numbers and percents are one numeric family, so a column mixing them is `percent` without a
-diagnostic. A column that falls through to `text` although its cells matched different tests
-(e.g. numbers and dates) also produces `mixed_column_type` (warning, advisory). A column with no
-literal values at all is `text`.
+cells, skipping formula cells and blank cells: all numbers → `number`; all percents → `percent`; all
+dates → `date`; all booleans → `boolean`; all matching no test → `text`. Any other column is
+**`general`**: its cells match different tests (plain text counting as one), or it has no literal
+values at all. *(C46)*
+- In a `general` column each literal converts with the test it matches and takes that type's default
+  format (a percent with just enough decimals for its own value). Text stays text, and formula cells
+  use `General`. A key/value table therefore keeps `42` a number and `4%` a percent. A mix is never
+  forced into one type, because that would change a value (`42` → 4200%) or turn numbers into text.
+- A column that is `general` because its cells matched different tests also produces
+  `mixed_column_type` (warning, advisory) at the table's line. A mix in a column that should have one
+  type is often a typo (`12O00`).
+- `general` is inferred only. A `columns` entry can't name it.
 
 **Conversion.** A literal in a typed column converts with its type's test. Numeric types accept
-numbers, and percent also accepts percents. A value that fails is written as text, with
+numbers, and percent also accepts percents. In a `percent` column a number is the fraction itself
+(`0.14` shows as 14%). A value that fails is written as text, with
 `typed_value_invalid` (warning) at its row's line. A column's number format also applies to its
 formula cells. Markdown numeric literals always use `.` as the decimal separator with no grouping,
 whatever `lang` is.
@@ -946,7 +970,10 @@ whatever `lang` is.
 - A cell's bold, italic and strike runs become rich text. `code` runs are plain text.
 - A cell whose runs carry one link destination gets that hyperlink. Further distinct links in the same
   cell produce `xlsx_ignored_content`, and only the first is kept.
-- Fragment links resolve against **sheet names'** slugs and link to cell A1 of that sheet.
+- Range titles and notes are written to cells, so this rule and the cell text limit (§9.7) apply to
+  them too.
+- Fragment links resolve against the slugs of the **repaired** sheet names (§9.6), and link to cell
+  A1 of that sheet.
 
 **Recalculation.** Formula results are not cached in the file, and the workbook requests full
 recalculation when opened. Viewers that don't calculate (some previewers) show these cells empty.
@@ -954,7 +981,7 @@ recalculation when opened. Viewers that don't calculate (some previewers) show t
 ### 9.6 Sheet names and Excel tables *(C14)*
 
 **Sheet names** come from the heading's plain text, with line breaks turned into spaces and the
-result trimmed. They are repaired, never rejected:
+result trimmed. They are repaired, never rejected, by these rules in order:
 
 | Problem | Repair | Code |
 |---------|--------|------|
@@ -964,8 +991,9 @@ result trimmed. They are repaired, never rejected:
 | Longer than 31 UTF-16 code units | Truncated to at most 31, never splitting a character (a surrogate pair) | `sheet_name_too_long` |
 | Equal to an earlier name or to `History` (Unicode simple case folding) | ` (2)`, ` (3)`, … appended, truncating first to stay within 31 | `duplicate_sheet_name` |
 
-All three codes are warnings and strict-promotable, reported at the heading's line (or at the `title`
-key for a default sheet). Formulas refer to sheets by their repaired names.
+A name that ends in `'` after truncation loses it too. All three codes are warnings and
+strict-promotable. Each is reported at most once per sheet, at the heading's line (or at the `title`
+key for a default sheet). Formulas and fragment links refer to sheets by their repaired names.
 
 **Excel tables** (`::: table`):
 - **Headers.** Excel requires header cells to be non-empty and unique (case-insensitive). An empty
@@ -994,7 +1022,7 @@ messages are placed addresses (§9.2). *(C15)*
 | `mixed_column_type` | warning, advisory | §9.5. Reported at the table's line |
 | `table_header_invalid` | warning | §9.6 |
 | `xlsx_range_overlap` | warning | §9.2 |
-| `xlsx_limit_exceeded` | error | Stacking past row 1,048,576 or translation past the grid (§9.2, §9.3); cell text longer than 32,767 characters; a formula longer than 8,192 characters |
+| `xlsx_limit_exceeded` | error | Stacking past row 1,048,576 or translation past the grid (§9.2, §9.3); text longer than 32,767 UTF-16 code units in a cell (data cells, range titles and notes); a formula longer than 8,192 UTF-16 code units |
 | `xlsx_empty_workbook` | warning, advisory | §9.1 |
 | `xlsx_ignored_content` | warning | §9.1, §9.4, §9.5 |
 | `link_anchor_unresolved` | warning | A fragment link matches no sheet name's slug |
@@ -1170,7 +1198,9 @@ fonts, an empty workbook) have no `line`.
 - `layout_not_in_template` and `font_unresolved` are validate-stage whenever their inputs (a template;
   a font resolver) are available, so `lint` and `convert` agree.
 - **Order.** Operations return diagnostics sorted by line (diagnostics without a line first), then
-  column (absent first), then code, then path.
+  column (absent first), then code, then path (absent first). Paths compare in document order:
+  reference token by token, array indices numerically and other tokens as strings, and a path comes
+  before the longer paths it is a prefix of (`/body/2` < `/body/2/children/0` < `/body/10`).
 - **Cap.** An implementation MAY stop after 1,000 diagnostics, ending the list with
   `diagnostics_truncated` (warning, advisory). The cap applies after sorting.
 

@@ -101,7 +101,7 @@ fn assets_for(fixture: &Path, case: &Value) -> impl Fn(&str) -> compyla::Asset {
 fn lint_suite() {
     let fixtures = suite("lint");
     assert!(
-        fixtures.len() >= 35,
+        fixtures.len() >= 38,
         "expected the full lint suite, found {}",
         fixtures.len()
     );
@@ -132,11 +132,109 @@ fn lint_suite() {
     );
 }
 
+/// Removes every `position`, as IR from another producer may lack them (§10.7).
+fn strip_positions(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            map.remove("position");
+            map.values_mut().for_each(strip_positions);
+        }
+        Value::Array(items) => items.iter_mut().for_each(strip_positions),
+        _ => {}
+    }
+}
+
+/// markdown-spec.md §10.7, §11.3: the IR of each lint fixture, without positions, gets the same
+/// validate-stage diagnostics as its markdown, each with no line and, unless it is document-level,
+/// a path to its node. Paths on markdown diagnostics resolve in the same IR.
+#[test]
+fn lint_ir_agrees_with_lint() {
+    let registry =
+        read_json(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../spec/diagnostics.json"));
+    let validate_stage: Vec<&str> = registry["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|d| d["stage"] == "validate")
+        .map(|d| d["code"].as_str().unwrap())
+        .collect();
+    // Document-level codes concern no node.
+    let document_level: Vec<&str> = registry["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|d| d["position"] == "none")
+        .map(|d| d["code"].as_str().unwrap())
+        .collect();
+    let profile = |diagnostics: Vec<compyla::Diagnostic>| -> Vec<compyla::Diagnostic> {
+        diagnostics
+            .into_iter()
+            .filter(|d| validate_stage.contains(&d.code.as_str()))
+            .collect()
+    };
+    let mut failures = Vec::new();
+    for fixture in suite("lint") {
+        let name = fixture.file_name().unwrap().to_string_lossy().to_string();
+        let case = read_json(&fixture.join("case.json"));
+        let input = fs::read_to_string(fixture.join("input.md")).unwrap();
+        let options = compyla::Options {
+            format: compyla::Format::parse(case["format"].as_str().unwrap()),
+            strict: case["strict"].as_bool().unwrap_or(false),
+        };
+        let assets = assets_for(&fixture, &case);
+        let mut ir = serde_json::to_value(compyla::parse(&input).ir).unwrap();
+        strip_positions(&mut ir);
+
+        let from_markdown = profile(compyla::lint(&input, &options, &assets).unwrap());
+        let from_ir = profile(compyla::lint_ir(&ir.to_string(), &options, &assets).unwrap());
+        let codes = |diagnostics: &[compyla::Diagnostic]| {
+            let mut codes: Vec<String> = diagnostics.iter().map(|d| d.code.clone()).collect();
+            codes.sort();
+            codes
+        };
+        if codes(&from_markdown) != codes(&from_ir) {
+            failures.push(format!(
+                "{name}: markdown [{}], IR [{}]",
+                summary(&from_markdown),
+                summary(&from_ir)
+            ));
+        }
+        for d in &from_ir {
+            let resolves = match d.path.as_deref() {
+                Some(path) => ir.pointer(path).is_some(),
+                None => document_level.contains(&d.code.as_str()),
+            };
+            if d.line.is_some() || !resolves {
+                failures.push(format!(
+                    "{name}: IR {} at {:?}, path {:?}",
+                    d.code, d.line, d.path
+                ));
+            }
+        }
+        for d in &from_markdown {
+            if let Some(path) = &d.path
+                && ir.pointer(path).is_none()
+            {
+                failures.push(format!(
+                    "{name}: markdown {} path {path} doesn't resolve",
+                    d.code
+                ));
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} IR agreement failure(s):\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
 #[test]
 fn compose_suite() {
     let fixtures = suite("compose");
     assert!(
-        fixtures.len() >= 11,
+        fixtures.len() >= 14,
         "expected the full compose suite, found {}",
         fixtures.len()
     );

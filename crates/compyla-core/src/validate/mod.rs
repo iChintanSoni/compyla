@@ -5,7 +5,7 @@ mod flow;
 pub mod pptx;
 pub mod xlsx;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::diagnostic::Diagnostic;
 use crate::ir::{Block, Directive, Document, Position, plain_text};
@@ -56,6 +56,8 @@ pub struct Input<'a> {
     pub assets: &'a dyn Fn(&str) -> Asset,
 }
 
+/// The profile's diagnostics, at the positions of the nodes involved. Callers that report them
+/// renumber the document first and locate them after (`crate::locate`, §10.7, §11.3).
 pub fn validate(input: &Input<'_>, format: Format) -> Vec<Diagnostic> {
     let mut out = Vec::new();
     directives(&input.document.body, format, &mut out);
@@ -323,12 +325,13 @@ pub fn fragment_links(
     what: &str,
     out: &mut Vec<Diagnostic>,
 ) {
+    let targets: HashSet<&str> = targets.iter().map(String::as_str).collect();
     for (url, position) in &input.sidecar.links {
         let Some(fragment) = url.strip_prefix('#') else {
             continue;
         };
         let fragment = percent_decode(fragment);
-        if !targets.contains(&fragment) {
+        if !targets.contains(fragment.as_str()) {
             out.push(
                 Diagnostic::new(
                     "link_anchor_unresolved",
@@ -340,16 +343,18 @@ pub fn fragment_links(
     }
 }
 
+/// Decodes `%XX` escapes of two hex digits; anything else is kept as written.
 fn percent_decode(text: &str) -> String {
     let bytes = text.as_bytes();
+    let hex = |b: u8| (b as char).to_digit(16);
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%'
-            && i + 2 < bytes.len()
-            && let Ok(byte) = u8::from_str_radix(&text[i + 1..i + 3], 16)
+            && let Some(high) = bytes.get(i + 1).copied().and_then(hex)
+            && let Some(low) = bytes.get(i + 2).copied().and_then(hex)
         {
-            out.push(byte);
+            out.push((high * 16 + low) as u8);
             i += 3;
             continue;
         }
@@ -390,7 +395,6 @@ pub fn image_directives(
         if let Block::Directive(d) = block
             && d.name == "image"
         {
-            check_options(d, out);
             let applies = if d.children.is_empty() {
                 matches!(blocks.get(index + 1), Some(Block::Media(_)))
             } else {
@@ -398,7 +402,10 @@ pub fn image_directives(
                 for_each_block(&d.children, &mut |b| found |= matches!(b, Block::Media(_)));
                 found
             };
-            if !applies {
+            // A misplaced directive has no effect, so its options aren't checked (§1.5).
+            if applies {
+                check_options(d, out);
+            } else {
                 out.push(at(
                     Diagnostic::new(
                         "directive_misplaced",
@@ -426,4 +433,19 @@ pub fn image_directives(
 /// A section title's plain text.
 pub fn title(runs: &[crate::ir::Run]) -> String {
     plain_text(runs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn percent_decoding() {
+        assert_eq!(percent_decode("caf%C3%A9"), "café");
+        assert_eq!(percent_decode("a%20b%2"), "a b%2");
+        assert_eq!(percent_decode("%+1%-1"), "%+1%-1");
+        // A `%` before a multibyte character is kept, never sliced through.
+        assert_eq!(percent_decode("%aé"), "%aé");
+        assert_eq!(percent_decode("%é"), "%é");
+    }
 }

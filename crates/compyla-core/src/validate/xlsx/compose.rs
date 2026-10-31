@@ -460,6 +460,8 @@ impl Composer<'_, '_> {
             sheets: self.sheets,
         };
         let mut literals: Vec<Vec<Literal>> = vec![Vec::new(); typed.len()];
+        // The decimals a percent format needs per column (§9.4).
+        let mut decimals = vec![0u8; typed.len()];
         let mut formulas = Vec::new();
         for (r, row) in table.rows.iter().enumerate() {
             let line = table.position.map(|p| row_line(p, r));
@@ -516,6 +518,7 @@ impl Composer<'_, '_> {
                     Some(_) => {}
                     None => literals[c].push(literal),
                 }
+                decimals[c] = decimals[c].max(values::percent_decimals(&text, literal));
             }
         }
         let column_types = typed
@@ -531,10 +534,10 @@ impl Composer<'_, '_> {
                         self.out.push(at(
                             Diagnostic::new(
                                 "mixed_column_type",
-                                format!("Column {letter} mixes {kinds}; it is typed as text."),
+                                format!("Column {letter} mixes {kinds}; each cell keeps its own type."),
                             )
                             .hint(format!(
-                                "Make the values agree, or set a type with `::: columns {}:<type>`.",
+                                "If the column has one type, make the values agree or set it with `::: columns {}:<type>`.",
                                 grid::column_letters(c as u32)
                             )),
                             table.position.map(|p| p.line),
@@ -542,6 +545,13 @@ impl Composer<'_, '_> {
                     }
                     kind
                 }
+            })
+            .zip(decimals)
+            .map(|(kind, needed)| match kind {
+                ColumnType::Percent { decimals: None } => ColumnType::Percent {
+                    decimals: Some(needed),
+                },
+                kind => kind,
             })
             .collect();
         (column_types, formulas)

@@ -1,0 +1,19 @@
+{
+  "diagnostics": [
+    {
+      "code": "invalid_directive_args",
+      "severity": "warning",
+      "line": 3
+    },
+    {
+      "code": "mixed_column_type",
+      "severity": "warning",
+      "line": 4
+    },
+    {
+      "code": "formula_error",
+      "severity": "warning",
+      "line": 6
+    }
+  ]
+}

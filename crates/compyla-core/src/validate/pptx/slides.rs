@@ -28,7 +28,7 @@ pub struct Slide<'a> {
     /// The leading `layout` directive: the slide's first content block (§8.3).
     pub layout: Option<&'a Directive>,
     /// Every other item reached, in order, with the leading `layout` unwrapped and `notes`
-    /// removed: demoted headings, blocks, `col` markers and misplaced `layout` directives.
+    /// removed: demoted headings, blocks and `col` markers.
     pub content: Vec<Item<'a>>,
     /// The `notes` directives among the content's top-level blocks.
     pub notes: Vec<&'a Directive>,
