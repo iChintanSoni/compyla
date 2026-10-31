@@ -23,7 +23,7 @@ body:
     attributes:
       label: Formats affected
       multiple: true
-      options: [pptx, xlsx, docx, pdf, All, None (tooling, hosts)]
+      options: [pptx, xlsx, docx, pdf, All formats, "Not format-specific (tooling, hosts)"]
     validations:
       required: true
   - type: dropdown
@@ -31,7 +31,7 @@ body:
     attributes:
       label: Spec impact
       description: Compyla is spec-first; behavior changes start in docs/markdown-spec.md.
-      options: [None, Needs a spec change, Not sure]
+      options: [No spec change, Needs a spec change, Not sure]
     validations:
       required: true
   - type: textarea
