@@ -1,6 +1,10 @@
 //! The text model compose measures with (markdown-spec.md §8.6, C63): each box a layout's text
 //! goes into, its insets and autofit, and the styles its paragraphs inherit there, as a template
-//! gives them. Core reads no template (architecture.md D11): `compyla_ooxml::layouts` fills it.
+//! gives them. Core reads no template (architecture.md D11): `compyla_ooxml::text::Model`
+//! implements [`TemplateText`]. Typefaces are shared strings: a template's can be any length, and
+//! every box resolved copies its levels.
+
+use std::sync::Arc;
 
 /// ST_Coordinate's and ST_PositiveCoordinate's bounds (ECMA-376 Part 1, §20.1.10.16, §20.1.10.42):
 /// a template's geometry is held to them, so arithmetic on it can't overflow.
@@ -131,7 +135,7 @@ pub struct Level {
     pub bullet: Bullet,
     pub bullet_size: BulletSize,
     /// The bullet's typeface (`a:buFont`), theme references resolved; `None` follows the text's.
-    pub bullet_font: Option<String>,
+    pub bullet_font: Option<Arc<str>>,
     pub run: Run,
 }
 
@@ -167,7 +171,7 @@ pub enum Spacing {
 pub enum Bullet {
     None,
     /// A character (`a:buChar`).
-    Char(String),
+    Char(Arc<str>),
     /// A number (`a:buAutoNum`), by its scheme, from its start.
     Number {
         scheme: String,
@@ -192,9 +196,9 @@ pub struct Run {
     pub size: i64,
     /// The latin, East Asian and complex typefaces, theme references resolved; an empty East
     /// Asian or complex one means the latin (§3).
-    pub latin: String,
-    pub east_asian: String,
-    pub complex: String,
+    pub latin: Arc<str>,
+    pub east_asian: Arc<str>,
+    pub complex: Arc<str>,
     pub bold: bool,
     pub italic: bool,
     pub caps: Caps,
@@ -209,9 +213,9 @@ impl Default for Run {
     fn default() -> Run {
         Run {
             size: 1_800,
-            latin: String::new(),
-            east_asian: String::new(),
-            complex: String::new(),
+            latin: Arc::from(""),
+            east_asian: Arc::from(""),
+            complex: Arc::from(""),
             bold: false,
             italic: false,
             caps: Caps::None,
