@@ -1,0 +1,10 @@
+{
+  "description": "A supplied template with sample slides of its own, which kept parts still relate to (§8.8, §10.4): the master's button that jumps to the first sample loses its link and keeps its shape, and its relationship to the second, which nothing refers to, goes; a layout's text link that jumps to the third, with a sound, loses its link and its sound, so the third sample, which only that link still reached, and the sound aren't in the package; the layout's jump to the next slide names no slide and stays. The new slides take the samples' part names without the master jumping to them. Nothing is reported.",
+  "spec": [
+    "§8.8",
+    "§10.4",
+    "C60"
+  ],
+  "oracle": "none",
+  "format": "pptx"
+}

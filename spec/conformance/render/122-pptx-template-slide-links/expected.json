@@ -1,0 +1,96 @@
+{
+  "diagnostics": [],
+  "output": {
+    "slides": [
+      {
+        "layout": "Title Slide",
+        "title": "Template slides",
+        "texts": [],
+        "notes": null
+      },
+      {
+        "layout": "Titel und Inhalt",
+        "title": "Content",
+        "texts": [
+          "Text."
+        ],
+        "notes": null
+      }
+    ],
+    "package": {
+      "partsPresent": [
+        "ppt/slideMasters/slideMaster1.xml",
+        "ppt/slideLayouts/slideLayout2.xml",
+        "ppt/slides/slide1.xml",
+        "ppt/slides/slide2.xml"
+      ],
+      "partsAbsent": [
+        "ppt/slides/slide3\\.xml",
+        "ppt/slides/_rels/slide3\\.xml\\.rels",
+        "ppt/media/.*"
+      ],
+      "xpath": [
+        {
+          "part": "ppt/slideMasters/slideMaster1.xml",
+          "expr": "count(//a:hlinkClick)",
+          "equals": 0
+        },
+        {
+          "part": "ppt/slideMasters/slideMaster1.xml",
+          "expr": "count(//p:sp[.//a:t='Home'])",
+          "equals": 1
+        },
+        {
+          "part": "ppt/slideMasters/_rels/slideMaster1.xml.rels",
+          "expr": "count(//rel:Relationship[@Type='http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide'])",
+          "equals": 0
+        },
+        {
+          "part": "ppt/slideMasters/_rels/slideMaster1.xml.rels",
+          "expr": "count(//rel:Relationship)",
+          "equals": 4
+        },
+        {
+          "part": "ppt/slideLayouts/slideLayout2.xml",
+          "expr": "count(//p:sp[.//a:t='Appendix'][.//a:rPr[@lang='en-US']])",
+          "equals": 1
+        },
+        {
+          "part": "ppt/slideLayouts/slideLayout2.xml",
+          "expr": "count(//a:hlinkClick)",
+          "equals": 1
+        },
+        {
+          "part": "ppt/slideLayouts/slideLayout2.xml",
+          "expr": "string(//p:sp[.//a:t='Next']//a:hlinkClick/@action)",
+          "equals": "ppaction://hlinkshowjump?jump=nextslide"
+        },
+        {
+          "part": "ppt/slideLayouts/slideLayout2.xml",
+          "expr": "count(//a:snd)",
+          "equals": 0
+        },
+        {
+          "part": "ppt/slideLayouts/_rels/slideLayout2.xml.rels",
+          "expr": "count(//rel:Relationship)",
+          "equals": 1
+        },
+        {
+          "part": "ppt/presentation.xml",
+          "expr": "count(//p:sldId)",
+          "equals": 2
+        },
+        {
+          "part": "ppt/presentation.xml",
+          "expr": "count(//p:custShowLst)",
+          "equals": 0
+        },
+        {
+          "part": "[Content_Types].xml",
+          "expr": "count(//*[local-name()='Override'][contains(@PartName, 'slide3')])",
+          "equals": 0
+        }
+      ]
+    }
+  }
+}

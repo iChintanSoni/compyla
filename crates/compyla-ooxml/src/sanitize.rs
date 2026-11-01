@@ -2,7 +2,8 @@
 //! §10.4, C58): relationships with an external target other than hyperlinks, hyperlinks §4.5
 //! doesn't allow and actions that run something, OLE objects and ActiveX controls, together with
 //! what refers to them. A part with nothing to remove stays byte for byte; in one with something,
-//! everything else stays as it was.
+//! everything else stays as it was. Relationships the output drops for its own reasons (a deck's,
+//! to the template's slides, C60) go the same way, unreported.
 
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
@@ -79,8 +80,14 @@ pub struct Part {
     pub removed: Vec<Removed>,
 }
 
-/// `name` from `template`, without active or external content (§10.4).
-pub fn part(template: &Template, name: &str) -> Result<Part, Invalid> {
+/// `name` from `template`, without active or external content (§10.4), and without the
+/// relationships `dropped` names, which the output removes for its own reasons, with what refers to
+/// them as with external content. Those aren't reported unless they are external content too.
+pub fn part(
+    template: &Template,
+    name: &str,
+    dropped: &dyn Fn(&Relationship) -> bool,
+) -> Result<Part, Invalid> {
     let relationships = template.relationships(name)?;
     let unchanged = |relationships| {
         Ok(Part {
@@ -90,20 +97,23 @@ pub fn part(template: &Template, name: &str) -> Result<Part, Invalid> {
             removed: Vec::new(),
         })
     };
-    // Relationships that go whatever refers to them (by type: an Id-less one has the id "", which
-    // nothing can refer to); hyperlinks, which go if anything but a hyperlink refers to them; and
-    // embedded data, which goes unless something kept refers to it. Ids compare trimmed, as
-    // references do.
+    // Relationships that go whatever refers to them: by type, or because the output drops them,
+    // which goes the same way but unreported. Then hyperlinks, which go if anything but a hyperlink
+    // refers to them; and embedded data, which goes unless something kept refers to it.
     let by_type: Vec<bool> = relationships.iter().map(removable).collect();
-    let mut removable: HashSet<&str> = relationships
+    let by_output: Vec<bool> = relationships
         .iter()
         .zip(&by_type)
-        .filter(|(r, removable)| **removable && !r.id.trim().is_empty())
-        .map(|(r, _)| r.id.trim())
+        .map(|(r, &by_type)| !by_type && dropped(r))
         .collect();
+    let mut removable = ids(&relationships, &by_type);
+    let silent = ids(&relationships, &by_output);
     let hyperlinks: HashSet<&str> = relationships
         .iter()
-        .filter(|r| is_hyperlink(r) && !removable.contains(r.id.trim()))
+        .filter(|r| {
+            let id = r.id.trim();
+            is_hyperlink(r) && !removable.contains(id) && !silent.contains(id)
+        })
         .map(|r| r.id.trim())
         .collect();
     let text = if is_xml(template, name) {
@@ -114,7 +124,11 @@ pub fn part(template: &Template, name: &str) -> Result<Part, Invalid> {
     };
     // Every kept XML part is read: an object, a control or an action is found by what it is,
     // however it is written (character references and all), whatever it refers to.
-    if text.is_none() && !by_type.contains(&true) && !relationships.iter().any(is_embedding) {
+    if text.is_none()
+        && !by_type.contains(&true)
+        && !by_output.contains(&true)
+        && !relationships.iter().any(is_embedding)
+    {
         return unchanged(relationships);
     }
     let nodes = match &text {
@@ -168,7 +182,7 @@ pub fn part(template: &Template, name: &str) -> Result<Part, Invalid> {
         let keys: HashSet<String> = node
             .refs
             .iter()
-            .filter(|(_, id)| removable.contains(id.as_str()))
+            .filter(|(_, id)| removable.contains(id.as_str()) || silent.contains(id.as_str()))
             .map(|(key, _)| key.clone())
             .collect();
         if keys.is_empty() {
@@ -242,8 +256,12 @@ pub fn part(template: &Template, name: &str) -> Result<Part, Invalid> {
             }
         }
     }
+    // Removed as active or external content, which is reported, or dropped by the output.
     let removed_here = |index: usize, r: &Relationship| {
         by_type[index] || (!r.id.trim().is_empty() && removable.contains(r.id.trim()))
+    };
+    let dropped_here = |index: usize, r: &Relationship| {
+        by_output[index] || (!r.id.trim().is_empty() && silent.contains(r.id.trim()))
     };
     // Which relationships go, by position: ids needn't be there, or unique.
     let gone: Vec<bool> = relationships
@@ -252,6 +270,7 @@ pub fn part(template: &Template, name: &str) -> Result<Part, Invalid> {
         .map(|(index, r)| {
             let id = r.id.trim();
             removed_here(index, r)
+                || dropped_here(index, r)
                 || (within.contains(id) && !outside.contains(id))
                 || (is_embedding(r) && !outside.contains(id))
         })
@@ -269,7 +288,7 @@ pub fn part(template: &Template, name: &str) -> Result<Part, Invalid> {
             break;
         }
         let id = relationship.id.trim();
-        if !removed_here(index, relationship) || owned.contains(id) {
+        if !removed_here(index, relationship) || by_output[index] || owned.contains(id) {
             continue;
         }
         let kind = suffix(&relationship.kind);
@@ -361,6 +380,17 @@ fn removable(relationship: &Relationship) -> bool {
         || ["oleObject", "control", "vmlDrawing", "webextension"]
             .iter()
             .any(|k| kind.eq_ignore_ascii_case(k))
+}
+
+/// The ids of the relationships `flags` marks, trimmed, as references compare them. An Id-less
+/// relationship has the id "", which nothing can refer to, so it's left out.
+fn ids<'r>(relationships: &'r [Relationship], flags: &[bool]) -> HashSet<&'r str> {
+    relationships
+        .iter()
+        .zip(flags)
+        .filter(|(r, flag)| **flag && !r.id.trim().is_empty())
+        .map(|(r, _)| r.id.trim())
+        .collect()
 }
 
 fn is_hyperlink(relationship: &Relationship) -> bool {
@@ -739,6 +769,11 @@ mod tests {
     const LAYOUT: &str = "ppt/slideLayouts/slideLayout1.xml";
     const R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
+    /// `name` without active or external content, the output dropping nothing of its own.
+    fn part(template: &Template, name: &str) -> Result<Part, Invalid> {
+        super::part(template, name, &|_| false)
+    }
+
     /// A package whose layout is `xml` with `rels` (each id, type's last segment, target, external).
     fn template(xml: &[u8], rels: &[(&str, &str, &str, bool)]) -> Template {
         let relationships: String = rels
@@ -806,6 +841,69 @@ mod tests {
         "../slideMasters/slideMaster1.xml",
         false,
     );
+
+    #[test]
+    fn what_the_output_drops_goes_like_external_content_but_unreported() {
+        // A jump to a slide with a sound, a jump to another slide nothing refers to, and an
+        // external relationship the output would drop too, which is still reported.
+        let jump = r#"<a:hlinkClick r:id="rId2" action="ppaction://hlinksldjump"><a:snd r:embed="rId3" name="click.wav"/></a:hlinkClick>"#;
+        let next = r#"<a:hlinkClick r:id="" action="ppaction://hlinkshowjump?jump=nextslide"/>"#;
+        let xml = layout(&[shape(2, jump), shape(3, next)].concat(), "");
+        let template = template(
+            xml.as_bytes(),
+            &[
+                MASTER,
+                ("rId2", "slide", "../slides/slide1.xml", false),
+                ("rId3", "audio", "../media/click.wav", false),
+                ("rId4", "slide", "../slides/slide2.xml", false),
+                ("rId5", "slide", "https://example.com/slide", true),
+            ],
+        );
+        let slides = |r: &Relationship| r.kind.ends_with("/slide");
+        let part = super::part(&template, LAYOUT, &slides).unwrap();
+        assert_eq!(ids(&part), ["rId1"]);
+        assert_eq!(
+            part.removed,
+            [Removed::External {
+                kind: "slide".into(),
+                target: "https://example.com/slide".into()
+            }]
+        );
+        assert_eq!(
+            text(&part.xml),
+            layout(&[shape(2, ""), shape(3, next)].concat(), "")
+        );
+        let rels = text(&part.rels);
+        assert!(
+            rels.contains("slideMaster1.xml") && !rels.contains("slides/"),
+            "{rels}"
+        );
+        assert!(!rels.contains("click.wav"), "{rels}");
+
+        // Dropping nothing, only the external relationship goes.
+        let kept = super::part(&template, LAYOUT, &|_| false).unwrap();
+        assert_eq!(ids(&kept), ["rId1", "rId2", "rId3", "rId4"]);
+    }
+
+    #[test]
+    fn a_data_part_loses_what_the_output_drops_too() {
+        let base = template(layout("", "").as_bytes(), &[MASTER]);
+        let data = "ppt/media/data.bin";
+        let mut entries: Vec<(String, Vec<u8>)> = base
+            .parts()
+            .map(|(name, bytes)| (name.to_string(), bytes.to_vec()))
+            .collect();
+        entries.push((data.into(), b"\x00data".to_vec()));
+        entries.push((
+            "ppt/media/_rels/data.bin.rels".into(),
+            format!(r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{R}/slide" Target="../slides/slide1.xml"/><Relationship Id="rId2" Type="{R}/image" Target="a.png"/></Relationships>"#).into_bytes(),
+        ));
+        let template = Template::read(&crate::zip::write(&entries)).unwrap();
+        let part = super::part(&template, data, &|r| r.kind.ends_with("/slide")).unwrap();
+        assert_eq!(ids(&part), ["rId2"]);
+        assert!(part.xml.is_none() && part.removed.is_empty());
+        assert!(!text(&part.rels).contains("slide1"));
+    }
 
     #[test]
     fn a_part_with_nothing_to_remove_stays_as_it_is() {

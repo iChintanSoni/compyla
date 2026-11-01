@@ -112,6 +112,7 @@ prototype.
 | C57 | A workbook takes a docx or pptx template's theme tokens: its colors and heading and body fonts as the workbook's theme, cells and titles in its fonts, the header fill and links in its colors, and a striped Excel table's dark header where white wouldn't read on its accent (§9.2, §9.6, §10.4) | Templates not used for xlsx | render/120 |
 | C58 | Active and external content is removed from a supplied template's kept parts: external relationships other than hyperlinks (with `TargetMode` and targets that leave the package read fail-closed), hyperlinks §4.5 doesn't allow and actions that run something, OLE objects, ActiveX controls and their legacy drawings, Office add-ins, with what refers to them (a blip loses only the attribute; anything else goes with its alternates, extension, graphic frame, animations or transition), what only they used, and the parts only they reached; one `template_content_removed` per object, action or other removed relationship (§4.5, §10.4) | Which elements go with a removed relationship, what counts as one removal, and which hyperlinks a template may keep were unspecified | render/121 |
 | C59 | A link destination is checked as a browser reads it: leading and trailing spaces and controls, and tabs and line breaks inside it, don't hide its scheme, and other control characters, and a leading non-ASCII space, are refused; before any query or fragment, it must pass percent-decoded too (§4.5) | ` file:///…` and `\tms-msdt:…` in IR input or a template's hyperlinks, and `%5C%5Chost` anywhere, passed the allowlist as relative references | parse/130, render/121 |
+| C60 | A kept template part's relationships to the template's own slides (of the slide type, or to a part whose content type is a slide's) are removed with what refers to them, as active content is: a master's or layout's jump to a template slide loses its link and keeps its shape, a slide only such a relationship reached isn't kept, and a jump that names no slide stays. Nothing is reported (§8.8, §10.4) | A jump kept a sample slide the presentation no longer lists, or jumped to whichever new slide took the sample's part name | render/122 |
 
 0.2 also corrects 0.1's *text* in one place where the prototype was right: `---` in xlsx is ignored
 without a diagnostic (§5).
@@ -822,7 +823,13 @@ their own except where their content needs it, so they inherit the layout's.
 - **The package** (§10.4): the template's own slides are removed, with every part no longer reached
   from the presentation, and a `.potx` is written as a presentation. What named those slides goes
   with them: custom shows, sections, the show settings' slide range or custom show (so the show
-  plays every slide), and the outline view's slide list. An edited part in UTF-16 is written as UTF-8.
+  plays every slide), and the outline view's slide list. So does every relationship a kept part has
+  to one of those slides (one of the slide type, or one to a part whose content type is a slide's),
+  with what refers to it, as §10.4 removes what refers to a removed relationship: a master's or
+  layout's jump to a template slide loses its link, and its shape stays. A slide that only such a
+  relationship reached isn't kept, and a jump to the next, previous, first or last slide
+  (`hlinkshowjump`), which names no slide, stays. Nothing is reported for these. *(C60)* An edited
+  part in UTF-16 is written as UTF-8.
 
 ---
 
@@ -1251,7 +1258,8 @@ whose template has no styles part produces `no_styles_xml` (warning; house style
 **Template-first output** (architecture.md D12) keeps the template's styles, numbering, theme,
 masters, layouts, headers and footers, and replaces its content. In addition:
 - The template's own body content (docx) and slides (pptx) are removed, together with every part no
-  longer referenced (such as sample-slide media).
+  longer referenced (such as sample-slide media). A kept part's relationships to those slides go
+  too, with what refers to them, as for active content below (§8.8). *(C60)*
 - Document properties (title, author, dates, application, company) are written from `meta` and fixed
   values (§13), never copied from the template.
 - Active and external content is removed from every kept part *(C58)*:
