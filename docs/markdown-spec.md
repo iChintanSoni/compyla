@@ -384,36 +384,43 @@ font bytes only through the chain below, so they run offline and pinned (archite
     #11): *East Asian* if its script is Han, Hiragana, Katakana, Hangul or Bopomofo or its width is
     Wide or Fullwidth; *complex* if its script is Arabic, Hebrew, Syriac, Thaana, N'Ko, Devanagari,
     Bengali, Gurmukhi, Gujarati, Oriya, Tamil, Telugu, Kannada, Malayalam, Sinhala, Thai, Lao,
-    Tibetan, Myanmar or Khmer; *latin* otherwise, Common characters included. An Inherited character
-    takes the class of the character before it.
+    Tibetan, Myanmar or Khmer; *latin* otherwise, Common characters included. A *mark* (a nonspacing
+    or enclosing mark, Mn or Me, or an Inherited character) takes the class of its base, the nearest
+    character before it in the run that isn't a mark, else of the first after it, else latin.
   - **Faces.** A character is measured with the run's font for its class: in pptx, its `a:latin`,
     `a:ea` or `a:cs` typeface; in docx, `w:ascii` for U+0000–U+007F and `w:hAnsi` otherwise,
-    `w:eastAsia` or `w:cs`; theme references resolved through the theme. An East Asian or complex
-    font that is empty or unnamed means the latin one. A character that face doesn't map is measured
-    with the first of the run's latin, East Asian and complex faces, then Carlito, that maps it; the
-    Consolas stand-in maps every character.
-  - **Pieces.** A run is split into pieces wherever the face changes, the script changes (each
-    character's resolved script: a Common or Inherited character takes the script of the nearest
-    character before it that has one, else after it) or the bidi level changes (UAX #9; a
+    `w:eastAsia` or `w:cs`; theme references resolved through the theme. In docx, a complex
+    character also takes the run's complex-script size, bold and italic (`w:szCs`, `w:bCs`,
+    `w:iCs`). An East Asian or complex font that is empty or unnamed means the latin one. A
+    character that face doesn't map is measured with the first of the run's latin, East Asian and
+    complex faces, then Carlito, that maps it; the Consolas stand-in maps every character. A mark is
+    measured with its base's face whatever that face maps; where the face maps neither the mark nor
+    a composition of it with its base, the mark advances nothing.
+  - **Pieces.** A run is split into pieces wherever the face or size changes, the script changes
+    (each character's resolved script: a Common or Inherited character takes the script of the
+    nearest character before it that has one, else after it) or the bidi level changes (UAX #9; a
     paragraph's direction is its `rtl` in pptx or `w:bidi` in docx where set, else its first strong
-    character's).
+    character's). A mark stays in its base's piece.
   - **Shaping.** Each piece is shaped with its face's OpenType layout, for its script and direction
-    and the document's language (§2). These features apply: `ccmp`, `locl`, `rlig`, `mark`, `mkmk`,
-    `abvm`, `blwm`, `calt`, `rclt`, `curs` and `dist`, and the features the script's shaping model
+    and the document's language (§2). These features apply: `rvrn`, `ccmp`, `locl`, `rlig`, `ltra`,
+    `ltrm`, `rtla`, `rtlm`, `mark`, `mkmk`, `abvm`, `blwm`, `rclt`, `curs` and `dist`, `calt` (in
+    docx only where the run's `w14:cntxtAlts` is on), and the features the script's shaping model
     requires (Arabic's joining forms, the Indic reordering and conjunct features, and the like).
     Kerning (`kern`) applies in pptx where the run's effective `kern` is greater than 0 and the size
-    is at least `kern`; with `kern` 0 or absent everywhere it doesn't, as PowerPoint renders it
-    (checked in PowerPoint 16.114 for Mac; ECMA-376's wording for an absent `kern` says otherwise).
-    In docx, kerning applies where the run's effective `w:kern` is greater than 0 and the size is at
-    least its value in half-points, and the ligature features its `w14:ligatures` names apply:
-    `standard` turns on `liga`, `contextual` `clig`, `historical` `hlig`, `discretional` `dlig`. No
-    other feature applies.
+    is at least `kern`; with `kern` 0 or absent everywhere it doesn't. Standard ligatures don't
+    apply in pptx. Both are as PowerPoint renders text (checked in PowerPoint 16.114 for Mac;
+    ECMA-376's wording for an absent `kern` says otherwise). In docx, kerning applies where the
+    run's effective `w:kern` is greater than 0 and the size is at least its value in half-points,
+    and the ligatures its `w14:ligatures` names apply: each of `standard` (`liga`), `contextual`
+    (`clig`), `historical` (`hlig`) and `discretional` (`dlig`) that the value's name contains, all
+    four for `all`, none for `none`. No other feature applies, including `frac`, `numr` and `dnom`,
+    which shapers turn on around U+2044 FRACTION SLASH by themselves, and `rand` and `trak`.
   - **Width.** A piece's width is the sum of its shaped glyphs' advances in font units, times the
     size in EMU (1 pt = 12,700 EMU), divided by the face's units per em, rounded down, in exact
     integer arithmetic, plus the run's character spacing (pptx `spc`, docx `w:spacing`) once for
-    each character that advances. A run's width is the sum of its pieces'. Where lines break,
-    whether trailing spaces count, and what overflows are the compose stage's; lines break only at
-    UAX #14 opportunities.
+    each character outside the set that advances nothing (below). A run's width is the sum of its
+    pieces'. Where lines break, whether trailing spaces count, and what overflows are the compose
+    stage's; lines break only at UAX #14 opportunities.
   - **Characters no face maps.** A default-ignorable code point (Default_Ignorable_Code_Point), a
     nonspacing or enclosing mark (Mn, Me) or a control (Cc) advances nothing. Any other advances 1
     em when its East Asian Width is Wide or Fullwidth; else a space separator (Zs) advances as the
