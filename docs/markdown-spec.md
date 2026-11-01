@@ -828,12 +828,12 @@ their own except where their content needs it, so they inherit the layout's.
   relationship: one of the slide type, or one to a part whose content type is a slide's (without
   case or parameters) or whose name a slide or notes page of the deck takes
   (`ppt/slides/slideN.xml` for each of its slides, `ppt/notesSlides/notesSlideN.xml` for each with
-  notes), since what the template had there is gone. A master's or layout's jump to a template slide loses its
-  link, and its shape stays. A slide that only such a relationship reached isn't kept. A jump within
-  the show (`hlinkshowjump`: to the next, previous, first or last slide, the last one viewed, or the
-  end), which names no slide, stays. Nothing is reported for these, unless §10.4 removes the
-  relationship whatever refers to it (an external target, say). *(C60)* An edited part in UTF-16 is
-  written as UTF-8.
+  notes), since what the template had there is gone. A master's or layout's jump to a template
+  slide loses its link, and its shape stays. A slide that only such a relationship reached isn't
+  kept. A jump within the show (`hlinkshowjump`: to the next, previous, first or last slide, the
+  last one viewed, or the end), which names no slide, stays. Nothing is reported for these, unless
+  §10.4 removes the relationship whatever refers to it (an external target, say). *(C60)* An edited
+  part in UTF-16 is written as UTF-8.
 
 ---
 

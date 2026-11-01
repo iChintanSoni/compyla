@@ -9,3 +9,7 @@ template: brand.potx
 ## Content
 
 Text.
+
+::: notes
+Say this.
+:::

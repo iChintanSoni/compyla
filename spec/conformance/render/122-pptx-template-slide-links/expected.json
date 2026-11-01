@@ -19,7 +19,7 @@
         "texts": [
           "Text."
         ],
-        "notes": null
+        "notes": "Say this."
       }
     ],
     "package": {
@@ -27,7 +27,8 @@
         "ppt/slideMasters/slideMaster1.xml",
         "ppt/slideLayouts/slideLayout2.xml",
         "ppt/slides/slide1.xml",
-        "ppt/slides/slide2.xml"
+        "ppt/slides/slide2.xml",
+        "ppt/notesMasters/notesMaster1.xml"
       ],
       "partsAbsent": [
         "ppt/slides/slide3\\.xml",
@@ -99,6 +100,11 @@
           "part": "ppt/slideLayouts/_rels/slideLayout2.xml.rels",
           "expr": "count(//rel:Relationship)",
           "equals": 1
+        },
+        {
+          "part": "ppt/notesSlides/_rels/notesSlide2.xml.rels",
+          "expr": "string(//rel:Relationship[@Type='http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide']/@Target)",
+          "equals": "../slides/slide2.xml"
         },
         {
           "part": "ppt/presentation.xml",

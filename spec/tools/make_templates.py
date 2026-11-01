@@ -259,10 +259,11 @@ def template_slides(entries):
     """Sample slides of the template's own, and kept parts that still relate to them (§8.8, §10.4,
     C60): three slides the presentation lists, the second with a picture and the last two in a
     custom show, the first without a content type of its own and the third's typed in another case
-    and with a parameter; on the master, a button that jumps to the first slide, a picture of the
-    first through an image relationship, a relationship to the second that nothing refers to, and
-    an external one of the slide type; on a layout, a text link that jumps to the third with a
-    sound, a picture of the third, and a button that jumps to the next slide, which names none."""
+    and with a parameter, and the second with a notes page; a notes master; on the master, a button
+    that jumps to the first slide, a picture of the first through an image relationship, a
+    relationship to the second that nothing refers to, one to the second's notes page, and an
+    external one of the slide type; on a layout, a text link that jumps to the third with a sound, a
+    picture of the third, and a button that jumps to the next slide, which names none."""
     parts = dict(entries)
 
     def shape(id, name, hlink="", run=""):
@@ -284,14 +285,31 @@ def template_slides(entries):
     for number, (title, layout, shapes) in enumerate([("Welcome", 1, ()), ("Sample", 2, (picture,)), ("Appendix", 3, ())], 1):
         parts[f"ppt/slides/slide{number}.xml"] = slide(title, *shapes)
         add_rels(parts, f"ppt/slides/_rels/slide{number}.xml.rels", ("rId1", "slideLayout", f"../slideLayouts/slideLayout{layout}.xml", False))
-    add_rels(parts, "ppt/slides/_rels/slide2.xml.rels", ("rId2", "image", "../media/sample.png", False))
+    add_rels(parts, "ppt/slides/_rels/slide2.xml.rels", ("rId2", "image", "../media/sample.png", False),
+             ("rId3", "notesSlide", "../notesSlides/notesSlide2.xml", False))
     parts["ppt/media/sample.png"] = b"\x89PNG\r\n\x1a\n sample"
+
+    notes_master = "ppt/notesMasters/notesMaster1.xml"
+    parts[notes_master] = (f'{DECL}<p:notesMaster xmlns:a="{A}" xmlns:r="{OFFICE}" xmlns:p="{P}">'
+                           f'<p:cSld>{tree(placeholder(2, "Notes Placeholder 1", "body", 1))}</p:cSld>'
+                           '<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>'
+                           '</p:notesMaster>')
+    add_rels(parts, "ppt/notesMasters/_rels/notesMaster1.xml.rels", ("rId1", "theme", "../theme/theme2.xml", False))
+    parts["ppt/theme/theme2.xml"] = theme("Brand Display", "Brand Sans")
+    notes = (f'{DECL}<p:notes xmlns:a="{A}" xmlns:r="{OFFICE}" xmlns:p="{P}">'
+             f'<p:cSld>{tree(placeholder(2, "Notes Placeholder 1", "body", 1))}</p:cSld>'
+             '<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:notes>')
+    parts["ppt/notesSlides/notesSlide2.xml"] = notes.replace("<a:p/>", "<a:p><a:r><a:t>Sample notes</a:t></a:r></a:p>")
+    add_rels(parts, "ppt/notesSlides/_rels/notesSlide2.xml.rels",
+             ("rId1", "notesMaster", "../notesMasters/notesMaster1.xml", False),
+             ("rId2", "slide", "../slides/slide2.xml", False))
 
     main = "ppt/presentation.xml"
     parts[main] = (parts[main]
-                   .replace("</p:sldMasterIdLst>", '</p:sldMasterIdLst><p:sldIdLst><p:sldId id="256" r:id="rId4"/><p:sldId id="257" r:id="rId5"/><p:sldId id="258" r:id="rId6"/></p:sldIdLst>', 1)
+                   .replace("</p:sldMasterIdLst>", '</p:sldMasterIdLst><p:notesMasterIdLst><p:notesMasterId r:id="rId7"/></p:notesMasterIdLst><p:sldIdLst><p:sldId id="256" r:id="rId4"/><p:sldId id="257" r:id="rId5"/><p:sldId id="258" r:id="rId6"/></p:sldIdLst>', 1)
                    .replace("</p:embeddedFontLst>", '</p:embeddedFontLst><p:custShowLst><p:custShow name="Short" id="0"><p:sldLst><p:sld r:id="rId5"/><p:sld r:id="rId6"/></p:sldLst></p:custShow></p:custShowLst>', 1))
-    add_rels(parts, "ppt/_rels/presentation.xml.rels", *[(f"rId{n + 3}", "slide", f"slides/slide{n}.xml", False) for n in (1, 2, 3)])
+    add_rels(parts, "ppt/_rels/presentation.xml.rels", *[(f"rId{n + 3}", "slide", f"slides/slide{n}.xml", False) for n in (1, 2, 3)],
+             ("rId7", "notesMaster", "notesMasters/notesMaster1.xml", False))
 
     master = "ppt/slideMasters/slideMaster1.xml"
     home = shape(30, "Home", '<a:hlinkClick r:id="rId30" action="ppaction://hlinksldjump"/>')
@@ -301,7 +319,8 @@ def template_slides(entries):
              ("rId30", "slide", "../slides/slide1.xml", False),
              ("rId31", "slide", "../slides/slide2.xml", False),
              ("rId32", "image", "../slides/slide1.xml", False),
-             ("rId33", "slide", "https://example.com/deck/slide1", True))
+             ("rId33", "slide", "https://example.com/deck/slide1", True),
+             ("rId34", "notesSlide", "../notesSlides/notesSlide2.xml", False))
 
     layout = "ppt/slideLayouts/slideLayout2.xml"
     appendix = shape(30, "Appendix", run='<a:rPr lang="en-US"><a:hlinkClick r:id="rId2" action="ppaction://hlinksldjump"><a:snd r:embed="rId3" name="click.wav"/></a:hlinkClick></a:rPr>')
@@ -318,6 +337,9 @@ def template_slides(entries):
         '<Default Extension="png" ContentType="image/png"/><Default Extension="wav" ContentType="audio/wav"/>'
         + f'<Override PartName="/ppt/slides/slide2.xml" ContentType="{PML}.slide+xml"/>'
         + f'<Override PartName="/ppt/slides/slide3.xml" ContentType="{PML}.Slide+xml; charset=utf-8"/>'
+        + f'<Override PartName="/ppt/notesMasters/notesMaster1.xml" ContentType="{PML}.notesMaster+xml"/>'
+        + f'<Override PartName="/ppt/notesSlides/notesSlide2.xml" ContentType="{PML}.notesSlide+xml"/>'
+        + '<Override PartName="/ppt/theme/theme2.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>'
         + "</Types>"))
     return list(parts.items())
 
