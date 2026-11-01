@@ -10,6 +10,7 @@ pub mod package;
 pub mod read;
 pub mod sanitize;
 pub mod template;
+mod text;
 pub mod theme;
 pub mod xml;
 pub mod zip;
