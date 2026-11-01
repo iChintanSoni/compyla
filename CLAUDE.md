@@ -69,6 +69,8 @@ cargo test -p compyla --test conformance lint_suite   # one suite: parse_suite, 
 cargo test -p compyla --test hostile                  # resource/limit regressions
 cargo test -p compyla-xlsx --test render
 cargo test -p compyla-core <test_name>                # unit tests live next to the code
+CARGO_TARGET_WASM32_WASIP1_RUNNER="node $PWD/.github/scripts/wasi-run.mjs" \
+  cargo test -p compyla-fonts --target wasm32-wasip1   # measurement on wasm32, under Node's WASI
 cargo +1.89 check --workspace --lib --bins            # the MSRV check (rustup toolchain install 1.89)
 cargo build --release -p compyla-wasm --target wasm32-unknown-unknown   # core-only WASM build
 (cd spikes && cargo run --release -p comrak-positions)   # after adding or changing a parse fixture
@@ -129,6 +131,11 @@ The layering is strict (D8): **core crates → the `compyla` facade → hosts**.
     - fits images.
 
     It also binds layouts itself for the house template. `compyla-xlsx` sizes columns.
+- **`compyla-fonts`** reads font faces safely from bytes and measures text (§3, C62, D14). It does
+  no I/O either: font bytes come from the font resolver or a template. It bundles Carlito, the
+  stand-in for Calibri, unmodified under the OFL (`fonts/README.md`), and its Unicode tables come
+  from `unicode/make_tables.py`. Its committed widths (`tests/golden.rs`) must hold natively and on
+  wasm32 alike.
 - **`compyla-ooxml`** provides:
   - the deterministic zip writer (fixed timestamps and order, pure-Rust DEFLATE);
   - an XML writer that text can't escape from;

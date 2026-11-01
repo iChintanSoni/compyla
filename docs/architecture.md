@@ -245,8 +245,9 @@ name; pptx embedding is an open question.
   measure exactly but make every house deck substitute fonts on machines without them until pptx
   embedding is solved.
 - **Same everywhere.** Measurement is part of `lint` (D15), and `lint` must agree in every host, so
-  Carlito is in every build, WASM included: 2.77 MB, and about 0.6 MB more for the shaper. Every
-  distribution carries Carlito's copyright notice and licence, as the OFL requires.
+  Carlito is in every build, WASM included: 2.77 MB, and about 0.8 MB more for the shaper and
+  Unicode tables (3.5 MB in all, 1.4 MB gzipped; measured in #73). Every distribution carries
+  Carlito's copyright notice and licence, as the OFL requires.
 - **One font stack.** `ttf-parser` parses and `rustybuzz` shapes, at the versions the pinned `typst`
   uses (0.25 and 0.20 with typst 0.15), so a face parses and shapes alike in measurement and in pdf.
   Both are pure Rust, build for every target at the MSRV, and never read installed fonts.
