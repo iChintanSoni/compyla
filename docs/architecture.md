@@ -226,7 +226,8 @@ cache and is recorded in a lockfile (`compyla.lock`: family, style, source, SHA-
 fonts only through the font resolver, so they run **offline and pinned**. A family that cannot be
 resolved produces `font_unresolved` (a warning, an error under `--strict`), and the viewer substitutes
 a font. *Amended (C62):* a font a docx template embeds is read from the template itself rather than
-pinned, `fonts sync` pins user files and Google Fonts, and at render the resolver comes first.
+pinned, `fonts sync` pins user files and Google Fonts, and whenever an operation runs the resolver
+comes first.
 
 Embedding: docx embeds fonts the way Word does, and pdf embeds subsets via Typst. pptx sets fonts by
 name; pptx embedding is an open question.
