@@ -539,3 +539,107 @@ fn a_layout_and_master_of_many_placeholders_are_read_in_linear_time() {
     compyla::lint("# A\n", &options, &compyla::no_assets).unwrap();
     assert!(start.elapsed() < BOUND, "{:?}", start.elapsed());
 }
+
+#[test]
+fn masters_sharing_a_large_theme_read_it_once() {
+    use compyla_core::validate::pptx::text::TemplateText;
+    let _serial = serial();
+    // 150 masters, each with a layout, all related to one theme padded with 250,000 elements: the
+    // text model reads the theme once, not once a master (§8.6, §12.1).
+    const BRAND: &[u8] =
+        include_bytes!("../../../spec/conformance/lint/139-pptx-template-binding/brand.potx");
+    const MASTERS: usize = 150;
+    let mut seed = 1u64;
+    let padding: String = (0..250_000)
+        .map(|_| {
+            seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            format!(r#"<a:x v="{}"/>"#, seed >> 40)
+        })
+        .collect();
+    let entries = compyla_ooxml::read::entries(BRAND).unwrap();
+    let master = String::from_utf8(
+        entries
+            .iter()
+            .find(|(n, _)| n == "ppt/slideMasters/slideMaster1.xml")
+            .unwrap()
+            .1
+            .clone(),
+    )
+    .unwrap();
+    let start = master.find("<p:sldLayoutIdLst>").unwrap();
+    let end = master.find("</p:sldLayoutIdLst>").unwrap();
+    let one_layout = format!(
+        r#"{}<p:sldLayoutIdLst><p:sldLayoutId id="2147483900" r:id="rId1"/>{}"#,
+        &master[..start],
+        &master[end..]
+    );
+    const REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+    const PML: &str = "application/vnd.openxmlformats-officedocument.presentationml";
+    let mut ids = String::new();
+    let mut rels = String::new();
+    let mut types = String::new();
+    let mut extra: Vec<(String, Vec<u8>)> = Vec::new();
+    for i in 0..MASTERS {
+        ids.push_str(&format!(
+            r#"<p:sldMasterId id="{}" r:id="rIdM{i}"/>"#,
+            2_147_484_000 + i
+        ));
+        rels.push_str(&format!(
+            r#"<Relationship Id="rIdM{i}" Type="{REL}/slideMaster" Target="slideMasters/many{i}.xml"/>"#
+        ));
+        types.push_str(&format!(
+            r#"<Override PartName="/ppt/slideMasters/many{i}.xml" ContentType="{PML}.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/many{i}.xml" ContentType="{PML}.slideLayout+xml"/>"#
+        ));
+        extra.push((
+            format!("ppt/slideMasters/many{i}.xml"),
+            one_layout.clone().into_bytes(),
+        ));
+        extra.push((
+            format!("ppt/slideMasters/_rels/many{i}.xml.rels"),
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{REL}/slideLayout" Target="../slideLayouts/many{i}.xml"/><Relationship Id="rId2" Type="{REL}/theme" Target="../theme/theme1.xml"/></Relationships>"#
+            )
+            .into_bytes(),
+        ));
+        extra.push((
+            format!("ppt/slideLayouts/many{i}.xml"),
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="{REL}" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld name="Many {i}"><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree></p:cSld></p:sldLayout>"#
+            )
+            .into_bytes(),
+        ));
+    }
+    let mut all: Vec<(String, Vec<u8>)> = entries
+        .into_iter()
+        .map(|(name, data)| {
+            let text = String::from_utf8(data).unwrap_or_default();
+            let text = match name.as_str() {
+                "ppt/theme/theme1.xml" => {
+                    text.replacen("</a:theme>", &format!("{padding}</a:theme>"), 1)
+                }
+                "ppt/presentation.xml" => text.replacen(
+                    "</p:sldMasterIdLst>",
+                    &format!("{ids}</p:sldMasterIdLst>"),
+                    1,
+                ),
+                "ppt/_rels/presentation.xml.rels" => {
+                    text.replacen("</Relationships>", &format!("{rels}</Relationships>"), 1)
+                }
+                "[Content_Types].xml" => text.replacen("</Types>", &format!("{types}</Types>"), 1),
+                _ => return (name, text.into_bytes()),
+            };
+            (name, text.into_bytes())
+        })
+        .collect();
+    all.extend(extra);
+    let bytes = compyla_ooxml::zip::write(&all);
+    let template = compyla_ooxml::template::Template::read(&bytes).unwrap();
+    let layouts = compyla_ooxml::layouts::read(&template).unwrap();
+    assert!(layouts.len() > MASTERS);
+    let model = compyla_ooxml::text::Model::new(&template, &layouts);
+    let started = Instant::now();
+    for layout in 0..layouts.len() {
+        assert_eq!(model.title(layout).levels[0].run.latin, "Brand Display");
+    }
+    assert!(started.elapsed() < BOUND, "{:?}", started.elapsed());
+}
