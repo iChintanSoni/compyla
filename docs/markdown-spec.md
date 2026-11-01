@@ -114,6 +114,7 @@ prototype.
 | C59 | A link destination is checked as a browser reads it: leading and trailing spaces and controls, and tabs and line breaks inside it, don't hide its scheme, and other control characters, and a leading non-ASCII space, are refused; before any query or fragment, it must pass percent-decoded too (§4.5) | ` file:///…` and `\tms-msdt:…` in IR input or a template's hyperlinks, and `%5C%5Chost` anywhere, passed the allowlist as relative references | parse/130, render/121 |
 | C60 | A kept template part's relationships to the template's own slides (of the slide type, or to a part whose content type is a slide's or whose name one of the deck's slides or notes pages takes) are removed with what refers to them, as active content is: a master's or layout's jump to a template slide loses its link and keeps its shape, a slide only such a relationship reached isn't kept, and a jump that names no slide stays. Nothing is reported unless §10.4 removes the relationship whatever refers to it (§8.8, §10.4) | A jump kept a sample slide the presentation no longer lists, or jumped to whichever new slide took the sample's part name | render/122 |
 | C61 | A deck with notes in a template without a notes master gets the house template's notes master and its theme, under part names the template doesn't use, with its slide image fitted to the slide size, and the presentation lists it; a deck without notes is written without one. A part the output writes anew never takes a relationships part the template has for its name, and new presentation relationships take ids the template's don't use (§8.8) | Every slide's notes were dropped silently; a stray relationships part could attach to new media; a template relationship id could be repeated | render/119, render/123–125 |
+| C62 | Fonts are specified: families compare without case and resolve per style through the template's embedded fonts (docx only), the font resolver and bundled stand-ins (Carlito for Calibri and Calibri Light, Consolas's fixed advance); measurement is shaped advances in integer arithmetic, in every host alike; the CLI's resolver reads a JSON lockfile pinning SHA-256 digests in a content-addressed cache; font files are limited to 64 MiB (§3, §10.3, §12.1, §13) | The chain, lockfile, measurement and house fonts were named but not specified | measurement tests (#73); lint and render fixtures (#74) |
 
 0.2 also corrects 0.1's *text* in one place where the prototype was right: `---` in xlsx is ignored
 without a diagnostic (§5).
@@ -347,8 +348,37 @@ renders read fonts only through the font resolver (§10.3).
   output uses. Symbol fonts used only for bullets (e.g. Wingdings) are not checked.
 - A family that can't be resolved produces `font_unresolved` (warning, strict-promotable), and the
   viewer substitutes a font.
-- The house templates use only fonts the engine bundles, so rendering without a template never depends
-  on font resolution.
+- The house templates never need font resolution: every family they name has a stand-in the engine
+  bundles (below).
+
+*(C62)* In detail:
+- **Families and styles.** A family is named as the template names it, and compares without ASCII
+  case. A style is regular, bold, italic or bold italic. A family resolves when its regular style
+  does; a style it lacks is measured with its regular face, as viewers synthesize bold and italic.
+- **Resolution.** When an operation runs, a family and style resolve to font bytes through this
+  chain (the chain above is where `fonts sync` looks for them); the first that has them wins:
+  1. a font embedded in the template, in a form the engine reads: a docx's embedded fonts,
+     obfuscated as ECMA-376 Part 1 §17.8.1 describes. A pptx's embedded fonts (`.fntdata`, Embedded
+     OpenType) aren't read, and the chain continues;
+  2. the font resolver (§10.3);
+  3. a stand-in the engine bundles: **Carlito** (SIL Open Font License) in its four styles for
+     Calibri and for Calibri Light, and, for Consolas, its fixed advance (below), with no font file.
+
+  A family none of these resolves is measured with Carlito and produces `font_unresolved` once: at
+  the validate stage when the operation has a font resolver, so `lint` and `convert` agree (§11.2),
+  and at the render stage otherwise.
+- **Font bytes** are a TrueType or OpenType font, or a collection holding the face, within §12.1's
+  limit. Bytes that aren't a font the engine reads count as not found.
+- **Measurement.** A run of text in one face and size is shaped with the face's OpenType layout and
+  its default features for the text's script and direction. Its width is the sum of the shaped
+  glyphs' advances, in font units, times the size in EMU (1 pt = 12,700 EMU), divided by the face's
+  units per em, rounded down, all in exact integer arithmetic. A character the face lacks measures
+  as its `.notdef` glyph. Consolas without a font advances each character 1,126/2,048 em, Consolas's
+  own advance, except combining marks and controls, which advance nothing. Lines may break only at
+  UAX #14 opportunities. How lines fill a box, and what overflows, is the compose stage's (D15).
+- **Stand-ins** are used for measurement and to draw pdf text; docx, pptx and xlsx keep the
+  template's family names. They are part of the implementation, identical in every build and host
+  (§13).
 
 ## 4. IR Mapping
 
@@ -1221,7 +1251,7 @@ The core performs no I/O (architecture.md D11). Hosts supply resolvers:
 |----------|-------------|---------|
 | Asset | an image `src`, verbatim | the bytes, or *exists* (without bytes, permitted for `lint` only), or *not found* |
 | Template | a `meta.template` reference, verbatim | the bytes, or *not found* |
-| Font | a family and style (regular, bold, italic, bold italic) | the bytes from the font cache, or *not found* |
+| Font | a family, as the template names it, and a style (regular, bold, italic, bold italic) (§3) | the bytes of a font or a collection holding it, from the font cache or a user-supplied file, or *not found* |
 
 - A host that supplies no asset resolver behaves as if every image source exists without bytes, in
   `lint` only. In `convert`, an image without bytes is unresolved (§5).
@@ -1239,6 +1269,15 @@ The core performs no I/O (architecture.md D11). Hosts supply resolvers:
 - **Remote fetching** is opt-in: `https:` only, with private, loopback and link-local addresses
   blocked, plus size and time limits.
 - **The CLI** resolves relative references against the input file's directory.
+- **The CLI's font resolver** *(C62)* reads the lockfile `compyla.lock`
+  (`spec/lockfile.schema.json`): the one `--lockfile` names, else the nearest in the input file's
+  directory or one above it. For a family and style the lockfile pins, it returns the cached file
+  named by the pinned SHA-256; a file whose digest doesn't match is *not found*, so a lockfile pins
+  bytes, not names. The cache is the user's cache directory (`$XDG_CACHE_HOME/compyla/fonts`,
+  `~/Library/Caches/compyla/fonts`, `%LOCALAPPDATA%\compyla\fonts`), or `$COMPYLA_CACHE/fonts`.
+  `compyla fonts sync` writes the lockfile and fills the cache; the resolver itself never touches
+  the network. Families compare as §3 says; the lockfile lists them sorted that way, then by style
+  in the order above.
 - In every host, the bytes a resolver returns are checked by content (§4.7), never trusted by
   extension.
 
@@ -1464,6 +1503,10 @@ particular, it needs to keep only the diagnostics it may report (§11.2). *(C47)
 | Image size, encoded / decoded | 50 MiB / 100 megapixels |
 | Template package, compressed / uncompressed / entries / compression ratio | 50 MiB / 256 MiB / 10,000 / 100:1 |
 | Elements in a template XML part read as a tree (a docx body is searched, not read whole) | 500,000 |
+| Font file, from a template or a resolver *(C62)* | 64 MiB |
+
+A font over its limit counts as *not found* (§3) rather than `limit_exceeded`: it is a dependency,
+not input. Shaping work is bounded too, so a hostile layout table can't hang an operation.
 
 ### 12.2 Security
 
@@ -1496,6 +1539,10 @@ The engine processes untrusted input: LLM output, and anything submitted to the 
   timestamps are fixed (`1980-01-01T00:00:00Z`), zip entries are ordered, and identifiers are
   assigned in document order.
 - Operation outputs, including diagnostics (§11.2), are deterministically ordered.
+- **Measurement** (§3) is a function of the text, the font bytes and the implementation version
+  only: no installed fonts, no platform font APIs, integer arithmetic. The bundled stand-ins are
+  fixed bytes of the implementation, so measurement, and with it `lint`, gives the same results in
+  every host of one implementation version. *(C62)*
 
 ## 14. Versioning
 
