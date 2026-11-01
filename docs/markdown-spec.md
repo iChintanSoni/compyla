@@ -347,11 +347,11 @@ font bytes only through the chain below, so they run offline and pinned (archite
   aren't empty), plus the fonts named by every style the output uses. With a pptx template, those
   are the typefaces (`a:latin`, `a:ea`, `a:cs`) of the parts a pptx output keeps: the presentation's
   default text style and table styles, each slide master and its layouts, and the notes and handout
-  masters, each master with its own theme's major and minor fonts. With a docx template, they are
-  the fonts its document defaults name (`w:rFonts`), and those of the styles the output writes with.
-  Theme references (`+mj-lt`, Word's `w:asciiTheme` and its siblings) aren't families. Symbol fonts
-  used only for bullets (e.g. Wingdings) and a theme's per-script fonts (`a:font script="…"`) are
-  not checked.
+  masters, each master with its own theme's major and minor fonts. Relationships to these parts are
+  found by their type's last segment, compared without ASCII case, as the notes master is (§8.8).
+  With a docx template, they are the fonts its document defaults name (`w:rFonts`). Theme references
+  (`+mj-lt`, Word's `w:asciiTheme` and its siblings) aren't families. Symbol fonts used only for
+  bullets (e.g. Wingdings) and a theme's per-script fonts (`a:font script="…"`) are not checked.
 - **Families and styles.** A family is named as the template names it, and families compare by their
   ASCII-lowercase form. A style is regular, bold, italic or bold italic (`boldItalic` in JSON). Each
   style resolves on its own. A style that doesn't resolve while its family's regular does is

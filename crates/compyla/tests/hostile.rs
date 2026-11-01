@@ -1,9 +1,21 @@
-//! Hostile input (markdown-spec.md §12.1): inputs that once took quadratic time. Each runs in well
-//! under a second; the bound is generous so that only a return to quadratic behaviour fails.
+//! Hostile input (markdown-spec.md §12.1): inputs that once took quadratic time. Each takes at most
+//! a few seconds in a debug build; the bound is generous so that only a return to quadratic
+//! behaviour fails. The tests run one at a time, so the time each measures is its own: side by side
+//! on a small CI machine, they slowed each other past the bound.
 
+use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 const BOUND: Duration = Duration::from_secs(10);
+
+/// Held for the whole of each test.
+fn serial() -> MutexGuard<'static, ()> {
+    static SERIAL: Mutex<()> = Mutex::new(());
+    // A failed test poisons it, and the others still run.
+    SERIAL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 fn lint_within_bound(
     name: &str,
@@ -24,6 +36,7 @@ fn lint_within_bound(
 
 #[test]
 fn repeated_headings_take_linear_time() {
+    let _serial = serial();
     // Each duplicate's slug once searched its suffixes from -1.
     let source = "# a\n\n".repeat(40_000);
     lint_within_bound("duplicate headings", &source, compyla::Format::Docx);
@@ -31,6 +44,7 @@ fn repeated_headings_take_linear_time() {
 
 #[test]
 fn many_directive_options_take_linear_time() {
+    let _serial = serial();
     let keys: Vec<String> = (0..80_000).map(|i| format!("k{i}")).collect();
     let source = format!("::: table {}\n| A |\n|---|\n| 1 |\n:::\n", keys.join(" "));
     lint_within_bound("many options", &source, compyla::Format::Xlsx);
@@ -38,6 +52,7 @@ fn many_directive_options_take_linear_time() {
 
 #[test]
 fn a_long_line_of_inline_nodes_takes_linear_time() {
+    let _serial = serial();
     // Character columns were once recomputed from the start of the line for every node.
     let line: Vec<String> = (0..12_000).map(|i| format!("*é{i}*")).collect();
     let source = format!("{}\n", line.join(" "));
@@ -46,6 +61,7 @@ fn a_long_line_of_inline_nodes_takes_linear_time() {
 
 #[test]
 fn leading_notes_take_linear_time() {
+    let _serial = serial();
     let source = format!(
         "# T\n\n{}{}",
         "::: notes\n:::\n".repeat(40_000),
@@ -56,6 +72,7 @@ fn leading_notes_take_linear_time() {
 
 #[test]
 fn diagnostics_are_capped() {
+    let _serial = serial();
     let source = format!(
         "::: columns {}\n| A |\n|---|\n| 1 |\n:::\n",
         "X,".repeat(100_000)
@@ -67,6 +84,7 @@ fn diagnostics_are_capped() {
 
 #[test]
 fn a_huge_ir_position_doesnt_overflow() {
+    let _serial = serial();
     let ir = serde_json::json!({
         "irVersion": "0.1",
         "meta": {},
@@ -90,6 +108,7 @@ fn a_huge_ir_position_doesnt_overflow() {
 #[test]
 #[cfg(feature = "xlsx")]
 fn a_blocked_convert_reports_its_error_past_the_cap() {
+    let _serial = serial();
     // 1,100 warnings sort before the error, which the cap still keeps (§11.2).
     let source = format!(
         "# S\n\n{}| A |\n|---|\n| {} |\n",
@@ -117,6 +136,7 @@ fn a_blocked_convert_reports_its_error_past_the_cap() {
 #[test]
 #[cfg(feature = "xlsx")]
 fn many_excel_tables_convert() {
+    let _serial = serial();
     // Each Excel table is a package part: more than 65,535 parts need Zip64.
     let source = format!(
         "# S\n\n{}",
@@ -138,6 +158,7 @@ fn many_excel_tables_convert() {
 #[test]
 #[cfg(feature = "pptx")]
 fn a_picture_naming_one_link_in_many_attributes_converts() {
+    let _serial = serial();
     // Every attribute of one blip names the same external link; each goes, in one linear pass
     // (§10.4, §12.1), not one search of the others per attribute.
     const BRAND: &[u8] =
@@ -193,6 +214,7 @@ fn a_picture_naming_one_link_in_many_attributes_converts() {
 #[test]
 #[cfg(feature = "pptx")]
 fn a_template_full_of_active_content_converts() {
+    let _serial = serial();
     // Each linked picture and OLE object is found, removed and reported in one pass (§10.4); the
     // reports are capped like any others (§11.2).
     const BRAND: &[u8] =
@@ -280,6 +302,7 @@ fn font_unresolved(diagnostics: &[compyla::Diagnostic]) -> usize {
 
 #[test]
 fn a_hostile_embedded_font_is_unresolved_not_a_panic() {
+    let _serial = serial();
     // lint/145's template, whose obfuscated Brand Serif now de-obfuscates to a collection claiming
     // billions of faces (§3, §12.1).
     const BRAND: &[u8] =
@@ -317,6 +340,7 @@ fn a_hostile_embedded_font_is_unresolved_not_a_panic() {
 
 #[test]
 fn a_font_resolver_returning_hostile_bytes_is_bounded() {
+    let _serial = serial();
     const BRAND: &[u8] =
         include_bytes!("../../../spec/conformance/lint/139-pptx-template-binding/brand.potx");
     let huge = vec![0u8; compyla::FONT_SIZE_LIMIT + 1];
@@ -342,6 +366,7 @@ fn a_font_resolver_returning_hostile_bytes_is_bounded() {
 
 #[test]
 fn a_template_naming_thousands_of_families_is_linear_and_capped() {
+    let _serial = serial();
     // A master naming 50,000 distinct typefaces: each is checked once, in linear time, and the
     // diagnostics stop at the cap (§11.2).
     const BRAND: &[u8] =
@@ -382,18 +407,19 @@ fn a_template_naming_thousands_of_families_is_linear_and_capped() {
 
 #[test]
 fn a_template_embedding_thousands_of_fonts_is_linear() {
-    // 50,000 embedded fonts and a master naming each of them in lower case: each family is looked
-    // up once among the embedded, not compared with each (§3, §12.1).
+    let _serial = serial();
+    // 30,000 embedded fonts and a master naming each of them in lower case: each family is looked
+    // up once among the embedded, not compared with each, which took 24 s here (§3, §12.1).
     const BRAND: &[u8] =
         include_bytes!("../../../spec/conformance/lint/139-pptx-template-binding/brand.potx");
-    let embedded: String = (0..50_000)
+    let embedded: String = (0..30_000)
         .map(|i| {
             format!(
                 r#"<p:embeddedFont><p:font typeface="Embedded {i}"/><p:regular r:id="rId3"/></p:embeddedFont>"#
             )
         })
         .collect();
-    let runs: String = (0..50_000)
+    let runs: String = (0..30_000)
         .map(|i| {
             format!(r#"<a:r><a:rPr><a:latin typeface="embedded {i}"/></a:rPr><a:t>x</a:t></a:r>"#)
         })
@@ -425,6 +451,7 @@ fn a_template_embedding_thousands_of_fonts_is_linear() {
 
 #[test]
 fn an_oversized_embedded_font_is_refused_by_its_size() {
+    let _serial = serial();
     // lint/145's template, whose plain Brand Sans is now 65 MiB: runs of 32 bytes, which compress
     // within the template's limits (§12.1).
     const BRAND: &[u8] =
