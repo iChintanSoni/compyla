@@ -10,6 +10,7 @@ these do not describe any one implementation.
 | [diagnostic.schema.json](diagnostic.schema.json) | The diagnostic object every operation returns |
 | [diagnostics.json](diagnostics.json) | Registry of every diagnostic code and operation error |
 | [template-report.schema.json](template-report.schema.json) | Output of `inspect_template` |
+| [lockfile.schema.json](lockfile.schema.json) | The font lockfile, `compyla.lock` (C62) |
 | [conformance/](conformance/README.md) | Fixtures: the executable definition of correct behavior |
 | [tools/](tools/) | Spec tooling: the prototype oracle and the artifact checker |
 

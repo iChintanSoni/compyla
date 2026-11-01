@@ -155,7 +155,7 @@ if (process.argv.includes("--schemas")) {
       problem("schemas", `check-jsonschema ${args.join(" ")}\n${error.stdout ?? ""}${error.stderr ?? ""}`);
     }
   };
-  const schemas = ["ir.schema.json", "diagnostic.schema.json", "diagnostics.schema.json", "template-report.schema.json", "conformance/case.schema.json", "conformance/compose.schema.json", "conformance/render.schema.json"];
+  const schemas = ["ir.schema.json", "diagnostic.schema.json", "diagnostics.schema.json", "template-report.schema.json", "lockfile.schema.json", "conformance/case.schema.json", "conformance/compose.schema.json", "conformance/render.schema.json"];
   run(["--check-metaschema", ...schemas.map((s) => join(specDir, s))]);
   run(["--schemafile", join(specDir, "diagnostics.schema.json"), join(specDir, "diagnostics.json")]);
 

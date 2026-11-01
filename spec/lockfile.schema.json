@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:compyla:lockfile:1",
+  "title": "Compyla font lockfile",
+  "description": "compyla.lock: pins each font family and style a project's templates use to the bytes that render them (architecture.md D14; markdown-spec.md §3, §10.3, C62). `compyla fonts sync` writes it; the CLI's font resolver reads it and returns the cached file named by each entry's SHA-256. Entries are sorted by family, compared without ASCII case, then by style in the order regular, bold, italic, boldItalic, and a family and style appear at most once.",
+  "type": "object",
+  "required": ["lockfileVersion", "fonts"],
+  "additionalProperties": false,
+  "properties": {
+    "lockfileVersion": { "const": 1 },
+    "fonts": { "type": "array", "items": { "$ref": "#/$defs/font" } }
+  },
+  "$defs": {
+    "font": {
+      "type": "object",
+      "required": ["family", "style", "source", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "family": { "type": "string", "minLength": 1, "description": "The family as the template names it." },
+        "style": { "enum": ["regular", "bold", "italic", "boldItalic"] },
+        "source": { "enum": ["file", "google"], "description": "Where `fonts sync` found the bytes: a user-supplied file, or Google Fonts. Fonts embedded in a template are read from the template itself (§3), so they aren't pinned here." },
+        "from": { "type": "string", "description": "The file path or URL the bytes came from, for people. The resolver reads only the digest." },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "The SHA-256 of the font file's bytes, in lower-case hex, which names the file in the cache." }
+      }
+    }
+  }
+}
