@@ -1,5 +1,10 @@
 {
-  "diagnostics": [],
+  "diagnostics": [
+    {
+      "code": "template_content_removed",
+      "severity": "warning"
+    }
+  ],
   "output": {
     "slides": [
       {
@@ -41,6 +46,16 @@
           "equals": 1
         },
         {
+          "part": "ppt/slideMasters/slideMaster1.xml",
+          "expr": "count(//p:pic[p:nvPicPr/p:cNvPr/@name='Thumbnail'])",
+          "equals": 1
+        },
+        {
+          "part": "ppt/slideMasters/slideMaster1.xml",
+          "expr": "count(//a:blip/@r:embed)",
+          "equals": 0
+        },
+        {
           "part": "ppt/slideMasters/_rels/slideMaster1.xml.rels",
           "expr": "count(//rel:Relationship[@Type='http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide'])",
           "equals": 0
@@ -68,6 +83,16 @@
         {
           "part": "ppt/slideLayouts/slideLayout2.xml",
           "expr": "count(//a:snd)",
+          "equals": 0
+        },
+        {
+          "part": "ppt/slideLayouts/slideLayout2.xml",
+          "expr": "count(//p:pic[p:nvPicPr/p:cNvPr/@name='Preview'])",
+          "equals": 1
+        },
+        {
+          "part": "ppt/slideLayouts/slideLayout2.xml",
+          "expr": "count(//a:blip/@r:embed)",
           "equals": 0
         },
         {

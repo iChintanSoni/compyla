@@ -258,9 +258,11 @@ def active_content(entries):
 def template_slides(entries):
     """Sample slides of the template's own, and kept parts that still relate to them (§8.8, §10.4,
     C60): three slides the presentation lists, the second with a picture and the last two in a
-    custom show; on the master, a button that jumps to the first slide and a relationship to the
-    second that nothing refers to; on a layout, a text link that jumps to the third with a sound,
-    and a button that jumps to the next slide, which names none."""
+    custom show, the first without a content type of its own and the third's typed in another case
+    and with a parameter; on the master, a button that jumps to the first slide, a picture of the
+    first through an image relationship, a relationship to the second that nothing refers to, and
+    an external one of the slide type; on a layout, a text link that jumps to the third with a
+    sound, a picture of the third, and a button that jumps to the next slide, which names none."""
     parts = dict(entries)
 
     def shape(id, name, hlink="", run=""):
@@ -273,9 +275,12 @@ def template_slides(entries):
         return (f'{DECL}<p:sld xmlns:a="{A}" xmlns:r="{OFFICE}" xmlns:p="{P}"><p:cSld>{tree(heading, *shapes)}</p:cSld>'
                 '<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>')
 
-    picture = ('<p:pic><p:nvPicPr><p:cNvPr id="3" name="Sample picture" descr="Sample"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr>'
-               '<p:blipFill><a:blip r:embed="rId2"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>'
-               '<p:spPr><a:xfrm><a:off x="838200" y="1825625"/><a:ext cx="1270000" cy="952500"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>')
+    def image(id, name, rid):
+        return (f'<p:pic><p:nvPicPr><p:cNvPr id="{id}" name="{name}" descr="{name}"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr>'
+                f'<p:blipFill><a:blip r:embed="{rid}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>'
+                '<p:spPr><a:xfrm><a:off x="838200" y="1825625"/><a:ext cx="1270000" cy="952500"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>')
+
+    picture = image(3, "Sample picture", "rId2")
     for number, (title, layout, shapes) in enumerate([("Welcome", 1, ()), ("Sample", 2, (picture,)), ("Appendix", 3, ())], 1):
         parts[f"ppt/slides/slide{number}.xml"] = slide(title, *shapes)
         add_rels(parts, f"ppt/slides/_rels/slide{number}.xml.rels", ("rId1", "slideLayout", f"../slideLayouts/slideLayout{layout}.xml", False))
@@ -290,23 +295,29 @@ def template_slides(entries):
 
     master = "ppt/slideMasters/slideMaster1.xml"
     home = shape(30, "Home", '<a:hlinkClick r:id="rId30" action="ppaction://hlinksldjump"/>')
-    parts[master] = parts[master].replace("</p:spTree></p:cSld>", home + "</p:spTree></p:cSld>", 1)
+    thumbnail = image(32, "Thumbnail", "rId32")
+    parts[master] = parts[master].replace("</p:spTree></p:cSld>", home + thumbnail + "</p:spTree></p:cSld>", 1)
     add_rels(parts, "ppt/slideMasters/_rels/slideMaster1.xml.rels",
              ("rId30", "slide", "../slides/slide1.xml", False),
-             ("rId31", "slide", "../slides/slide2.xml", False))
+             ("rId31", "slide", "../slides/slide2.xml", False),
+             ("rId32", "image", "../slides/slide1.xml", False),
+             ("rId33", "slide", "https://example.com/deck/slide1", True))
 
     layout = "ppt/slideLayouts/slideLayout2.xml"
     appendix = shape(30, "Appendix", run='<a:rPr lang="en-US"><a:hlinkClick r:id="rId2" action="ppaction://hlinksldjump"><a:snd r:embed="rId3" name="click.wav"/></a:hlinkClick></a:rPr>')
     following = shape(31, "Next", '<a:hlinkClick r:id="" action="ppaction://hlinkshowjump?jump=nextslide"/>')
-    parts[layout] = parts[layout].replace("</p:spTree></p:cSld>", appendix + following + "</p:spTree></p:cSld>", 1)
+    preview = image(32, "Preview", "rId4")
+    parts[layout] = parts[layout].replace("</p:spTree></p:cSld>", appendix + following + preview + "</p:spTree></p:cSld>", 1)
     add_rels(parts, "ppt/slideLayouts/_rels/slideLayout2.xml.rels",
              ("rId2", "slide", "../slides/slide3.xml", False),
-             ("rId3", "audio", "../media/click.wav", False))
+             ("rId3", "audio", "../media/click.wav", False),
+             ("rId4", "image", "../slides/slide3.xml", False))
     parts["ppt/media/click.wav"] = b"RIFF\x04\x00\x00\x00WAVE"
 
     parts["[Content_Types].xml"] = parts["[Content_Types].xml"].replace("</Types>", (
         '<Default Extension="png" ContentType="image/png"/><Default Extension="wav" ContentType="audio/wav"/>'
-        + "".join(f'<Override PartName="/ppt/slides/slide{n}.xml" ContentType="{PML}.slide+xml"/>' for n in (1, 2, 3))
+        + f'<Override PartName="/ppt/slides/slide2.xml" ContentType="{PML}.slide+xml"/>'
+        + f'<Override PartName="/ppt/slides/slide3.xml" ContentType="{PML}.Slide+xml; charset=utf-8"/>'
         + "</Types>"))
     return list(parts.items())
 

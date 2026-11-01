@@ -78,7 +78,7 @@ pub fn render(
         return Err(Invalid("has no slide layouts".into()));
     }
     // The presentation part keeps nothing active or external either (§10.4), nor its slides.
-    let replaced = Replaced::new(template, deck.slides.len());
+    let replaced = Replaced::new(template, &deck.slides);
     let main = sanitize::part(template, &template.main, &|r| replaced.drops(r))?;
     let main_rels = main.relationships.clone();
     let notes_master = main_rels
@@ -286,21 +286,21 @@ fn typed(template: &Template, name: &str, kind: &str) -> bool {
 /// refers to them, so nothing jumps to a slide that isn't there, or to a new one in its place.
 struct Replaced<'t> {
     template: &'t Template,
-    /// `ppt/slides/slideN.xml` and `ppt/notesSlides/notesSlideN.xml` for each of the deck's slides,
-    /// in lower case: whatever the template had there is gone.
+    /// `ppt/slides/slideN.xml` for each of the deck's slides, and `ppt/notesSlides/notesSlideN.xml`
+    /// for each with notes, in lower case: whatever the template had there is gone.
     taken: HashSet<String>,
 }
 
 impl<'t> Replaced<'t> {
-    fn new(template: &'t Template, slides: usize) -> Replaced<'t> {
-        let taken = (1..=slides)
-            .flat_map(|n| {
-                [
-                    format!("ppt/slides/slide{n}.xml"),
-                    format!("ppt/notesslides/notesslide{n}.xml"),
-                ]
-            })
-            .collect();
+    fn new(template: &'t Template, slides: &[Slide]) -> Replaced<'t> {
+        let mut taken = HashSet::new();
+        for (index, slide) in slides.iter().enumerate() {
+            let n = index + 1;
+            taken.insert(format!("ppt/slides/slide{n}.xml"));
+            if !slide.notes.is_empty() {
+                taken.insert(format!("ppt/notesslides/notesslide{n}.xml"));
+            }
+        }
         Replaced { template, taken }
     }
 
@@ -1465,12 +1465,28 @@ mod tests {
         assert!(!rels.contains("../slides/"), "{rels}");
     }
 
+    #[test]
+    fn only_the_notes_pages_the_deck_writes_are_taken() {
+        let template = house();
+        let deck = deck("## One\n\nText.\n\n---\n\n## Two\n\nText.\n\n::: notes\nSay this.\n:::\n");
+        let replaced = Replaced::new(&template, &deck.slides);
+        let to = |target: &str| Relationship {
+            id: "rId1".into(),
+            kind: format!("{REL}/notesMaster"),
+            target: target.into(),
+            external: false,
+        };
+        assert!(!replaced.drops(&to("ppt/notesSlides/notesSlide1.xml")));
+        assert!(replaced.drops(&to("ppt/notesSlides/notesSlide2.xml")));
+        assert!(replaced.drops(&to("ppt/slides/slide1.xml")));
+        assert!(!replaced.drops(&to("ppt/slides/slide3.xml")));
+    }
+
     /// A package's parts by name.
     type Parts = HashMap<String, Vec<u8>>;
 
-    /// `source` composed and rendered into `template`: the package's parts, and what the
-    /// template's kept parts had removed.
-    fn rendered(template: &Template, source: &str) -> (Parts, Vec<(String, Removed)>) {
+    /// `source` composed as a deck.
+    fn deck(source: &str) -> Deck {
         let document = compyla_core::parse(source).document;
         let sidecar = compyla_core::Sidecar::default();
         let input = compyla_core::validate::Input {
@@ -1486,6 +1502,13 @@ mod tests {
         ) else {
             unreachable!()
         };
+        deck
+    }
+
+    /// `source` composed and rendered into `template`: the package's parts, and what the
+    /// template's kept parts had removed.
+    fn rendered(template: &Template, source: &str) -> (Parts, Vec<(String, Removed)>) {
+        let deck = deck(source);
         let rendered = render(&deck, template, &Properties::default(), &|_| None).unwrap();
         let parts = compyla_ooxml::read::entries(&rendered.bytes)
             .unwrap()
