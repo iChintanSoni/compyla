@@ -906,10 +906,11 @@ so a word that only just fits or doesn't may wrap differently.
   size (`a:endParaRPr`). The text fits when its lines and spacing add up to at most the box's height
   inside its insets.
 - **In integer EMU,** with sizes in EMU and percentages in thousandths of a percent (OOXML's `90000`
-  for 90%): a pitch is `size × 12 × spacing ÷ 1,000,000`, a percentage of spacing before or after
-  `size × 12 × percentage ÷ 1,000,000`, and the last line's height from its descent `pitch × 3 ÷ 4 +
-  size × 6 × usWinDescent ÷ (5 × (usWinAscent + usWinDescent))`, each part rounded down before they
-  are added.
+  for 90%): a pitch is `size × 12 × spacing ÷ 1,000,000`, or for spacing in points `val × 127`
+  (`val` in hundredths of a point); a percentage of spacing before or after is `size × 12 ×
+  percentage ÷ 1,000,000`; and the last line's height from its descent is `pitch × 3 ÷ 4 + size × 6
+  × usWinDescent ÷ (5 × (usWinAscent + usWinDescent))`. Each part is rounded down before they are
+  added.
 - **Autofit.** A box whose `a:bodyPr` (inherited as its insets are) has `a:normAutofit` shrinks text
   that doesn't fit. PowerPoint does this only once the text is edited, not when it opens a file, so
   the engine does it and writes the result. It tries, in order, these steps of font scale and
@@ -988,9 +989,9 @@ their own except where their content needs it, so they inherit the layout's.
   - Text takes the document's language (`lang`, §2), and otherwise the template's.
   - Code is one paragraph per line, indentation kept, in a monospace face (Consolas), as inline code
     is. A quote's content is italic.
-- **Tables** are a table frame in the slot's geometry: the header first, the template's default
-  table style, and each column's alignment. Tables and images take a placeholder only where one
-  can hold them (types `obj`, `tbl` and `pic`); elsewhere they are shapes of their own in its
+- **Tables** are a table frame in the slot's geometry: the header first, rows banded, the template's
+  default table style, and each column's alignment. Tables and images take a placeholder only where
+  one can hold them (types `obj`, `tbl` and `pic`); elsewhere they are shapes of their own in its
   geometry.
 - **Images** are a picture in the slot. With `fit=contain`, the default, the whole image is scaled
   to fit and centered; with `fit=cover` it fills the slot, cropped evenly from both sides (always
