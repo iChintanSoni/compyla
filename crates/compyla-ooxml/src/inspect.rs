@@ -303,7 +303,21 @@ fn listed_parts(
 }
 
 /// The slide masters, in `sldMasterIdLst` order.
-fn masters(template: &Template) -> Result<Vec<String>, Invalid> {
+/// The slide layouts a master lists.
+pub(crate) fn layouts_of(
+    template: &Template,
+    master: &str,
+    master_xml: &Element,
+) -> Result<Vec<String>, Invalid> {
+    listed_parts(
+        template,
+        master,
+        master_xml.child(MAIN_P, "sldLayoutIdLst"),
+        "sldLayoutId",
+    )
+}
+
+pub(crate) fn masters(template: &Template) -> Result<Vec<String>, Invalid> {
     if template.kind != Kind::Pptx {
         return Ok(Vec::new());
     }

@@ -113,6 +113,24 @@ fn options_for(fixture: &Path, case: &Value) -> compyla::Options {
     }
 }
 
+/// The font resolver a case describes: its `fonts`, each family's styles mapped to a file in the
+/// fixture (spec/conformance/README.md). Families compare without ASCII case (§3); a case without
+/// `fonts` resolves none.
+fn fonts_for(fixture: &Path, case: &Value) -> impl Fn(&str, compyla::FontStyle) -> Option<Vec<u8>> {
+    let dir = fixture.to_path_buf();
+    let fonts = case["fonts"].as_object().cloned().unwrap_or_default();
+    move |family: &str, style: compyla::FontStyle| {
+        let name = match style {
+            compyla::FontStyle::Regular => "regular",
+            compyla::FontStyle::Bold => "bold",
+            compyla::FontStyle::Italic => "italic",
+            compyla::FontStyle::BoldItalic => "boldItalic",
+        };
+        let (_, styles) = fonts.iter().find(|(f, _)| f.eq_ignore_ascii_case(family))?;
+        fs::read(dir.join(styles[name].as_str()?)).ok()
+    }
+}
+
 /// A template resolver for `meta.template`: the fixture's own files, by name.
 fn templates_for(fixture: &Path) -> impl Fn(&str) -> Option<Vec<u8>> {
     let dir = fixture.to_path_buf();
@@ -138,9 +156,11 @@ fn lint_suite() {
         let expected = read_json(&fixture.join("expected.json"));
         let options = options_for(&fixture, &case);
         let (assets, templates) = (assets_for(&fixture, &case), templates_for(&fixture));
+        let fonts = fonts_for(&fixture, &case);
         let resolvers = compyla::Resolvers {
             assets: &assets,
             templates: Some(&templates),
+            fonts: Some(&fonts),
         };
         let diagnostics = compyla::lint(&input, &options, resolvers).unwrap();
         if !diagnostics_match(&diagnostics, &expected["diagnostics"]) {
@@ -206,9 +226,11 @@ fn lint_ir_agrees_with_lint() {
         let input = fs::read_to_string(fixture.join("input.md")).unwrap();
         let options = options_for(&fixture, &case);
         let (assets, templates) = (assets_for(&fixture, &case), templates_for(&fixture));
+        let fonts = fonts_for(&fixture, &case);
         let resolvers = compyla::Resolvers {
             assets: &assets,
             templates: Some(&templates),
+            fonts: Some(&fonts),
         };
         let mut ir = serde_json::to_value(compyla::parse(&input).ir).unwrap();
         strip_positions(&mut ir);
@@ -314,9 +336,11 @@ fn render_suite() {
         let expected = read_json(&fixture.join("expected.json"));
         let options = options_for(&fixture, &case);
         let (assets, templates) = (assets_for(&fixture, &case), templates_for(&fixture));
+        let fonts = fonts_for(&fixture, &case);
         let resolvers = compyla::Resolvers {
             assets: &assets,
             templates: Some(&templates),
+            fonts: Some(&fonts),
         };
         let first = compyla::convert(&input, &options, resolvers).unwrap();
         let second = compyla::convert(&input, &options, resolvers).unwrap();

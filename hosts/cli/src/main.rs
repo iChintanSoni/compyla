@@ -3,6 +3,8 @@
 //!
 //! Exit codes (markdown-spec.md §10.8): 0 success, 1 error diagnostics, 2 an operation or usage error.
 
+mod fonts;
+
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -12,6 +14,7 @@ const USAGE: &str = "\
 usage: compyla parse <file.md>
        compyla lint <file> [--ir] [--format docx|pdf|pptx|xlsx] [--strict] [--json]
                     [--template <file>] [--layout-alias <name>=<layout>]...
+                    [--lockfile <compyla.lock>]
        compyla convert <file> [lint's options] [-o <output>]
        compyla template inspect <template>
 
@@ -26,6 +29,8 @@ usage: compyla parse <file.md>
   --template the template package to use; otherwise the frontmatter's `template`, resolved
              against the input file's directory, else the house template
   --layout-alias  bind a pptx layout name to a layout of the template (repeatable)
+  --lockfile the font lockfile; otherwise the nearest compyla.lock at or above the input file's
+             directory. Fonts come from the cache it pins, never the network.
   -o         where convert writes its output";
 
 fn main() -> ExitCode {
@@ -93,12 +98,13 @@ struct Args {
     json: bool,
     ir: bool,
     output: Option<PathBuf>,
+    lockfile: Option<PathBuf>,
 }
 
 fn arguments(args: &[String], output_allowed: bool) -> Result<Args, String> {
     let mut file: Option<PathBuf> = None;
     let mut options = Options::default();
-    let (mut json, mut ir, mut output) = (false, false, None);
+    let (mut json, mut ir, mut output, mut lockfile) = (false, false, None, None);
     let mut args = args.iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -124,6 +130,9 @@ fn arguments(args: &[String], output_allowed: bool) -> Result<Args, String> {
                     .layout_aliases
                     .push((name.trim().to_string(), layout.trim().to_string()));
             }
+            "--lockfile" => {
+                lockfile = Some(PathBuf::from(args.next().ok_or("--lockfile needs a path")?));
+            }
             "-o" | "--output" if output_allowed => {
                 output = Some(PathBuf::from(args.next().ok_or("-o needs a path")?));
             }
@@ -140,7 +149,17 @@ fn arguments(args: &[String], output_allowed: bool) -> Result<Args, String> {
         json,
         ir,
         output,
+        lockfile,
     })
+}
+
+/// The font lockfile and cache the CLI's font resolver reads (§10.3), if there is a lockfile.
+fn font_pins(args: &Args, base: &Path) -> Result<Option<(fonts::Lock, PathBuf)>, String> {
+    let Some(path) = fonts::lockfile(args.lockfile.as_deref(), base) else {
+        return Ok(None);
+    };
+    let lock = fonts::read(&path)?;
+    Ok(fonts::cache().map(|cache| (lock, cache)))
 }
 
 fn lint(args: &[String]) -> Result<ExitCode, String> {
@@ -153,9 +172,15 @@ fn lint(args: &[String]) -> Result<ExitCode, String> {
         .unwrap_or_default();
     let assets = |src: &str| resolve_asset(&base, src);
     let templates = |reference: &str| read_template(&base.join(reference)).ok();
+    let pins = font_pins(&args, &base)?;
+    let fonts = |family: &str, style| {
+        pins.as_ref()
+            .and_then(|(lock, cache)| lock.resolve(cache, family, style))
+    };
     let resolvers = compyla::Resolvers {
         assets: &assets,
         templates: Some(&templates),
+        fonts: Some(&fonts),
     };
     let result = if args.ir {
         compyla::lint_ir(&source, &args.options, resolvers)
@@ -177,9 +202,15 @@ fn convert(args: &[String]) -> Result<ExitCode, String> {
         .unwrap_or_default();
     let assets = |src: &str| resolve_asset(&base, src);
     let templates = |reference: &str| read_template(&base.join(reference)).ok();
+    let pins = font_pins(&args, &base)?;
+    let fonts = |family: &str, style| {
+        pins.as_ref()
+            .and_then(|(lock, cache)| lock.resolve(cache, family, style))
+    };
     let resolvers = compyla::Resolvers {
         assets: &assets,
         templates: Some(&templates),
+        fonts: Some(&fonts),
     };
     let result = if args.ir {
         compyla::convert_ir(&source, &args.options, resolvers)

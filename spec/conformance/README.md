@@ -24,7 +24,7 @@ Each fixture directory holds:
 | `input.md` | The source document |
 | `case.json` | What the fixture covers and how to run it (`case.schema.json`) |
 | `expected.json` | The expected output, by suite (below) |
-| other files | Asset bytes for sources listed in `assets` (e.g. `logo.png`), and a render fixture's `template` |
+| other files | Asset bytes for sources listed in `assets` (e.g. `logo.png`), a fixture's `template`, and the font files its `fonts` name |
 
 Numbering: `0xx` fixtures agree with the TypeScript prototype; `1xx` fixtures encode a correction made in
 spec 0.2 (markdown-spec.md §0.2). The `oracle` field in `case.json` records which applies.
@@ -60,10 +60,12 @@ a path is `none`: the oracle can't see that difference.
   *exists*, without bytes (markdown-spec.md §10.3). `template`, when the case gives one, is that
   file's bytes from the fixture directory. The template resolver resolves a `meta.template` reference
   that is a plain file name (containing no `/` or `\`, and not `.` or `..`) to that file in the
-  fixture directory, and any other as *not found*.
+  fixture directory, and any other as *not found*. The font resolver resolves a family and style
+  that `fonts` maps, families compared without ASCII case, to that file's bytes, and any other as
+  *not found*; a case without `fonts` resolves none (markdown-spec.md §3, §10.3).
 - **compose:** run the implementation's compose stage for `format` and project it to the compose summary.
-- **render:** call `convert(input.md, { format, strict, template })`, with the asset and template
-  resolvers and `template` as for lint. Do it **twice**: the two outputs must be
+- **render:** call `convert(input.md, { format, strict, template })`, with the asset, template and
+  font resolvers and `template` as for lint. Do it **twice**: the two outputs must be
   byte-identical (markdown-spec.md §13). Then project the output (below) and compare.
 
 ## Render suite

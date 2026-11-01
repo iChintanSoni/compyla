@@ -1,6 +1,14 @@
 {
   "diagnostics": [
     {
+      "code": "font_unresolved",
+      "severity": "warning"
+    },
+    {
+      "code": "font_unresolved",
+      "severity": "warning"
+    },
+    {
       "code": "layout_not_in_template",
       "severity": "warning"
     }

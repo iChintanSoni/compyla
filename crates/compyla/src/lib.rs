@@ -52,17 +52,26 @@ pub struct Resolvers<'a> {
     pub assets: &'a dyn Fn(&str) -> Asset,
     /// `meta.template` references; `None` when the host has no template resolver.
     pub templates: Option<&'a TemplateResolver<'a>>,
+    /// Font families; `None` when the host has none, and then none resolves through it (§3).
+    pub fonts: Option<&'a FontResolver<'a>>,
 }
 
 /// A template resolver (§10.3): a `meta.template` reference's package bytes, or `None` when not
 /// found.
 pub type TemplateResolver<'a> = dyn Fn(&str) -> Option<Vec<u8>> + 'a;
 
+/// A font resolver (§10.3): the bytes of a font, or a collection holding it, for a family as the
+/// template names it and a style; `None` when not found.
+pub type FontResolver<'a> = dyn Fn(&str, FontStyle) -> Option<Vec<u8>> + 'a;
+
+pub use compyla_fonts::Style as FontStyle;
+
 impl<'a, F: Fn(&str) -> Asset> From<&'a F> for Resolvers<'a> {
     fn from(assets: &'a F) -> Self {
         Resolvers {
             assets,
             templates: None,
+            fonts: None,
         }
     }
 }
@@ -180,6 +189,10 @@ pub fn load_ir(json: &str) -> Result<(ir::Document, Vec<Diagnostic>), OperationE
 /// The largest template package accepted (markdown-spec.md §12.1). Hosts need read no more than one
 /// byte past it.
 pub const TEMPLATE_SIZE_LIMIT: usize = compyla_ooxml::read::MAX_COMPRESSED;
+
+/// The largest font file read (markdown-spec.md §12.1). Font resolvers need read no more than one
+/// byte past it.
+pub const FONT_SIZE_LIMIT: usize = compyla_fonts::MAX_FONT_BYTES;
 
 /// `inspect_template` (markdown-spec.md §10.5): the template report
 /// (`spec/template-report.schema.json`) for a template package's bytes. An invalid template is
@@ -301,6 +314,16 @@ fn check(
     let (locator, sidecar) = compyla_core::locate::renumber(&mut document, &sidecar);
     let mut out = Sink::located(locator);
     let template = template(options, &document, &sidecar, resolvers, format, &mut out)?;
+    // The house template never needs font resolution (§3); xlsx takes no fonts' measure.
+    if let Some(template) = &template
+        && matches!(format, Format::Docx | Format::Pdf | Format::Pptx)
+        && let Err(why) = unresolved_fonts(template, format, resolvers.fonts, &mut out)
+    {
+        out.push(Diagnostic::new(
+            "template_invalid",
+            format!("The template {}.", reason(&why.0)),
+        ));
+    }
     // `layoutAliases` binds pptx layouts (§8.5); other formats ignore it. A template that was asked
     // for but can't be used has already been reported, and blocks the output.
     let requested = options.template.is_some() || document.meta.contains_key("template");
@@ -455,6 +478,55 @@ fn template(
         }
     }
     Ok(Some(template))
+}
+
+/// `font_unresolved`, once, for each family §3 checks that the font chain doesn't resolve: the font
+/// resolver, then a font a docx template embeds, then a bundled stand-in. In pptx output, a family
+/// the template embeds isn't reported: the output keeps the embedding, and PowerPoint shows it.
+fn unresolved_fonts(
+    template: &compyla_ooxml::template::Template,
+    format: Format,
+    resolver: Option<&FontResolver<'_>>,
+    out: &mut Sink,
+) -> Result<(), compyla_ooxml::template::Invalid> {
+    use compyla_fonts::{Face, STAND_INS, Style};
+    let embedded = match format {
+        Format::Pptx => compyla_ooxml::fonts::pptx_embedded(template)?,
+        _ => Vec::new(),
+    };
+    for family in compyla_ooxml::fonts::families(template)? {
+        let same = |other: &String| other.trim().eq_ignore_ascii_case(&family);
+        if embedded.iter().any(same) || STAND_INS.iter().any(|s| s.eq_ignore_ascii_case(&family)) {
+            continue;
+        }
+        let mut refused = None;
+        let mut readable = |bytes: Vec<u8>| match Face::load(bytes, &family, Style::Regular) {
+            Ok(_) => true,
+            Err(why) => {
+                refused = Some(why);
+                false
+            }
+        };
+        let resolved = resolver
+            .and_then(|resolve| resolve(&family, Style::Regular))
+            .is_some_and(&mut readable)
+            || compyla_ooxml::fonts::docx_embedded(template, &family)?.is_some_and(&mut readable);
+        if resolved {
+            continue;
+        }
+        let why = refused.map_or_else(String::new, |why| format!(", as the font found {why}"));
+        out.push(
+            Diagnostic::new(
+                "font_unresolved",
+                format!(
+                    "The template's font `{}` can't be resolved{why}: text in it is measured with Carlito, and viewers substitute a font.",
+                    shown(&family)
+                ),
+            )
+            .hint("Pin a font for it in compyla.lock (`compyla fonts sync`), or embed it in the template."),
+        );
+    }
+    Ok(())
 }
 
 /// A pptx template's layouts as the core binds them (§8.5), with `layoutAliases` resolved to them.
@@ -615,8 +687,8 @@ fn content_removed(part: &str, what: &compyla_ooxml::sanitize::Removed) -> Diagn
         .hint("Remove it from the template, and this warning goes away.")
 }
 
-/// A value from a template (a target, a type, an action, a part name), as a message shows it.
-#[cfg(feature = "pptx")]
+/// A value from a template (a family, a target, a type, an action, a part name), as a message shows
+/// it.
 fn shown(text: &str) -> String {
     compyla_core::diagnostic::quoted(text, 100)
 }

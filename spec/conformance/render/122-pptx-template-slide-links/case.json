@@ -1,9 +1,10 @@
 {
-  "description": "A supplied template with sample slides of its own, which kept parts still relate to (§8.8, §10.4): the master's button that jumps to the first sample loses its link and keeps its shape, its picture of the first sample, through an image relationship to a part with no slide content type but a name the deck's first slide takes, loses its link, and its relationships to the second, which nothing refers to, and to the second's notes page, whose name the notes of the deck's second slide take, go; a layout's text link that jumps to the third, with a sound, loses its link and its sound, and its picture of the third, typed as a slide in another case and with a parameter, loses its link, so the third sample, which only those still reached, and the sound aren't in the package; the layout's jump to the next slide names no slide and stays. The new slides and notes page take the samples' part names without anything relating to them, and the notes master is kept. The master's external relationship of the slide type is external content, and the one `template_content_removed`.",
+  "description": "A supplied template with sample slides of its own, which kept parts still relate to (§8.8, §10.4): the master's button that jumps to the first sample loses its link and keeps its shape, its picture of the first sample, through an image relationship to a part with no slide content type but a name the deck's first slide takes, loses its link, and its relationships to the second, which nothing refers to, and to the second's notes page, whose name the notes of the deck's second slide take, go; a layout's text link that jumps to the third, with a sound, loses its link and its sound, and its picture of the third, typed as a slide in another case and with a parameter, loses its link, so the third sample, which only those still reached, and the sound aren't in the package; the layout's jump to the next slide names no slide and stays. The new slides and notes page take the samples' part names without anything relating to them, and the notes master is kept. The master's external relationship of the slide type is external content, and the one `template_content_removed`. With no font resolver, the template's fonts Brand Display and Source Serif 4 are `font_unresolved`; Brand Sans, which it embeds, isn't reported in pptx output (§3).",
   "spec": [
     "§8.8",
     "§10.4",
-    "C60"
+    "C60",
+    "C62"
   ],
   "oracle": "none",
   "format": "pptx"

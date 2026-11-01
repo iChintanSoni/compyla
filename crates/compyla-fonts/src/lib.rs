@@ -19,5 +19,9 @@ pub use face::{
 };
 pub use measure::{Features, Font, Fonts, Ligatures, Run, measure};
 
+/// The families the engine bundles a stand-in for (§3): Carlito for Calibri and Calibri Light, and
+/// Consolas's fixed advance. They always resolve.
+pub const STAND_INS: [&str; 3] = ["Calibri", "Calibri Light", "Consolas"];
+
 /// The Unicode version measurement uses.
 pub const UNICODE_VERSION: (u8, u8, u8) = tables::UNICODE_VERSION;

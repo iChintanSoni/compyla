@@ -382,12 +382,81 @@ def template_slides(entries):
     return list(parts.items())
 
 
-# ---------------------------------------------------------------- docx
-
 WML = "application/vnd.openxmlformats-officedocument.wordprocessingml"
 
 
-def docx(path, styles=True, theme_part=True, document_body=None, main_type="template", extra=()):
+# ---------------------------------------------------------------- fonts
+
+def tiny_font():
+    """A minimal TrueType font (head, hhea, maxp, hmtx, and a cmap mapping `a`), for fixtures that
+    need a font the engine reads; its names don't matter, as a single font is used whatever they
+    say (markdown-spec.md §3)."""
+    import struct
+    head = struct.pack(">IIIIHH16x4hHHhhh", 0x00010000, 0, 0, 0x5F0F3CF5, 0, 1000, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+    hhea = struct.pack(">I15hH", 0x00010000, *([0] * 15), 2)
+    maxp = struct.pack(">IH", 0x00005000, 2)
+    hmtx = struct.pack(">4H", 500, 0, 600, 0)
+    # cmap: one Unicode BMP record; format 4 with `a` → glyph 1 and the closing 0xFFFF segment.
+    a = ord("a")
+    sub = struct.pack(">16H", 4, 32, 0, 4, 0, 0, 0, a, 0xFFFF, 0, a, 0xFFFF, (1 - a) & 0xFFFF, 1, 0, 0)
+    cmap = struct.pack(">HHHHI", 0, 1, 0, 3, 12) + sub
+    tables = sorted([(b"cmap", cmap), (b"head", head), (b"hhea", hhea), (b"hmtx", hmtx), (b"maxp", maxp)])
+    out = struct.pack(">IHHHH", 0x00010000, len(tables), 0, 0, 0)
+    body, offset = b"", 12 + 16 * len(tables)
+    for tag, data in tables:
+        out += tag + struct.pack(">III", 0, offset + len(body), len(data))
+        body += data + b"\0" * (-len(data) % 4)
+    return out + body
+
+
+def obfuscated(font, guid):
+    """`font` obfuscated as Word embeds it (ECMA-376 Part 1 §17.8.1): its first 32 bytes XORed with
+    the GUID's sixteen bytes, as written, reversed."""
+    key = bytes.fromhex(guid.strip("{}").replace("-", ""))[::-1]
+    head = bytes(b ^ key[i % 16] for i, b in enumerate(font[:32]))
+    return head + font[32:]
+
+
+def pptx_fonts(entries):
+    """A layout naming more fonts (§3): Calibri, which has a stand-in; Broken Font, which the case
+    pins to bytes that aren't a font; and Brand Gothic, as an East Asian typeface."""
+    parts = dict(entries)
+    layout = "ppt/slideLayouts/slideLayout2.xml"
+    shapes = "".join(
+        f'<p:sp><p:nvSpPr><p:cNvPr id="{20 + i}" name="{name}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr/>'
+        f'<p:txBody><a:bodyPr/><a:p><a:r><a:rPr lang="en-US">{font}</a:rPr><a:t>{name}</a:t></a:r></a:p></p:txBody></p:sp>'
+        for i, (name, font) in enumerate([("Stand-in", '<a:latin typeface="Calibri"/>'),
+                                           ("Broken", '<a:latin typeface="Broken Font"/>'),
+                                           ("Gothic", '<a:ea typeface="Brand Gothic"/>')]))
+    parts[layout] = parts[layout].replace("</p:spTree></p:cSld>", shapes + "</p:spTree></p:cSld>", 1)
+    return list(parts.items())
+
+
+def docx_fonts(entries):
+    """Embedded fonts (§3): Brand Serif obfuscated as Word embeds it, Brand Sans plain; and the
+    document defaults naming Brand Body, which nothing resolves."""
+    parts = dict(entries)
+    guid = "{1F2E3D4C-5B6A-4789-9A0B-C1D2E3F40516}"
+    parts["word/fontTable.xml"] = (
+        f'{DECL}<w:fonts xmlns:w="{W}" xmlns:r="{OFFICE}">'
+        f'<w:font w:name="Brand Serif"><w:embedRegular r:id="rId1" w:fontKey="{guid}"/></w:font>'
+        '<w:font w:name="Brand Sans"><w:embedRegular r:id="rId2"/></w:font></w:fonts>')
+    parts["word/_rels/fontTable.xml.rels"] = rels(("rId1", "font", "fonts/font1.odttf", False),
+                                                  ("rId2", "font", "fonts/font2.ttf", False))
+    parts["word/fonts/font1.odttf"] = obfuscated(tiny_font(), guid)
+    parts["word/fonts/font2.ttf"] = tiny_font()
+    parts["word/styles.xml"] = parts["word/styles.xml"].replace(
+        '<w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi"/>',
+        '<w:rFonts w:ascii="Brand Body" w:hAnsi="Brand Body" w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi"/>', 1)
+    parts["[Content_Types].xml"] = parts["[Content_Types].xml"].replace("</Types>", (
+        '<Default Extension="odttf" ContentType="application/vnd.openxmlformats-officedocument.obfuscatedFont"/>'
+        '<Default Extension="ttf" ContentType="application/x-font-ttf"/></Types>'))
+    return list(parts.items())
+
+
+# ---------------------------------------------------------------- docx
+
+def docx(path, styles=True, theme_part=True, document_body=None, main_type="template", extra=(), patch=None):
     style_xml = (f'{DECL}<w:styles xmlns:w="{W}">'
                  '<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi"/></w:rPr></w:rPrDefault></w:docDefaults>'
                  '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>'
@@ -413,9 +482,10 @@ def docx(path, styles=True, theme_part=True, document_body=None, main_type="temp
         overrides.append(("word/theme/theme1.xml", "application/vnd.openxmlformats-officedocument.theme+xml"))
         doc_rels.append(("rId3", "theme", "theme/theme1.xml", False))
         entries.append(("word/theme/theme1.xml", theme("Brand Serif", "Brand Sans")))
-    write(path, [("[Content_Types].xml", content_types(overrides + [(n, t) for n, t, _ in extra])),
-                 ("_rels/.rels", package_rels("word/document.xml")),
-                 ("word/_rels/document.xml.rels", rels(*doc_rels)), *entries, *[(n, d) for n, _, d in extra]])
+    entries = [("[Content_Types].xml", content_types(overrides + [(n, t) for n, t, _ in extra])),
+               ("_rels/.rels", package_rels("word/document.xml")),
+               ("word/_rels/document.xml.rels", rels(*doc_rels)), *entries, *[(n, d) for n, _, d in extra]]
+    write(path, patch(entries) if patch else entries)
 
 
 # ---------------------------------------------------------------- xlsx
@@ -511,6 +581,15 @@ def main():
     # A template without a notes master, for a deck with notes (§8.8).
     pptx(ROOT / "render/123-pptx-notes-without-notes-master/brand.potx", main_type="template")
     pptx(ROOT / "render/124-pptx-notes-master-4x3/brand.potx", main_type="template", patch=four_three_notes)
+    # Fonts (§3, C62): a pptx layout naming more families, one pinned to bytes that aren't a font;
+    # a docx embedding its fonts, one obfuscated; and a .potx made into a pdf, which doesn't keep
+    # the embedding.
+    fonts = ROOT / "lint/144-pptx-fonts-unresolved"
+    pptx(fonts / "brand.potx", main_type="template", patch=pptx_fonts)
+    (fonts / "display.ttf").write_bytes(tiny_font())
+    (fonts / "broken.ttf").write_bytes(b"This isn't a font.\n")
+    docx(ROOT / "lint/145-docx-embedded-fonts/brand.dotx", patch=docx_fonts)
+    pptx(ROOT / "lint/146-pdf-potx-fonts/brand.potx", main_type="template")
     # A notes master related by a type in another case (§8.8, §10.4).
     pptx(ROOT / "render/125-pptx-notes-master-type-case/brand.potx", main_type="template", patch=odd_notes_master)
 

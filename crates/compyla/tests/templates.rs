@@ -16,8 +16,22 @@ fn pptx(template: Option<&[u8]>, aliases: &[(&str, &str)]) -> compyla::Options {
     }
 }
 
+/// Carlito for every family, so a template's fonts resolve: they're lint/139's and lint/144's
+/// subject, not these tests' (§3).
+fn any_font(_family: &str, _style: compyla::FontStyle) -> Option<Vec<u8>> {
+    Some(include_bytes!("../../compyla-fonts/fonts/Carlito-Regular.ttf").to_vec())
+}
+
+fn resolvers() -> compyla::Resolvers<'static> {
+    compyla::Resolvers {
+        assets: &compyla::no_assets,
+        templates: None,
+        fonts: Some(&any_font),
+    }
+}
+
 fn codes(source: &str, options: &compyla::Options) -> Vec<String> {
-    compyla::lint(source, options, &compyla::no_assets)
+    compyla::lint(source, options, resolvers())
         .unwrap()
         .into_iter()
         .map(|d| d.code)
@@ -214,7 +228,7 @@ fn active_with(name: &str, edit: impl Fn(&str) -> String) -> Vec<u8> {
 }
 
 fn converted(source: &str, options: &compyla::Options) -> compyla::ConvertResult {
-    compyla::convert(source, options, &compyla::no_assets).unwrap()
+    compyla::convert(source, options, resolvers()).unwrap()
 }
 
 #[test]

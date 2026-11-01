@@ -1,0 +1,10 @@
+{
+  "description": "A pdf made with a pptx template doesn't keep the template's embedded fonts, so Brand Sans, which it embeds, is reported like Brand Display and Source Serif 4: three `font_unresolved` (§3).",
+  "spec": [
+    "§3",
+    "C62"
+  ],
+  "oracle": "none",
+  "format": "pdf",
+  "template": "brand.potx"
+}

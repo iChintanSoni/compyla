@@ -248,10 +248,134 @@ fn a_template_full_of_active_content_converts() {
     assert!(result.bytes.is_some());
     let codes: Vec<&str> = result.diagnostics.iter().map(|d| d.code.as_str()).collect();
     assert_eq!(codes.len(), 1_001);
+    // The template's two unresolved fonts sort first (§11.2), then removals fill the cap.
+    assert_eq!(codes[..2], ["font_unresolved"; 2]);
     assert!(
-        codes[..1_000]
+        codes[2..1_000]
             .iter()
             .all(|&c| c == "template_content_removed")
     );
     assert_eq!(codes[1_000], "diagnostics_truncated");
+}
+
+/// A template's entries with `edit` applied to the named parts.
+fn edited(package: &[u8], edit: impl Fn(&str, Vec<u8>) -> Vec<u8>) -> Vec<u8> {
+    let entries: Vec<(String, Vec<u8>)> = compyla_ooxml::read::entries(package)
+        .unwrap()
+        .into_iter()
+        .map(|(name, data)| {
+            let data = edit(&name, data);
+            (name, data)
+        })
+        .collect();
+    compyla_ooxml::zip::write(&entries)
+}
+
+fn font_unresolved(diagnostics: &[compyla::Diagnostic]) -> usize {
+    diagnostics
+        .iter()
+        .filter(|d| d.code == "font_unresolved")
+        .count()
+}
+
+#[test]
+fn a_hostile_embedded_font_is_unresolved_not_a_panic() {
+    // lint/145's template, whose obfuscated Brand Serif now de-obfuscates to a collection claiming
+    // billions of faces (§3, §12.1).
+    const BRAND: &[u8] =
+        include_bytes!("../../../spec/conformance/lint/145-docx-embedded-fonts/brand.dotx");
+    let key: Vec<u8> = (0..16)
+        .map(|i| {
+            let hex = "1F2E3D4C5B6A47899A0BC1D2E3F40516";
+            u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).unwrap()
+        })
+        .rev()
+        .collect();
+    let mut forged = b"ttcf\x00\x01\x00\x00\xFF\xFF\xFF\xFF".to_vec();
+    forged.extend(std::iter::repeat_n(0xFFu8, 1 << 16));
+    for (i, byte) in forged.iter_mut().take(32).enumerate() {
+        *byte ^= key[i % 16];
+    }
+    let template = edited(BRAND, |name, data| {
+        if name == "word/fonts/font1.odttf" {
+            forged.clone()
+        } else {
+            data
+        }
+    });
+    let options = compyla::Options {
+        format: Some(compyla::Format::Docx),
+        template: Some(template),
+        ..Default::default()
+    };
+    let start = Instant::now();
+    let diagnostics = compyla::lint("# A\n", &options, &compyla::no_assets).unwrap();
+    assert!(start.elapsed() < BOUND, "{:?}", start.elapsed());
+    // Brand Serif, refused, and Brand Body.
+    assert_eq!(font_unresolved(&diagnostics), 2, "{diagnostics:?}");
+}
+
+#[test]
+fn a_font_resolver_returning_hostile_bytes_is_bounded() {
+    const BRAND: &[u8] =
+        include_bytes!("../../../spec/conformance/lint/139-pptx-template-binding/brand.potx");
+    let huge = vec![0u8; compyla::FONT_SIZE_LIMIT + 1];
+    let fonts = |family: &str, _style| match family {
+        "Brand Display" => Some(huge.clone()),
+        _ => Some(b"\x00\x01\x00\x00garbage".to_vec()),
+    };
+    let resolvers = compyla::Resolvers {
+        assets: &compyla::no_assets,
+        templates: None,
+        fonts: Some(&fonts),
+    };
+    let options = compyla::Options {
+        format: Some(compyla::Format::Pptx),
+        template: Some(BRAND.to_vec()),
+        ..Default::default()
+    };
+    let start = Instant::now();
+    let diagnostics = compyla::lint("# A\n", &options, resolvers).unwrap();
+    assert!(start.elapsed() < BOUND, "{:?}", start.elapsed());
+    assert_eq!(font_unresolved(&diagnostics), 2, "{diagnostics:?}");
+}
+
+#[test]
+fn a_template_naming_thousands_of_families_is_linear_and_capped() {
+    // A master naming 50,000 distinct typefaces: each is checked once, in linear time, and the
+    // diagnostics stop at the cap (§11.2).
+    const BRAND: &[u8] =
+        include_bytes!("../../../spec/conformance/lint/139-pptx-template-binding/brand.potx");
+    let runs: String = (0..50_000)
+        .map(|i| {
+            format!(r#"<a:r><a:rPr><a:latin typeface="Family {i}"/></a:rPr><a:t>x</a:t></a:r>"#)
+        })
+        .collect();
+    let shape = format!(
+        r#"<p:sp><p:nvSpPr><p:cNvPr id="90" name="Many"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:p>{runs}</a:p></p:txBody></p:sp>"#
+    );
+    let template = edited(BRAND, |name, data| {
+        if name == "ppt/slideMasters/slideMaster1.xml" {
+            String::from_utf8(data)
+                .unwrap()
+                .replacen(
+                    "</p:spTree></p:cSld>",
+                    &format!("{shape}</p:spTree></p:cSld>"),
+                    1,
+                )
+                .into_bytes()
+        } else {
+            data
+        }
+    });
+    let options = compyla::Options {
+        format: Some(compyla::Format::Pptx),
+        template: Some(template),
+        ..Default::default()
+    };
+    let start = Instant::now();
+    let diagnostics = compyla::lint("# A\n", &options, &compyla::no_assets).unwrap();
+    assert!(start.elapsed() < BOUND, "{:?}", start.elapsed());
+    assert_eq!(font_unresolved(&diagnostics), compyla_core::diagnostic::CAP);
+    assert_eq!(diagnostics.last().unwrap().code, "diagnostics_truncated");
 }

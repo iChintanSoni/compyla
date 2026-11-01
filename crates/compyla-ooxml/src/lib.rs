@@ -3,6 +3,7 @@
 //! (markdown-spec.md §13).
 
 pub mod dom;
+pub mod fonts;
 pub mod inspect;
 pub mod layouts;
 pub mod package;

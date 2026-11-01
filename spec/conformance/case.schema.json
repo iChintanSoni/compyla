@@ -54,6 +54,29 @@
     "template": {
       "type": "string",
       "description": "Lint and render suites: a template file in the fixture directory, passed as the template option. Inspect suite: the template file to inspect."
+    },
+    "fonts": {
+      "description": "Lint and render suites: the font resolver's fonts (markdown-spec.md \u00a73, \u00a710.3), each family's styles mapped to a font file in the fixture directory. Families compare without ASCII case. Omitted: the resolver resolves none.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "minProperties": 1,
+        "additionalProperties": false,
+        "properties": {
+          "regular": {
+            "type": "string"
+          },
+          "bold": {
+            "type": "string"
+          },
+          "italic": {
+            "type": "string"
+          },
+          "boldItalic": {
+            "type": "string"
+          }
+        }
+      }
     }
   }
 }

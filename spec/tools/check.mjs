@@ -63,7 +63,7 @@ for (const match of specText.matchAll(/^\| (C\d+) \|.*\| ([^|]*) \|$/gm)) {
 
 // ---------- fixtures ----------
 
-const CASE_KEYS = new Set(["description", "spec", "oracle", "format", "strict", "assets", "template"]);
+const CASE_KEYS = new Set(["description", "spec", "oracle", "format", "strict", "assets", "template", "fonts"]);
 const STAGES_BY_SUITE = { parse: ["parse", "any"], lint: ["parse", "validate", "any"], render: ["parse", "validate", "render", "any"] };
 const fixtures = [];
 
@@ -92,6 +92,11 @@ for (const suite of ["parse", "lint", "compose", "render", "inspect"]) {
     if (["lint", "compose", "render"].includes(suite) && !FORMATS.includes(kase.format)) problem(where, "lint, compose and render cases need a format");
     if (suite === "inspect" && !kase.template) problem(where, "inspect cases name their template");
     if (kase.template && !existsSync(join(fixture, kase.template))) problem(where, `template ${kase.template} is missing`);
+    for (const [family, styles] of Object.entries(kase.fonts ?? {})) {
+      for (const file of Object.values(styles)) {
+        if (!existsSync(join(fixture, file))) problem(where, `font ${file} for ${family} is missing`);
+      }
+    }
 
     const correction = name.startsWith("1");
     if (correction && kase.oracle === "prototype") problem(where, "1xx fixtures encode corrections; oracle can't be prototype");

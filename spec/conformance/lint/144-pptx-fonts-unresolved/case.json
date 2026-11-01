@@ -1,0 +1,19 @@
+{
+  "description": "The families a pptx template's output uses (§3): the theme's fonts and the typefaces its master and layouts name. Brand Display resolves through the font resolver; Brand Sans, which the template embeds, isn't reported in pptx output; Calibri has a bundled stand-in. Source Serif 4 (the master's body style) and the layout's East Asian Brand Gothic resolve nowhere, and Broken Font's pinned bytes aren't a font, so each is `font_unresolved`, once.",
+  "spec": [
+    "§3",
+    "§10.3",
+    "C62"
+  ],
+  "oracle": "none",
+  "format": "pptx",
+  "template": "brand.potx",
+  "fonts": {
+    "Brand Display": {
+      "regular": "display.ttf"
+    },
+    "broken font": {
+      "regular": "broken.ttf"
+    }
+  }
+}
