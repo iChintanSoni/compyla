@@ -1,0 +1,10 @@
+{
+  "description": "A supplied template whose notes master is related by a type spelled `NotesMaster` (§8.8, §10.4): the type compares by its last segment without case, so that notes master is the template's, no house notes master is added, and the deck's notes pages use it.",
+  "spec": [
+    "§8.8",
+    "§10.4",
+    "C61"
+  ],
+  "oracle": "none",
+  "format": "pptx"
+}

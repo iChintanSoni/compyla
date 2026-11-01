@@ -357,7 +357,7 @@ impl HouseNotes {
                 .find(|name| !taken.contains(&name.to_ascii_lowercase()))
                 .expect("a template has finitely many parts")
         };
-        // The slide size, where the presentation gives one; 16:9 otherwise, as PowerPoint reads it.
+        // The slide size, where the presentation gives one; the house frame as it is otherwise.
         let presentation = template.xml(&template.main)?.unwrap_or_default();
         let size = presentation.child(P, "sldSz");
         let emu = |name: &str| {

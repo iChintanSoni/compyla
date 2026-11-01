@@ -1,0 +1,48 @@
+{
+  "diagnostics": [],
+  "output": {
+    "slides": [
+      {
+        "layout": "Title Slide",
+        "title": "Notes",
+        "texts": [],
+        "notes": "Welcome everyone."
+      },
+      {
+        "layout": "Titel und Inhalt",
+        "title": "Plan",
+        "texts": [
+          "Text."
+        ],
+        "notes": "First\nSecond"
+      }
+    ],
+    "package": {
+      "partsPresent": [
+        "ppt/notesMasters/notesMaster1.xml",
+        "ppt/theme/theme2.xml"
+      ],
+      "partsAbsent": [
+        "ppt/notesMasters/notesMaster2\\.xml",
+        "ppt/theme/theme3\\.xml"
+      ],
+      "xpath": [
+        {
+          "part": "ppt/presentation.xml",
+          "expr": "count(//p:notesMasterId)",
+          "equals": 1
+        },
+        {
+          "part": "ppt/presentation.xml",
+          "expr": "string(//p:notesMasterId/@r:id)",
+          "equals": "rId4"
+        },
+        {
+          "part": "ppt/notesSlides/_rels/notesSlide1.xml.rels",
+          "expr": "string(//rel:Relationship[contains(@Type, 'notesMaster')]/@Target)",
+          "equals": "../notesMasters/notesMaster1.xml"
+        }
+      ]
+    }
+  }
+}

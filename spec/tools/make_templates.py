@@ -255,6 +255,50 @@ def active_content(entries):
     return list(parts.items())
 
 
+def add_notes_master(parts):
+    """A notes master, `ppt/notesMasters/notesMaster1.xml`, with its theme `ppt/theme/theme2.xml`; the
+    caller relates it and types it."""
+    parts["ppt/notesMasters/notesMaster1.xml"] = (
+        f'{DECL}<p:notesMaster xmlns:a="{A}" xmlns:r="{OFFICE}" xmlns:p="{P}">'
+        f'<p:cSld>{tree(placeholder(2, "Notes Placeholder 1", "body", 1))}</p:cSld>'
+        '<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>'
+        '</p:notesMaster>')
+    add_rels(parts, "ppt/notesMasters/_rels/notesMaster1.xml.rels", ("rId1", "theme", "../theme/theme2.xml", False))
+    parts["ppt/theme/theme2.xml"] = theme("Brand Display", "Brand Sans")
+
+
+NOTES_MASTER_TYPES = (f'<Override PartName="/ppt/notesMasters/notesMaster1.xml" ContentType="{PML}.notesMaster+xml"/>'
+                      '<Override PartName="/ppt/theme/theme2.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>')
+
+
+def four_three_notes(entries):
+    """A 4:3 template without a notes master (§8.8, C61), whose presentation's relationships already
+    use the ids the output would give its first slide and an added notes master, and with a
+    relationships part for a `theme2.xml` it doesn't have: an external image and one it lacks."""
+    parts = dict(entries)
+    main = "ppt/presentation.xml"
+    parts[main] = (parts[main].replace('<p:sldSz cx="12192000" cy="6858000"/>', '<p:sldSz cx="9144000" cy="6858000" type="screen4x3"/>', 1)
+                   .replace('r:id="rId3"', 'r:id="cmpNotesMaster"', 1))
+    rels_part = "ppt/_rels/presentation.xml.rels"
+    parts[rels_part] = parts[rels_part].replace('Id="rId2"', 'Id="cmpSlide1"', 1).replace('Id="rId3"', 'Id="cmpNotesMaster"', 1)
+    add_rels(parts, "ppt/theme/_rels/theme2.xml.rels",
+             ("rId1", "image", "https://tracker.example/pixel.png", True),
+             ("rId2", "image", "../media/secret.png", False))
+    return list(parts.items())
+
+
+def odd_notes_master(entries):
+    """A template with a notes master related by a type spelled `NotesMaster` (§8.8, §10.4, C61)."""
+    parts = dict(entries)
+    add_notes_master(parts)
+    main = "ppt/presentation.xml"
+    parts[main] = parts[main].replace("</p:sldMasterIdLst>", '</p:sldMasterIdLst><p:notesMasterIdLst><p:notesMasterId r:id="rId4"/></p:notesMasterIdLst>', 1)
+    add_rels(parts, "ppt/_rels/presentation.xml.rels",
+             ("rId4", f"{OFFICE}/NotesMaster", "notesMasters/notesMaster1.xml", False))
+    parts["[Content_Types].xml"] = parts["[Content_Types].xml"].replace("</Types>", NOTES_MASTER_TYPES + "</Types>")
+    return list(parts.items())
+
+
 def template_slides(entries):
     """Sample slides of the template's own, and kept parts that still relate to them (§8.8, §10.4,
     C60): three slides the presentation lists, the second with a picture and the last two in a
@@ -289,13 +333,7 @@ def template_slides(entries):
              ("rId3", "notesSlide", "../notesSlides/notesSlide2.xml", False))
     parts["ppt/media/sample.png"] = b"\x89PNG\r\n\x1a\n sample"
 
-    notes_master = "ppt/notesMasters/notesMaster1.xml"
-    parts[notes_master] = (f'{DECL}<p:notesMaster xmlns:a="{A}" xmlns:r="{OFFICE}" xmlns:p="{P}">'
-                           f'<p:cSld>{tree(placeholder(2, "Notes Placeholder 1", "body", 1))}</p:cSld>'
-                           '<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>'
-                           '</p:notesMaster>')
-    add_rels(parts, "ppt/notesMasters/_rels/notesMaster1.xml.rels", ("rId1", "theme", "../theme/theme2.xml", False))
-    parts["ppt/theme/theme2.xml"] = theme("Brand Display", "Brand Sans")
+    add_notes_master(parts)
     notes = (f'{DECL}<p:notes xmlns:a="{A}" xmlns:r="{OFFICE}" xmlns:p="{P}">'
              f'<p:cSld>{tree(placeholder(2, "Notes Placeholder 1", "body", 1))}</p:cSld>'
              '<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:notes>')
@@ -472,6 +510,9 @@ def main():
          patch=template_slides)
     # A template without a notes master, for a deck with notes (§8.8).
     pptx(ROOT / "render/123-pptx-notes-without-notes-master/brand.potx", main_type="template")
+    pptx(ROOT / "render/124-pptx-notes-master-4x3/brand.potx", main_type="template", patch=four_three_notes)
+    # A notes master related by a type in another case (§8.8, §10.4).
+    pptx(ROOT / "render/125-pptx-notes-master-type-case/brand.potx", main_type="template", patch=odd_notes_master)
 
 
 if __name__ == "__main__":

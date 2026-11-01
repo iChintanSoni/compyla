@@ -1,0 +1,83 @@
+{
+  "diagnostics": [],
+  "output": {
+    "slides": [
+      {
+        "layout": "Title Slide",
+        "title": "Notes",
+        "texts": [],
+        "notes": "Welcome everyone."
+      },
+      {
+        "layout": "Titel und Inhalt",
+        "title": "Plan",
+        "texts": [
+          "Text."
+        ],
+        "notes": "First\nSecond"
+      }
+    ],
+    "package": {
+      "partsPresent": [
+        "ppt/notesMasters/notesMaster1.xml",
+        "ppt/theme/theme2.xml"
+      ],
+      "partsAbsent": [
+        "ppt/theme/_rels/theme2\\.xml\\.rels",
+        "ppt/media/.*"
+      ],
+      "xpath": [
+        {
+          "part": "ppt/notesMasters/notesMaster1.xml",
+          "expr": "string(//p:sp[.//p:ph/@type='sldImg']//a:off/@x)",
+          "equals": "1371600"
+        },
+        {
+          "part": "ppt/notesMasters/notesMaster1.xml",
+          "expr": "string(//p:sp[.//p:ph/@type='sldImg']//a:off/@y)",
+          "equals": "1143000"
+        },
+        {
+          "part": "ppt/notesMasters/notesMaster1.xml",
+          "expr": "string(//p:sp[.//p:ph/@type='sldImg']//a:ext/@cx)",
+          "equals": "4114800"
+        },
+        {
+          "part": "ppt/notesMasters/notesMaster1.xml",
+          "expr": "string(//p:sp[.//p:ph/@type='sldImg']//a:ext/@cy)",
+          "equals": "3086100"
+        },
+        {
+          "part": "ppt/_rels/presentation.xml.rels",
+          "expr": "count(//rel:Relationship[@Id='cmpSlide1'])",
+          "equals": 1
+        },
+        {
+          "part": "ppt/_rels/presentation.xml.rels",
+          "expr": "count(//rel:Relationship[@Id='cmpNotesMaster'])",
+          "equals": 1
+        },
+        {
+          "part": "ppt/_rels/presentation.xml.rels",
+          "expr": "string(//rel:Relationship[@Type='http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesMaster']/@Id)",
+          "equals": "cmpNotesMaster_2"
+        },
+        {
+          "part": "ppt/presentation.xml",
+          "expr": "string(//p:notesMasterId/@r:id)",
+          "equals": "cmpNotesMaster_2"
+        },
+        {
+          "part": "ppt/presentation.xml",
+          "expr": "string(//p:sldId[1]/@r:id)",
+          "equals": "cmpSlide1_2"
+        },
+        {
+          "part": "ppt/presentation.xml",
+          "expr": "string(//p:embeddedFont/p:regular/@r:id)",
+          "equals": "cmpNotesMaster"
+        }
+      ]
+    }
+  }
+}
