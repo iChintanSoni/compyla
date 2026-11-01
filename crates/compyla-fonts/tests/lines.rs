@@ -1,7 +1,7 @@
 //! Line break opportunities and grapheme clusters (markdown-spec.md §3, §8.6): the same in every
 //! host, so these run natively and on wasm32 too.
 
-use compyla_fonts::{graphemes, line_breaks};
+use compyla_fonts::{graphemes, hard_break, line_breaks};
 
 #[test]
 fn lines_break_after_spaces_and_hyphens() {
@@ -35,4 +35,20 @@ fn grapheme_clusters_keep_marks_emoji_and_flags_whole() {
     assert_eq!(graphemes("\u{1F44D}\u{1F3FD}"), [8]);
     assert_eq!(graphemes("\u{1F1EB}\u{1F1F7}"), [8]);
     assert_eq!(graphemes(""), Vec::<usize>::new());
+}
+
+#[test]
+fn hard_breaks_are_uax_14s_mandatory_ones() {
+    let breaks = [
+        '\n', '\u{0B}', '\u{0C}', '\r', '\u{85}', '\u{2028}', '\u{2029}',
+    ];
+    for c in breaks {
+        assert!(hard_break(c), "{c:?}");
+        // The segmenter breaks after each, as it must, among its other opportunities.
+        let text = format!("ab{c}cd");
+        assert!(line_breaks(&text).contains(&(2 + c.len_utf8())), "{c:?}");
+    }
+    for c in [' ', '\t', '\u{A0}', '-', '\u{200B}'] {
+        assert!(!hard_break(c), "{c:?}");
+    }
 }

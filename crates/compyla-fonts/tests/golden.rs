@@ -188,3 +188,16 @@ fn a_measurer_keeps_its_faces_and_measures_alike() {
     backward.reverse();
     assert_eq!(backward, EXPECTED);
 }
+
+#[test]
+fn a_measurer_parses_each_face_once() {
+    let regular = run("Kept", carlito_fonts(Style::Regular), 12);
+    let bold = run("Kept", carlito_fonts(Style::Bold), 12);
+    let mut measurer = Measurer::new();
+    measurer.measure(&regular);
+    assert_eq!(measurer.faces(), 1);
+    // The second face joins the first, which isn't parsed again.
+    measurer.measure(&bold);
+    measurer.measure(&regular);
+    assert_eq!(measurer.faces(), 2);
+}

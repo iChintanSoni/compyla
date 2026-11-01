@@ -394,9 +394,17 @@ fn ascent_and_descent_fall_back_where_a_face_lacks_them() {
         load(sfnt(vec![(*b"OS/2", os2(900, 300))])).ascent_descent(),
         (900, 300)
     );
+    for (ascent, descent) in [(40_000, 33_000), (900, 0x8000), (0xFFFF, 0xFFFF)] {
+        assert_eq!(
+            load(sfnt(vec![(*b"OS/2", os2(ascent, descent))])).ascent_descent(),
+            (u32::from(ascent), u32::from(descent))
+        );
+    }
+    // An OS/2 table too short to hold them counts as none.
+    let short = os2(900, 300)[..60].to_vec();
     assert_eq!(
-        load(sfnt(vec![(*b"OS/2", os2(40_000, 33_000))])).ascent_descent(),
-        (40_000, 33_000)
+        load(with_hhea(sfnt(vec![(*b"OS/2", short)]), 800, -200)).ascent_descent(),
+        (800, 200)
     );
     // Without an OS/2 table, hhea's ascender and its descender's magnitude.
     assert_eq!(
@@ -405,7 +413,11 @@ fn ascent_and_descent_fall_back_where_a_face_lacks_them() {
     );
     assert_eq!(
         load(with_hhea(sfnt(vec![]), 800, i16::MIN)).ascent_descent(),
-        (800, 32_767)
+        (800, 32_768)
+    );
+    assert_eq!(
+        load(with_hhea(sfnt(vec![]), -5, -200)).ascent_descent(),
+        (0, 200)
     );
     // Where both are 0, Carlito's, so a last line's height never divides by 0 (§3).
     assert_eq!(load(sfnt(vec![])).ascent_descent(), (1950, 550));

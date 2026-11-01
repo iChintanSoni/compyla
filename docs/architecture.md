@@ -250,9 +250,10 @@ name; pptx embedding is an open question.
   Carlito's copyright notice and licence, as the OFL requires.
 - **One font stack.** `ttf-parser` parses and `rustybuzz` shapes, at the versions the pinned `typst`
   uses (0.25 and 0.20 with typst 0.15), so a face parses and shapes alike in measurement and in pdf.
-  Line break opportunities and grapheme clusters come from `icu_segmenter` (2.4, Unicode 18.0),
-  which Typst breaks lines with too. Its rules for scripts without a dictionary add about 70 KB to
-  the WASM build; `unicode-linebreak`, half that size, stopped at Unicode 15.0. All are pure Rust,
+  Line break opportunities and grapheme clusters come from `icu_segmenter` (2.4, Unicode 18.0), the
+  crate Typst breaks lines with, here with only its rules for scripts without a dictionary; they add
+  about 55 KB to the WASM build (18 KB gzipped), and `unicode-linebreak`, smaller, stopped at Unicode
+  15.0. All are pure Rust,
   build for every target at the MSRV, and never read installed fonts. Measurement serves the compose
   stage's diagnostics; a pdf is laid out by Typst (D13) with the faces it draws and its dictionaries
   for Thai and the like, so its line breaks may differ from what measurement assumed.
