@@ -378,6 +378,18 @@ fn with_hhea(mut font: Vec<u8>, ascender: i16, descender: i16) -> Vec<u8> {
     font
 }
 
+/// `font` with its table records in reverse order.
+fn reversed(mut font: Vec<u8>) -> Vec<u8> {
+    let count = u16::from_be_bytes([font[4], font[5]]) as usize;
+    let records: Vec<Vec<u8>> = (0..count)
+        .map(|i| font[12 + 16 * i..28 + 16 * i].to_vec())
+        .collect();
+    for (i, record) in records.iter().rev().enumerate() {
+        font[12 + 16 * i..28 + 16 * i].copy_from_slice(record);
+    }
+    font
+}
+
 /// A version 0 `OS/2` table with these `usWinAscent` and `usWinDescent`.
 fn os2(ascent: u16, descent: u16) -> Vec<u8> {
     let mut table = vec![0u8; 78];
@@ -406,7 +418,7 @@ fn ascent_and_descent_fall_back_where_a_face_lacks_them() {
         load(with_hhea(sfnt(vec![(*b"OS/2", short)]), 800, -200)).ascent_descent(),
         (800, 200)
     );
-    // Without an OS/2 table, hhea's ascender and its descender's magnitude.
+    // Without an OS/2 table, the magnitudes of hhea's ascender and descender.
     assert_eq!(
         load(with_hhea(sfnt(vec![]), 800, -200)).ascent_descent(),
         (800, 200)
@@ -417,7 +429,18 @@ fn ascent_and_descent_fall_back_where_a_face_lacks_them() {
     );
     assert_eq!(
         load(with_hhea(sfnt(vec![]), -5, -200)).ascent_descent(),
-        (0, 200)
+        (5, 200)
+    );
+    // A descender with the wrong sign is still its magnitude.
+    assert_eq!(
+        load(with_hhea(sfnt(vec![]), 800, 200)).ascent_descent(),
+        (800, 200)
+    );
+    // A directory out of tag order, which OpenType forbids but readers accept: the OS/2 table is
+    // still found.
+    assert_eq!(
+        load(reversed(sfnt(vec![(*b"OS/2", os2(900, 300))]))).ascent_descent(),
+        (900, 300)
     );
     // Where both are 0, Carlito's, so a last line's height never divides by 0 (§3).
     assert_eq!(load(sfnt(vec![])).ascent_descent(), (1950, 550));
