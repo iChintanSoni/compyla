@@ -7,8 +7,8 @@ on:
     branches: [main]
 
 # A push to a pull request cancels the PR's older run (#64). Every other run has a group of its own:
-# a group keeps one pending run by default (`queue: max` can't go with cancel-in-progress), so runs
-# on main sharing one could still be cancelled.
+# a group keeps one pending run by default (`queue: max` can't go with `cancel-in-progress: true`),
+# so runs on main sharing one could still be cancelled.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
