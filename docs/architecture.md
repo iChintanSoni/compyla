@@ -225,7 +225,8 @@ through the chain: (1) font embedded in the template, (2) user-supplied file, (3
 cache and is recorded in a lockfile (`compyla.lock`: family, style, source, SHA-256). Renders read
 fonts only through the font resolver, so they run **offline and pinned**. A family that cannot be
 resolved produces `font_unresolved` (a warning, an error under `--strict`), and the viewer substitutes
-a font.
+a font. *Amended (C62):* a font a docx template embeds is read from the template itself rather than
+pinned, `fonts sync` pins user files and Google Fonts, and at render the resolver comes first.
 
 Embedding: docx embeds fonts the way Word does, and pdf embeds subsets via Typst. pptx sets fonts by
 name; pptx embedding is an open question.
@@ -233,34 +234,45 @@ name; pptx embedding is an open question.
 *Amended 2026-11-01 (markdown-spec.md C62):* the design in detail.
 
 - **House fonts.** The house templates name the fonts Office installs: Calibri, Calibri Light and
-  Consolas. They look native wherever Office is, and nothing needs embedding. Office's fonts can't be
-  redistributed, so the engine bundles open-licence stand-ins: **Carlito** (OFL), metric-compatible
-  with Calibri, in its four styles, unmodified (its licence reserves the name, so a subset or a copy
-  without outlines would need renaming). Carlito measures Calibri exactly and Calibri Light closely.
-  Consolas is monospaced, so it is measured exactly by its fixed advance, with no font at all.
-  Stand-ins are used for measurement and for drawing pdf text; docx, pptx and xlsx keep the Office
-  names. The alternative, house templates in bundled OFL fonts, would measure exactly but make every
-  house deck substitute fonts on machines without them until pptx embedding is solved.
+  Consolas. They look native wherever Office is, and nothing needs embedding. Office's fonts can't
+  be redistributed, so the engine bundles an open-licence stand-in: **Carlito** (OFL),
+  metric-compatible with Calibri, in its four styles, unmodified (its licence reserves the name, so
+  a subset or a copy without outlines would need renaming). Carlito measures Calibri exactly and
+  Calibri Light about 1–2% wide. Consolas is monospaced, so it is measured exactly by its fixed
+  advance, with no font at all. Carlito also draws pdf text for Calibri and Calibri Light; docx,
+  pptx and xlsx keep the Office names. The alternative, house templates in bundled OFL fonts, would
+  measure exactly but make every house deck substitute fonts on machines without them until pptx
+  embedding is solved.
 - **Same everywhere.** Measurement is part of `lint` (D15), and `lint` must agree in every host, so
-  the stand-ins are in every build, WASM included: about 2.7 MB, accepted. Renderers that draw glyphs
-  (pdf) carry what they draw with.
+  Carlito is in every build, WASM included: 2.77 MB, and about 0.6 MB more for the shaper. Every
+  distribution carries Carlito's copyright notice and licence, as the OFL requires.
 - **One font stack.** `ttf-parser` parses and `rustybuzz` shapes, at the versions the pinned `typst`
-  uses (0.25 and 0.20 with typst 0.15), so measurement and pdf layout shape text the same way. Both
-  are pure Rust, build for every target, and never read installed fonts.
+  uses (0.25 and 0.20 with typst 0.15), so a face parses and shapes alike in measurement and in pdf.
+  Both are pure Rust, build for every target at the MSRV, and never read installed fonts.
+  Measurement serves the compose stage's diagnostics; a pdf is laid out by Typst (D13) with the
+  faces it draws, so its line breaks may differ from what measurement assumed.
 - **Measurement.** A run's width is its shaped advances in font units, scaled to the size in EMU
-  with integer arithmetic. It depends only on the text, the font bytes and the implementation
-  version. Line breaks fall at UAX #14 opportunities. How lines fill a box, and what overflows, is
-  the compose stage's (D15).
-- **Resolution order.** A font embedded in the template that the engine reads (docx's, not pptx's
-  Embedded OpenType), then the font resolver, then a bundled stand-in, so a project can pin the real
-  Calibri. A family none of them resolves is `font_unresolved` and is measured with Carlito.
+  with integer arithmetic. A character is measured with the face of its class (latin, East Asian,
+  complex script), falling back to Carlito and then to its East Asian Width, so text in a script the
+  face lacks isn't measured at half its width. Shaping uses the features the viewers apply (kerning
+  where PowerPoint kerns, no ligatures). The result depends only on the text, the font bytes and the
+  implementation version. Line breaks fall at UAX #14 opportunities; how lines fill a box, and what
+  overflows, is the compose stage's (D15).
+- **Resolution order.** The font resolver first, so a project can pin a full font where Word
+  embedded a subset, or the real Calibri; then a font a docx template embeds; then a bundled
+  stand-in. A family none of them resolves is `font_unresolved`, always at the validate stage so
+  `lint` and `convert` agree, and is measured with Carlito. A family a pptx template embeds
+  (Embedded OpenType, which the engine doesn't read) isn't reported, since PowerPoint shows it.
 - **Lockfile and cache.** `compyla.lock` is JSON (`spec/lockfile.schema.json`): family, style,
-  source and SHA-256, sorted. The cache names files by SHA-256 and lives in the user's cache
-  directory. Hosts read both; the core only ever sees bytes from the resolver (D11). A cached file
-  whose digest doesn't match is not found, so a lockfile pins bytes, not names.
-- **Hostile fonts.** A font file is bounded (§12.1) and parsed by a parser that doesn't panic on
-  malformed input; one that doesn't parse counts as not found. Shaping is bounded too, so a hostile
-  layout table can't hang a render.
+  source and SHA-256, sorted. `fonts sync` may pin a metric-compatible open font under a template's
+  family name (Arimo for Arial), and a single font file is used whatever its names say. The cache
+  names files by SHA-256 and lives in the user's cache directory. Hosts read both; the core only
+  ever sees bytes from the resolver (D11). A cached file whose digest doesn't match is not found, so
+  a lockfile pins bytes, not names.
+- **Hostile fonts.** A font file is bounded (§12.1), and one that doesn't parse counts as not found.
+  `ttf-parser` is written not to panic on malformed input; `rustybuzz` makes no such promise and
+  bounds its own work, so the measurement crate is fuzzed (#26) before untrusted fonts, such as a
+  docx template's embedded ones, reach it in a release.
 
 > *Prototype difference:* the prototype fetches Google Fonts on every docx/pptx render with no cache
 > and does not subset, despite earlier docs claiming subsetting. Its output therefore depends on the
@@ -383,10 +395,11 @@ sandbox holding ([spikes/README.md](../spikes/README.md), check 2).
 ### D14 — Fonts resolved ahead of render, pinned in a lockfile *(new)*
 **Chosen.** Renders must work offline and give identical bytes, and the prototype's per-render
 network fetch broke both. Cost: a `fonts sync` step and a cache directory per user or project.
-*Amended 2026-11-01 (C62):* house templates keep Office's font names, with bundled open-licence
-stand-ins (Carlito) for measurement and pdf, in every build so `lint` agrees across hosts; one font
-stack shared with Typst; measurement in integer font units; a JSON lockfile pinning SHA-256 digests.
-See "Fonts (D14)".
+*Amended 2026-11-01 (C62):* house templates keep Office's font names, with a bundled open-licence
+stand-in (Carlito) for measurement and pdf, in every build so `lint` agrees across hosts; the
+resolver before a template's embedded fonts; one font stack shared with Typst; measurement in
+integer font units with the viewers' features; a JSON lockfile pinning SHA-256 digests. See "Fonts
+(D14)".
 
 ### D15 — Explicit compose stage; diagnostics from the composed model *(new)*
 **Chosen.** The prototype's validator and renderers each reasoned about layout separately (block

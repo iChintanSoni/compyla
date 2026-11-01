@@ -227,7 +227,7 @@
       "since": "0.1",
       "status": "active",
       "spec": "§3, §11.2",
-      "summary": "A font family the template references can't be resolved; the viewer substitutes one. Validate stage when a template and font resolver are available, else render stage."
+      "summary": "A font family the template names can't be resolved through the font resolver, the template's embedded fonts or a bundled stand-in; it is measured with Carlito, and the viewer substitutes a font. Not reported for a family a pptx template embeds."
     },
     {
       "code": "formula_error",
