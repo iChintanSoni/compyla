@@ -62,6 +62,9 @@
           "expr": "count(//p:sldIdLst/p:sldId)",
           "equals": 4
         }
+      ],
+      "partsAbsent": [
+        "ppt/notesMasters/.*"
       ]
     }
   }

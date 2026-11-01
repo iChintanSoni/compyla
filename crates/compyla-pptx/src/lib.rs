@@ -84,8 +84,10 @@ pub fn render(
     let main_rels = main.relationships.clone();
     let notes_master = main_rels
         .iter()
-        .find(|r| r.kind.ends_with("/notesMaster") && !r.external)
+        .find(|r| !r.external && last_segment_is(&r.kind, "notesMaster"))
         .map(|r| r.target.clone());
+    // New relationship ids of the presentation's never take one it keeps.
+    let mut ids: HashSet<String> = main_rels.iter().map(|r| r.id.trim().to_string()).collect();
     let table_style = template
         .related(&template.main, "tableStyles")?
         .and_then(|part| template.xml(&part).ok().flatten())
@@ -105,7 +107,7 @@ pub fn render(
     // A deck with notes in a template without a notes master gets the house template's (§8.8, C61).
     let added_notes = match notes_master {
         None if deck.slides.iter().any(|s| !s.notes.is_empty()) => {
-            Some(HouseNotes::new(&media.taken))
+            Some(HouseNotes::new(template, &media.taken, &mut ids)?)
         }
         _ => None,
     };
@@ -192,7 +194,10 @@ pub fn render(
             rels.to_xml(),
         ));
         new_rels.insert(part.clone(), targets);
-        slide_list.push((256 + index as u32, format!("cmpSlide{}", index + 1)));
+        slide_list.push((
+            256 + index as u32,
+            fresh(&mut ids, format!("cmpSlide{}", index + 1)),
+        ));
     }
 
     // The presentation's relationships: the template's own (less its slides), then the deck's.
@@ -218,7 +223,7 @@ pub fn render(
     }
     if let Some(notes) = &added_notes {
         presentation_rels.add_with_id(
-            NOTES_MASTER_ID,
+            &notes.id,
             &format!("{REL}/notesMaster"),
             &relative(&main_folder, &notes.master),
             false,
@@ -242,7 +247,7 @@ pub fn render(
             .as_deref()
             .unwrap_or_else(|| template.part(&template.main).unwrap_or_default()),
         &slide_list,
-        added_notes.as_ref().map(|_| NOTES_MASTER_ID),
+        added_notes.as_ref().map(|notes| notes.id.as_str()),
     )
     .map_err(|why| {
         Invalid(format!(
@@ -275,28 +280,101 @@ struct Presentation {
     sanitized: sanitize::Part,
 }
 
-/// The relationship id of a notes master the output adds, as `cmpSlideN` names its slides.
-const NOTES_MASTER_ID: &str = "cmpNotesMaster";
+/// `base`, or `base_2`, `base_3`, … if `ids` has it: an id no other relationship of the part has.
+fn fresh(ids: &mut HashSet<String>, base: String) -> String {
+    let id = (1..)
+        .map(|n| {
+            if n == 1 {
+                base.clone()
+            } else {
+                format!("{base}_{n}")
+            }
+        })
+        .find(|id| !ids.contains(id))
+        .expect("a part has finitely many relationships");
+    ids.insert(id.clone());
+    id
+}
+
+/// Whether a relationship type's last segment is `name`, without case, so Strict's counts too (as
+/// §10.4 compares types).
+fn last_segment_is(kind: &str, name: &str) -> bool {
+    kind.rsplit('/')
+        .next()
+        .is_some_and(|k| k.eq_ignore_ascii_case(name))
+}
+
+/// The house notes master's slide image frame (`house/make_house.py`), for a 16:9 slide.
+const SLIDE_IMAGE: Rect = Rect {
+    x: 685_800,
+    y: 1_143_000,
+    cx: 5_486_400,
+    cy: 3_086_100,
+};
+
+/// The largest frame of `width` × `height`'s proportions inside `area`, centered in it.
+fn fit(area: Rect, width: i64, height: i64) -> Rect {
+    let (cx, cy) = if width as i128 * area.cy as i128 >= height as i128 * area.cx as i128 {
+        (
+            area.cx,
+            (area.cx as i128 * height as i128 / width as i128) as i64,
+        )
+    } else {
+        (
+            (area.cy as i128 * width as i128 / height as i128) as i64,
+            area.cy,
+        )
+    };
+    Rect {
+        x: area.x + (area.cx - cx) / 2,
+        y: area.y + (area.cy - cy) / 2,
+        cx,
+        cy,
+    }
+}
 
 /// The house template's notes master and its theme, for a deck with notes in a template without a
-/// notes master (§8.8, C61), under the first part names the template doesn't use.
+/// notes master (§8.8, C61), under the first part names the template doesn't use, with its slide
+/// image fitted to the template's slide size.
 struct HouseNotes {
     master: String,
     theme: String,
+    /// The presentation's relationship to it.
+    id: String,
+    /// The slide image frame.
+    image: Rect,
 }
 
 impl HouseNotes {
-    fn new(taken: &HashSet<String>) -> HouseNotes {
+    fn new(
+        template: &Template,
+        taken: &HashSet<String>,
+        ids: &mut HashSet<String>,
+    ) -> Result<HouseNotes, Invalid> {
         let free = |name: fn(usize) -> String| {
             (1..)
                 .map(name)
                 .find(|name| !taken.contains(&name.to_ascii_lowercase()))
                 .expect("a template has finitely many parts")
         };
-        HouseNotes {
+        // The slide size, where the presentation gives one; 16:9 otherwise, as PowerPoint reads it.
+        let presentation = template.xml(&template.main)?.unwrap_or_default();
+        let size = presentation.child(P, "sldSz");
+        let emu = |name: &str| {
+            size.and_then(|s| s.attr(name))
+                .and_then(|v| v.parse::<i64>().ok())
+                .filter(|v| *v > 0)
+        };
+        let image = match (emu("cx"), emu("cy")) {
+            (Some(cx), Some(cy)) => fit(SLIDE_IMAGE, cx, cy),
+            _ => SLIDE_IMAGE,
+        };
+        Ok(HouseNotes {
             master: free(|n| format!("ppt/notesMasters/notesMaster{n}.xml")),
             theme: free(|n| format!("ppt/theme/theme{n}.xml")),
-        }
+            id: fresh(ids, "cmpNotesMaster".into()),
+            image,
+        })
     }
 
     /// The new parts: the notes master, its relationships part, and its theme.
@@ -312,6 +390,18 @@ impl HouseNotes {
         let master = related(&house.main, "notesMaster");
         let theme = related(&master, "theme");
         let bytes = |part: &str| house.part(part).unwrap_or_default().to_vec();
+        let frame = |r: Rect| {
+            format!(
+                r#"<a:off x="{}" y="{}"/><a:ext cx="{}" cy="{}"/>"#,
+                r.x, r.y, r.cx, r.cy
+            )
+        };
+        let xml = String::from_utf8(bytes(&master)).expect("the house notes master is UTF-8");
+        assert!(
+            xml.contains(&frame(SLIDE_IMAGE)),
+            "the house notes master's slide image"
+        );
+        let xml = xml.replacen(&frame(SLIDE_IMAGE), &frame(self.image), 1);
         let mut rels = Relationships::new();
         rels.add(
             &format!("{REL}/theme"),
@@ -321,7 +411,7 @@ impl HouseNotes {
             (
                 self.master.clone(),
                 format!("{PML}.notesMaster+xml"),
-                bytes(&master),
+                xml.into_bytes(),
             ),
             (
                 rels_name(&self.master),
@@ -1218,8 +1308,11 @@ fn assemble(
         {
             continue;
         }
+        // A part the output writes anew has only the relationships it gives it: the template's
+        // relationships part for that name, if any, is a stray.
         let keep = if is_rels(name) {
-            reachable.contains(&rels_owner(name).to_ascii_lowercase())
+            let owner = rels_owner(name).to_ascii_lowercase();
+            reachable.contains(&owner) && !new_names.contains(&owner)
         } else {
             reachable.contains(&lower)
         };
@@ -1561,19 +1654,154 @@ mod tests {
         assert!(!replaced.drops(&to("ppt/slides/slide3.xml")));
     }
 
+    /// render/123's template, which has no notes master.
+    const NO_NOTES_MASTER: &[u8] = include_bytes!(
+        "../../../spec/conformance/render/123-pptx-notes-without-notes-master/brand.potx"
+    );
+
+    /// `package` read as a template after `edit` (a part's name, and its bytes, which it may change)
+    /// and with `extra` parts added.
+    fn patched(
+        package: &[u8],
+        edit: impl Fn(&str, &mut String),
+        extra: &[(&str, &str)],
+    ) -> Template {
+        let mut entries = compyla_ooxml::read::entries(package).unwrap();
+        for (name, data) in &mut entries {
+            let mut text = String::from_utf8(data.clone()).unwrap_or_default();
+            if !text.is_empty() {
+                edit(name, &mut text);
+                *data = text.into_bytes();
+            }
+        }
+        entries.extend(
+            extra
+                .iter()
+                .map(|(n, d)| (n.to_string(), d.as_bytes().to_vec())),
+        );
+        Template::read(&compyla_ooxml::zip::write(&entries)).unwrap()
+    }
+
+    const NOTES: &str = "## One\n\n::: notes\nSay this.\n:::\n";
+
     #[test]
     fn a_notes_master_is_added_only_for_notes() {
-        // render/123's template, which has no notes master.
-        let template = Template::read(include_bytes!(
-            "../../../spec/conformance/render/123-pptx-notes-without-notes-master/brand.potx"
-        ))
-        .unwrap();
+        let template = Template::read(NO_NOTES_MASTER).unwrap();
         let (parts, _) = rendered(&template, "## One\n\nText.\n");
         assert!(!parts.keys().any(|name| name.contains("notesMaster")));
         assert!(!text(&parts, "ppt/presentation.xml").contains("notesMasterIdLst"));
-        let (parts, _) = rendered(&template, "## One\n\n::: notes\nSay this.\n:::\n");
+        let (parts, _) = rendered(&template, NOTES);
         assert!(parts.contains_key("ppt/notesMasters/notesMaster1.xml"));
         assert!(parts.contains_key("ppt/notesSlides/notesSlide1.xml"));
+    }
+
+    #[test]
+    fn a_stray_relationships_part_doesnt_attach_to_a_new_part() {
+        // Relationships for a `theme2.xml` the template doesn't have, which the added theme takes.
+        let stray = format!(
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{REL}/image" Target="https://tracker.example/pixel.png" TargetMode="External"/></Relationships>"#
+        );
+        let template = patched(
+            NO_NOTES_MASTER,
+            |_, _| {},
+            &[("ppt/theme/_rels/theme2.xml.rels", &stray)],
+        );
+        let (parts, _) = rendered(&template, NOTES);
+        assert!(parts.contains_key("ppt/theme/theme2.xml"));
+        assert!(!parts.contains_key("ppt/theme/_rels/theme2.xml.rels"));
+    }
+
+    #[test]
+    fn new_relationship_ids_avoid_the_presentations_own() {
+        // The template's theme and font relationships take the ids the output would give.
+        let template = patched(
+            NO_NOTES_MASTER,
+            |name, text| match name {
+                "ppt/_rels/presentation.xml.rels" => {
+                    *text = text
+                        .replace(r#"Id="rId2""#, r#"Id="cmpSlide1""#)
+                        .replace(r#"Id="rId3""#, r#"Id="cmpNotesMaster""#)
+                }
+                "ppt/presentation.xml" => {
+                    *text = text.replace(r#"r:id="rId3""#, r#"r:id="cmpNotesMaster""#)
+                }
+                _ => {}
+            },
+            &[],
+        );
+        let (parts, _) = rendered(&template, NOTES);
+        let rels = text(&parts, "ppt/_rels/presentation.xml.rels");
+        for id in [
+            "cmpSlide1",
+            "cmpNotesMaster",
+            "cmpSlide1_2",
+            "cmpNotesMaster_2",
+        ] {
+            assert_eq!(
+                rels.matches(&format!(r#"Id="{id}""#)).count(),
+                1,
+                "{id}: {rels}"
+            );
+        }
+        let presentation = text(&parts, "ppt/presentation.xml");
+        assert!(
+            presentation.contains(r#"<p:notesMasterId r:id="cmpNotesMaster_2"/>"#)
+                && presentation.contains(r#"r:id="cmpSlide1_2""#),
+            "{presentation}"
+        );
+    }
+
+    #[test]
+    fn a_notes_master_related_in_another_case_is_the_templates() {
+        let template = patched(
+            HOUSE,
+            |name, text| {
+                if name == "ppt/_rels/presentation.xml.rels" {
+                    *text = text.replace("relationships/notesMaster", "relationships/NotesMaster");
+                }
+            },
+            &[],
+        );
+        let (parts, _) = rendered(&template, NOTES);
+        assert!(!parts.contains_key("ppt/notesMasters/notesMaster2.xml"));
+        let notes = text(&parts, "ppt/notesSlides/_rels/notesSlide1.xml.rels");
+        assert!(
+            notes.contains("../notesMasters/notesMaster1.xml"),
+            "{notes}"
+        );
+    }
+
+    #[test]
+    fn an_added_notes_masters_slide_image_takes_the_slides_proportions() {
+        let template = patched(
+            NO_NOTES_MASTER,
+            |name, text| {
+                if name == "ppt/presentation.xml" {
+                    *text = text.replace(
+                        r#"<p:sldSz cx="12192000" cy="6858000"/>"#,
+                        r#"<p:sldSz cx="9144000" cy="6858000" type="screen4x3"/>"#,
+                    );
+                }
+            },
+            &[],
+        );
+        let notes = HouseNotes::new(&template, &HashSet::new(), &mut HashSet::new()).unwrap();
+        let four_three = Rect {
+            x: 1_371_600,
+            y: 1_143_000,
+            cx: 4_114_800,
+            cy: 3_086_100,
+        };
+        assert_eq!(notes.image, four_three);
+        let master = String::from_utf8(notes.parts()[0].2.clone()).unwrap();
+        assert!(
+            master
+                .contains(r#"<a:off x="1371600" y="1143000"/><a:ext cx="4114800" cy="3086100"/>"#),
+            "{master}"
+        );
+        // A 16:9 slide keeps the frame, and a tall one is fitted by height too.
+        assert_eq!(fit(SLIDE_IMAGE, 12_192_000, 6_858_000), SLIDE_IMAGE);
+        assert_eq!(fit(SLIDE_IMAGE, 6_858_000, 12_192_000).cy, SLIDE_IMAGE.cy);
     }
 
     #[test]
@@ -1585,7 +1813,8 @@ mod tests {
         ]
         .map(String::from)
         .into();
-        let notes = HouseNotes::new(&taken);
+        let template = Template::read(NO_NOTES_MASTER).unwrap();
+        let notes = HouseNotes::new(&template, &taken, &mut HashSet::new()).unwrap();
         assert_eq!(notes.master, "ppt/notesMasters/notesMaster2.xml");
         assert_eq!(notes.theme, "ppt/theme/theme3.xml");
         let names: Vec<String> = notes.parts().into_iter().map(|(name, ..)| name).collect();
