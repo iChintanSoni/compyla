@@ -1,0 +1,9 @@
+{
+  "description": "A deck with notes in a 4:3 supplied template without a notes master (§8.8): the added house notes master's slide image is fitted to the slide's 4:3 proportions inside the house frame and centered; the template's presentation relationships already use `cmpSlide1` and `cmpNotesMaster`, so the deck's first slide and the notes master take `cmpSlide1_2` and `cmpNotesMaster_2`; and a relationships part the template has for a `theme2.xml` it doesn't have isn't attached to the added theme, which takes that name.",
+  "spec": [
+    "§8.8",
+    "C61"
+  ],
+  "oracle": "none",
+  "format": "pptx"
+}

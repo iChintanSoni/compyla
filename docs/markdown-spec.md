@@ -113,7 +113,7 @@ prototype.
 | C58 | Active and external content is removed from a supplied template's kept parts: external relationships other than hyperlinks (with `TargetMode` and targets that leave the package read fail-closed), hyperlinks §4.5 doesn't allow and actions that run something, OLE objects, ActiveX controls and their legacy drawings, Office add-ins, with what refers to them (a blip loses only the attribute; anything else goes with its alternates, extension, graphic frame, animations or transition), what only they used, and the parts only they reached; one `template_content_removed` per object, action or other removed relationship (§4.5, §10.4) | Which elements go with a removed relationship, what counts as one removal, and which hyperlinks a template may keep were unspecified | render/121 |
 | C59 | A link destination is checked as a browser reads it: leading and trailing spaces and controls, and tabs and line breaks inside it, don't hide its scheme, and other control characters, and a leading non-ASCII space, are refused; before any query or fragment, it must pass percent-decoded too (§4.5) | ` file:///…` and `\tms-msdt:…` in IR input or a template's hyperlinks, and `%5C%5Chost` anywhere, passed the allowlist as relative references | parse/130, render/121 |
 | C60 | A kept template part's relationships to the template's own slides (of the slide type, or to a part whose content type is a slide's or whose name one of the deck's slides or notes pages takes) are removed with what refers to them, as active content is: a master's or layout's jump to a template slide loses its link and keeps its shape, a slide only such a relationship reached isn't kept, and a jump that names no slide stays. Nothing is reported unless §10.4 removes the relationship whatever refers to it (§8.8, §10.4) | A jump kept a sample slide the presentation no longer lists, or jumped to whichever new slide took the sample's part name | render/122 |
-| C61 | A deck with notes in a template without a notes master gets the house template's notes master and its theme, under part names the template doesn't use, with its slide image fitted to the slide size, and the presentation lists it; a deck without notes is written without one. A part the output writes anew never takes a relationships part the template has for its name, and new presentation relationships take ids the template's don't use (§8.8) | Every slide's notes were dropped silently; a stray relationships part could attach to new media; a template relationship id could be repeated | render/119, render/123 |
+| C61 | A deck with notes in a template without a notes master gets the house template's notes master and its theme, under part names the template doesn't use, with its slide image fitted to the slide size, and the presentation lists it; a deck without notes is written without one. A part the output writes anew never takes a relationships part the template has for its name, and new presentation relationships take ids the template's don't use (§8.8) | Every slide's notes were dropped silently; a stray relationships part could attach to new media; a template relationship id could be repeated | render/119, render/123–125 |
 
 0.2 also corrects 0.1's *text* in one place where the prototype was right: `---` in xlsx is ignored
 without a diagnostic (§5).
@@ -818,31 +818,30 @@ their own except where their content needs it, so they inherit the layout's.
   the rest are shapes of their own.
 - **Links:** an external destination is a hyperlink. A fragment matching a slide title's slug
   (§8.7) jumps to that slide; one that matches none has no link.
-- **Speaker notes** (§8.2) are the body of the slide's notes page, on the template's notes master.
-  A deck with notes in a template without one gets the house template's notes master and its theme,
+- **Speaker notes** (§8.2) are the body of the slide's notes page, on the template's notes master. A
+  deck with notes in a template without one gets the house template's notes master and its theme,
   under the first part names the template doesn't use (`ppt/notesMasters/notesMasterN.xml`,
   `ppt/theme/themeN.xml`), with its slide image fitted to the template's slide size, and the
-  presentation lists it, so no notes are lost; a deck without notes is written without one. A
-  notes master is found by its relationship's type, compared as §10.4 compares types. *(C61)* Code and images there are plain text (an image is its alt text),
-  and a fragment link in the notes doesn't jump: a notes page's own relationship to its slide must
-  stay unambiguous.
+  presentation lists it, so no notes are lost; a deck without notes is written without one. A notes
+  master is found by its relationship's type, compared as §10.4 compares types. *(C61)* Code and
+  images there are plain text (an image is its alt text), and a fragment link in the notes doesn't
+  jump: a notes page's own relationship to its slide must stay unambiguous.
 - **The package** (§10.4): the template's own slides are removed, with every part no longer reached
   from the presentation, and a `.potx` is written as a presentation. What named those slides goes
   with them: custom shows, sections, the show settings' slide range or custom show (so the show
   plays every slide), and the outline view's slide list. So does every relationship a kept part has
   to one of those slides, with what refers to it, as §10.4 removes what refers to a removed
   relationship: one of the slide type, or one to a part whose content type is a slide's (without
-  case or parameters) or whose name a slide or notes page of the deck takes
-  (`ppt/slides/slideN.xml` for each of its slides, `ppt/notesSlides/notesSlideN.xml` for each with
-  notes), since what the template had there is gone. A master's or layout's jump to a template
-  slide loses its link, and its shape stays. A slide that only such a relationship reached isn't
-  kept. A jump within the show (`hlinkshowjump`: to the next, previous, first or last slide, the
-  last one viewed, or the end), which names no slide, stays. Nothing is reported for these, unless
-  §10.4 removes the relationship whatever refers to it (an external target, say). *(C60)* A part the
-  output writes anew has only the relationships it gives it, never a relationships part the template
-  has for that name, and the presentation's new relationships take ids it doesn't already use
-  (`cmpSlideN`, `cmpNotesMaster`, or that with `_2`, `_3`, … after it). *(C61)* An edited part in
-  UTF-16 is written as UTF-8.
+  case or parameters) or whose name a slide or notes page of the deck takes (`ppt/slides/slideN.xml`
+  for each of its slides, `ppt/notesSlides/notesSlideN.xml` for each with notes), since what the
+  template had there is gone. A master's or layout's jump to a template slide loses its link, and
+  its shape stays. A slide that only such a relationship reached isn't kept. A jump within the show
+  (`hlinkshowjump`: to the next, previous, first or last slide, the last one viewed, or the end),
+  which names no slide, stays. Nothing is reported for these, unless §10.4 removes the relationship
+  whatever refers to it (an external target, say). *(C60)* A part the output writes anew has only
+  the relationships it gives it, never a relationships part the template has for that name, and the
+  presentation's new relationships take ids it doesn't already use (`cmpSlideN`, `cmpNotesMaster`,
+  or that with `_2`, `_3`, … after it). *(C61)* An edited part in UTF-16 is written as UTF-8.
 
 ---
 
