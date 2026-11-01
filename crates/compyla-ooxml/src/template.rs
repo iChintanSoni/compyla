@@ -157,14 +157,9 @@ impl Template {
             let lower = name.to_ascii_lowercase();
             let xml = lower.ends_with(".xml")
                 || lower.ends_with(".rels")
-                || template.content_type(name).is_some_and(|t| {
-                    t.to_ascii_lowercase()
-                        .split(';')
-                        .next()
-                        .unwrap_or("")
-                        .trim()
-                        .ends_with("xml")
-                });
+                || template
+                    .content_type(name)
+                    .is_some_and(|t| media_type(t).ends_with("xml"));
             if !xml {
                 continue;
             }
@@ -184,14 +179,7 @@ impl Template {
             .find(|r| r.kind.ends_with("/officeDocument") && !r.external)
             .map(|r| r.target)
             .ok_or_else(|| Invalid("has no main document part".into()))?;
-        // Compared without case or parameters (RFC 2045).
-        let content_type = template.content_type(&main).unwrap_or_default();
-        let content_type = content_type
-            .split(';')
-            .next()
-            .unwrap_or("")
-            .trim()
-            .to_ascii_lowercase();
+        let content_type = media_type(template.content_type(&main).unwrap_or_default());
         template.kind = MAIN_TYPES
             .iter()
             .find(|(t, _)| *t == content_type)
@@ -313,6 +301,16 @@ impl Template {
             .find(|r| r.kind.ends_with(&suffix) && !r.external)
             .map(|r| r.target))
     }
+}
+
+/// A content type's media type, as content types compare: without case or parameters (RFC 2045).
+pub fn media_type(content_type: &str) -> String {
+    content_type
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase()
 }
 
 /// The relationships part of `source` (`""` for the package's own).

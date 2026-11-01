@@ -17,7 +17,7 @@ use compyla_core::validate::pptx::model::{Content, Deck, Fit, Slide};
 use compyla_ooxml::dom::REL_NS;
 use compyla_ooxml::package::{self, HYPERLINK, Properties, Relationships};
 use compyla_ooxml::sanitize::{self, Removed};
-use compyla_ooxml::template::{Invalid, Relationship, Template};
+use compyla_ooxml::template::{Invalid, Relationship, Template, media_type};
 use compyla_ooxml::xml::Writer;
 
 use crate::text::{Bullets, LinkTarget, Text};
@@ -78,7 +78,8 @@ pub fn render(
         return Err(Invalid("has no slide layouts".into()));
     }
     // The presentation part keeps nothing active or external either (§10.4), nor its slides.
-    let main = sanitize::part(template, &template.main, &|r| to_slide(template, r))?;
+    let replaced = Replaced::new(template, deck.slides.len());
+    let main = sanitize::part(template, &template.main, &|r| replaced.drops(r))?;
     let main_rels = main.relationships.clone();
     let notes_master = main_rels
         .iter()
@@ -242,6 +243,7 @@ pub fn render(
         },
         new_parts,
         &new_rels,
+        &replaced,
     )
 }
 
@@ -276,17 +278,43 @@ fn rels_name(part: &str) -> String {
 fn typed(template: &Template, name: &str, kind: &str) -> bool {
     template
         .content_type(name)
-        .is_some_and(|t| t.eq_ignore_ascii_case(&format!("{PML}.{kind}+xml")))
+        .is_some_and(|t| media_type(t).eq_ignore_ascii_case(&format!("{PML}.{kind}+xml")))
 }
 
-/// A relationship to one of the template's own slides, which the deck's replace (§8.8, C60): of
-/// the slide type (by its last segment, without case, so Strict's too), or to a part whose content
-/// type is a slide's. Every part kept loses these, with what refers to them, so nothing jumps to a
-/// slide that isn't there.
-fn to_slide(template: &Template, relationship: &Relationship) -> bool {
-    let kind = relationship.kind.rsplit('/').next().unwrap_or_default();
-    !relationship.external
-        && (kind.eq_ignore_ascii_case("slide") || typed(template, &relationship.target, "slide"))
+/// What the deck replaces of the template (§8.8, C60): its slides, and the parts whose names the
+/// deck's slides and notes pages take. Every part kept loses its relationships to them, with what
+/// refers to them, so nothing jumps to a slide that isn't there, or to a new one in its place.
+struct Replaced<'t> {
+    template: &'t Template,
+    /// `ppt/slides/slideN.xml` and `ppt/notesSlides/notesSlideN.xml` for each of the deck's slides,
+    /// in lower case: whatever the template had there is gone.
+    taken: HashSet<String>,
+}
+
+impl<'t> Replaced<'t> {
+    fn new(template: &'t Template, slides: usize) -> Replaced<'t> {
+        let taken = (1..=slides)
+            .flat_map(|n| {
+                [
+                    format!("ppt/slides/slide{n}.xml"),
+                    format!("ppt/notesslides/notesslide{n}.xml"),
+                ]
+            })
+            .collect();
+        Replaced { template, taken }
+    }
+
+    /// Whether `relationship` goes: one of the slide type (by its last segment, without case, so
+    /// Strict's too), or one to a part whose content type is a slide's or whose name the deck takes.
+    fn drops(&self, relationship: &Relationship) -> bool {
+        let kind = relationship.kind.rsplit('/').next().unwrap_or_default();
+        !relationship.external
+            && (kind.eq_ignore_ascii_case("slide")
+                || typed(self.template, &relationship.target, "slide")
+                || self
+                    .taken
+                    .contains(&relationship.target.to_ascii_lowercase()))
+    }
 }
 
 /// The placeholder each slot's blocks go into (§8.8): slot `i` the `i`-th content placeholder. A
@@ -1034,6 +1062,7 @@ fn assemble(
     presentation: Presentation,
     new_parts: Vec<(String, String, Vec<u8>)>,
     new_rels: &HashMap<String, Vec<String>>,
+    replaced: &Replaced<'_>,
 ) -> Result<Rendered, Invalid> {
     let main = template.main.clone();
     let main_rels = rels_name(&main);
@@ -1056,7 +1085,7 @@ fn assemble(
             Some(targets) => targets.clone(),
             None if new_names.contains(&lower) => Vec::new(),
             None => {
-                let mut clean = sanitize::part(template, &part, &|r| to_slide(template, r))?;
+                let mut clean = sanitize::part(template, &part, &|r| replaced.drops(r))?;
                 let targets = clean
                     .relationships
                     .iter()
@@ -1359,12 +1388,40 @@ mod tests {
 
     #[test]
     fn kept_parts_lose_their_relationships_to_the_template_slides() {
-        // The house master with a picture of a slide part, and a jump through a Strict slide
-        // relationship to a slide the content types don't name.
+        // The house master with pictures of a slide part and of a template part whose name the
+        // deck's first slide takes, and jumps through a Strict slide relationship and through a
+        // relationship of an unknown type to a slide typed with a parameter.
         let master = "ppt/slideMasters/slideMaster1.xml";
         let master_rels = "ppt/slideMasters/_rels/slideMaster1.xml.rels";
-        let picture = r#"<p:pic><p:nvPicPr><p:cNvPr id="90" name="Sample"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="rId90"/></p:blipFill><p:spPr/></p:pic>"#;
-        let jump = r#"<p:sp><p:nvSpPr><p:cNvPr id="91" name="Jump"><a:hlinkClick r:id="rId91" action="ppaction://hlinksldjump"/></p:cNvPr><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr/></p:sp>"#;
+        let picture = |id: u32| {
+            format!(
+                r#"<p:pic><p:nvPicPr><p:cNvPr id="{id}" name="Picture {id}"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="rId{id}"/></p:blipFill><p:spPr/></p:pic>"#
+            )
+        };
+        let jump = |id: u32| {
+            format!(
+                r#"<p:sp><p:nvSpPr><p:cNvPr id="{id}" name="Jump {id}"><a:hlinkClick r:id="rId{id}" action="ppaction://hlinksldjump"/></p:cNvPr><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr/></p:sp>"#
+            )
+        };
+        let shapes = [picture(90), jump(91), jump(92), picture(93)].concat();
+        let relationships = [
+            (90, format!("{REL}/image"), "sample"),
+            (
+                91,
+                "http://purl.oclc.org/ooxml/officeDocument/relationships/slide".into(),
+                "strict",
+            ),
+            (
+                92,
+                "http://example.com/relationships/jump".into(),
+                "charset",
+            ),
+            (93, format!("{REL}/image"), "slide1"),
+        ]
+        .map(|(id, kind, name)| {
+            format!(r#"<Relationship Id="rId{id}" Type="{kind}" Target="../slides/{name}.xml"/>"#)
+        })
+        .concat();
         let slide = r#"<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree/></p:cSld></p:sld>"#;
         let mut entries = compyla_ooxml::read::entries(HOUSE).unwrap();
         for (name, data) in &mut entries {
@@ -1373,38 +1430,39 @@ mod tests {
                 "[Content_Types].xml" => text.replace(
                     "</Types>",
                     &format!(
-                        r#"<Override PartName="/ppt/slides/sample.xml" ContentType="{PML}.slide+xml"/></Types>"#
+                        r#"<Override PartName="/ppt/slides/sample.xml" ContentType="{PML}.slide+xml"/><Override PartName="/ppt/slides/charset.xml" ContentType="{PML}.Slide+xml; charset=utf-8"/></Types>"#
                     ),
                 ),
-                name if name == master => {
-                    text.replace("</p:spTree>", &format!("{picture}{jump}</p:spTree>"))
+                name if name == master => text.replace("</p:spTree>", &format!("{shapes}</p:spTree>")),
+                name if name == master_rels => {
+                    text.replace("</Relationships>", &format!("{relationships}</Relationships>"))
                 }
-                name if name == master_rels => text.replace(
-                    "</Relationships>",
-                    &format!(
-                        r#"<Relationship Id="rId90" Type="{REL}/image" Target="../slides/sample.xml"/><Relationship Id="rId91" Type="http://purl.oclc.org/ooxml/officeDocument/relationships/slide" Target="../slides/strict.xml"/></Relationships>"#
-                    ),
-                ),
                 _ => continue,
             }
             .into_bytes();
         }
-        entries.push(("ppt/slides/sample.xml".into(), slide.as_bytes().to_vec()));
-        entries.push(("ppt/slides/strict.xml".into(), slide.as_bytes().to_vec()));
+        for name in ["sample", "strict", "charset", "slide1"] {
+            entries.push((format!("ppt/slides/{name}.xml"), slide.as_bytes().to_vec()));
+        }
         let template = Template::read(&compyla_ooxml::zip::write(&entries)).unwrap();
         let (parts, removed) = rendered(&template, "## One\n\nText.\n");
         assert!(removed.is_empty(), "{removed:?}");
-        assert!(
-            !parts.contains_key("ppt/slides/sample.xml")
-                && !parts.contains_key("ppt/slides/strict.xml")
-        );
+        for name in ["sample", "strict", "charset"] {
+            assert!(
+                !parts.contains_key(&format!("ppt/slides/{name}.xml")),
+                "{name}"
+            );
+        }
+        assert!(text(&parts, "ppt/slides/slide1.xml").contains("One"));
         let out = text(&parts, master);
+        assert_eq!(out.matches("<a:blip/>").count(), 2, "{out}");
         assert!(
-            out.contains(r#"<a:blip/>"#) && out.contains(r#"name="Jump"></p:cNvPr>"#),
+            out.contains(r#"name="Jump 91"></p:cNvPr>"#)
+                && out.contains(r#"name="Jump 92"></p:cNvPr>"#),
             "{out}"
         );
         let rels = text(&parts, master_rels);
-        assert!(!rels.contains("rId90") && !rels.contains("rId91"), "{rels}");
+        assert!(!rels.contains("../slides/"), "{rels}");
     }
 
     /// A package's parts by name.
