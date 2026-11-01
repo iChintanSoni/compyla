@@ -115,7 +115,7 @@ Each format gets its own composed model:
 
 Composition-time diagnostics (measured overflow, font substitution, unbound layout) come from the
 same code that places content, so validation and rendering can never disagree. Text measurement uses
-the pinned font files (shaping via `harfrust`). It is a diagnostic tool. Word and PowerPoint still do
+the pinned font files (shaping via `rustybuzz`, D14). It is a diagnostic tool. Word and PowerPoint still do
 the final layout of flowing text.
 
 ### Stage 5 — Serialize (one feature per format)
@@ -408,6 +408,22 @@ integer font units with the viewers' features; a JSON lockfile pinning SHA-256 d
 counts in core vs. placeholder filling in pptx), with a shared helper as the only guard against drift.
 A compose stage that both validation and serialization consume makes "validate what you render"
 exact, and is where measured overflow lives.
+
+**Measured overflow** *(amended, markdown-spec.md C63)*. pptx text is measured at the validate stage,
+so `lint` and `convert` agree: the facade hands compose the template's text model (each box, its
+insets and autofit, and the text styles it inherits) and a measurer over the resolved faces, compose
+fills lines and decides what fits, and the renderer writes those decisions. Lines follow
+PowerPoint's own rules, each checked in PowerPoint for Mac rather than read from the standard: a line
+is 1.2 × its size × its spacing whatever the font, trailing spaces hang, tab stops count from the
+inset. Measurement stays a diagnostic. PowerPoint does the final layout, and a stand-in that is a
+little wide (Carlito for Calibri Light) can break a line a word sooner.
+
+PowerPoint applies a box's "shrink text on overflow" (`normAutofit`) only when the text is edited,
+not when it opens a file, so a deck written without a scale opens with its text running out of the
+box. Where a template asks for shrinking, the engine therefore picks PowerPoint's own scale steps and
+writes the first that fits, and reports overflow only below the smallest (25%): the deck opens as the
+template intends. The house template asks for none (decided 2026-11-01), so house decks keep one type
+scale and report overflow, whose hint says to split the slide.
 
 ### D16 — Spec-first contracts *(new)*
 **Chosen.** The dialect spec, IR schema, diagnostics registry and conformance fixtures are the

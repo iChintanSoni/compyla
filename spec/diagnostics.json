@@ -673,7 +673,7 @@
     {
       "code": "content_overflow",
       "severity": "warning",
-      "stage": "render",
+      "stage": "validate",
       "profiles": [
         "pptx"
       ],
@@ -682,7 +682,7 @@
       "since": "0.2",
       "status": "active",
       "spec": "§8.6",
-      "summary": "Text measures larger than its placeholder."
+      "summary": "Text measures taller than its box, even at the smallest autofit scale where the box shrinks text."
     },
     {
       "code": "glyph_missing",
