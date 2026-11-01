@@ -82,7 +82,8 @@ pub struct Part {
 
 /// `name` from `template`, without active or external content (§10.4), and without the
 /// relationships `dropped` names, which the output removes for its own reasons, with what refers to
-/// them as with external content. Those aren't reported unless they are external content too.
+/// them as with external content. Those aren't reported, unless §10.4 removes them whatever refers
+/// to them (an external target, an object's type, a destination §4.5 refuses).
 pub fn part(
     template: &Template,
     name: &str,
@@ -110,10 +111,7 @@ pub fn part(
     let silent = ids(&relationships, &by_output);
     let hyperlinks: HashSet<&str> = relationships
         .iter()
-        .filter(|r| {
-            let id = r.id.trim();
-            is_hyperlink(r) && !removable.contains(id) && !silent.contains(id)
-        })
+        .filter(|r| is_hyperlink(r) && !removable.contains(r.id.trim()))
         .map(|r| r.id.trim())
         .collect();
     let text = if is_xml(template, name) {
@@ -425,14 +423,9 @@ fn is_xml(template: &Template, name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     let declared = lower.ends_with(".xml")
         || lower.ends_with(".vml")
-        || template.content_type(name).is_some_and(|t| {
-            t.to_ascii_lowercase()
-                .split(';')
-                .next()
-                .unwrap_or("")
-                .trim()
-                .ends_with("xml")
-        });
+        || template
+            .content_type(name)
+            .is_some_and(|t| template::media_type(t).ends_with("xml"));
     declared || template.part(name).is_some_and(looks_like_xml)
 }
 
@@ -883,6 +876,30 @@ mod tests {
         // Dropping nothing, only the external relationship goes.
         let kept = super::part(&template, LAYOUT, &|_| false).unwrap();
         assert_eq!(ids(&kept), ["rId1", "rId2", "rId3", "rId4"]);
+    }
+
+    #[test]
+    fn a_hyperlink_misused_under_a_dropped_id_is_still_reported() {
+        // Invalid, but read: a slide relationship the output drops, and an external hyperlink
+        // with the same id that a picture misuses. Only the hyperlink is reported.
+        let xml = layout(
+            r#"<p:pic><p:nvPicPr><p:cNvPr id="2" name="a"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:link="rId2"/></p:blipFill><p:spPr/></p:pic>"#,
+            "",
+        );
+        let template = template_raw(
+            xml.as_bytes(),
+            &format!(
+                r#"<Relationship Id="rId1" Type="{R}/slideMaster" Target="../slideMasters/slideMaster1.xml"/><Relationship Id="rId2" Type="{R}/slide" Target="../slides/slide1.xml"/><Relationship Id="rId2" Type="{R}/hyperlink" Target="https://tracker.example/a.png" TargetMode="External"/>"#
+            ),
+        );
+        let part = super::part(&template, LAYOUT, &|r| r.kind.ends_with("/slide")).unwrap();
+        assert_eq!(ids(&part), ["rId1"]);
+        assert_eq!(
+            part.removed,
+            [Removed::Misused {
+                target: "https://tracker.example/a.png".into()
+            }]
+        );
     }
 
     #[test]
