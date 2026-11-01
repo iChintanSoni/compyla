@@ -413,10 +413,12 @@ exact, and is where measured overflow lives.
 so `lint` and `convert` agree: the facade hands compose the template's text model (each box, its
 insets and autofit, and the text styles it inherits) and a measurer over the resolved faces, compose
 fills lines and decides what fits, and the renderer writes those decisions. Lines follow
-PowerPoint's own rules, each checked in PowerPoint for Mac rather than read from the standard: a line
-is 1.2 × its size × its spacing whatever the font, trailing spaces hang, tab stops count from the
-inset. Measurement stays a diagnostic. PowerPoint does the final layout, and a stand-in that is a
-little wide (Carlito for Calibri Light) can break a line a word sooner.
+PowerPoint's own rules, each checked in PowerPoint for Mac rather than read from the standard: a
+line's pitch is 1.2 × its size × its spacing whatever the font (only the last line reaches into the
+face's descent where spacing is tight), trailing spaces hang, tab stops count from the inset.
+Measurement stays a diagnostic. PowerPoint does the final layout, its widths differ by a fraction of
+a point a line, and a stand-in that is a little wide (Carlito for Calibri Light) can wrap a word
+sooner.
 
 PowerPoint applies a box's "shrink text on overflow" (`normAutofit`) only when the text is edited,
 not when it opens a file, so a deck written without a scale opens with its text running out of the
