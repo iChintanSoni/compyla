@@ -83,34 +83,38 @@ pub struct Model<'t> {
     cache: RefCell<Cache>,
 }
 
+/// The parts and themes read so far. Boxes aren't kept: resolving one from what its parts set is
+/// cheap, and a deck can ask for many.
 #[derive(Default)]
 struct Cache {
     themes: HashMap<String, Rc<ThemeFonts>>,
     themes_read: usize,
     masters: HashMap<String, Rc<Master>>,
     layouts: HashMap<usize, Rc<PartText>>,
-    boxes: HashMap<(usize, Slot), Option<TextBox>>,
+    parts_read: usize,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy)]
 enum Slot {
     Title,
     Content(usize),
 }
 
-/// What a placeholder sets for its text: its type, its body properties and its list style.
+/// What a placeholder sets for its text: its type, its body properties where it sets any, and its
+/// list style.
 struct ShapeText {
     kind: String,
-    body: PartialBody,
+    body: Option<Box<PartialBody>>,
     levels: ListStyle,
 }
 
 impl ShapeText {
     fn of(shape: &Element, kind: &str) -> ShapeText {
         let text = shape.child(MAIN_P, "txBody");
+        let body = body(text.and_then(|t| t.child(MAIN_A, "bodyPr")));
         ShapeText {
             kind: kind.to_string(),
-            body: body(text.and_then(|t| t.child(MAIN_A, "bodyPr"))),
+            body: (!body.is_empty()).then(|| Box::new(body)),
             levels: levels(text.and_then(|t| t.child(MAIN_A, "lstStyle"))),
         }
     }
@@ -170,6 +174,11 @@ impl<'t> Model<'t> {
         self.cache.borrow().themes_read
     }
 
+    /// How many layout and master parts it has read: each once, however many boxes it gives.
+    pub fn parts_read(&self) -> usize {
+        self.cache.borrow().parts_read
+    }
+
     fn theme(&self, part: Option<String>) -> Rc<ThemeFonts> {
         let Some(part) = part else {
             return Rc::new(ThemeFonts::of(None));
@@ -213,7 +222,9 @@ impl<'t> Model<'t> {
             other_style: style("otherStyle"),
             fonts: self.theme(theme),
         });
-        self.cache.borrow_mut().masters.insert(key, master.clone());
+        let mut cache = self.cache.borrow_mut();
+        cache.parts_read += 1;
+        cache.masters.insert(key, master.clone());
         master
     }
 
@@ -245,20 +256,19 @@ impl<'t> Model<'t> {
             .map(|((position, p), inherited)| (text(*position, p), inherited.rect))
             .collect();
         let part = Rc::new(PartText { title, content });
-        self.cache.borrow_mut().layouts.insert(layout, part.clone());
+        // `geometry` must be this template's: its content placeholders are the part's.
+        debug_assert_eq!(
+            part.content.len(),
+            geometry
+                .placeholders
+                .iter()
+                .filter(|p| p.is_content())
+                .count()
+        );
+        let mut cache = self.cache.borrow_mut();
+        cache.parts_read += 1;
+        cache.layouts.insert(layout, part.clone());
         part
-    }
-
-    fn resolve(&self, layout: usize, slot: Slot) -> Option<TextBox> {
-        if let Some(text) = self.cache.borrow().boxes.get(&(layout, slot)) {
-            return text.clone();
-        }
-        let text = self.read(layout, slot);
-        self.cache
-            .borrow_mut()
-            .boxes
-            .insert((layout, slot), text.clone());
-        text
     }
 
     fn read(&self, layout: usize, slot: Slot) -> Option<TextBox> {
@@ -307,7 +317,7 @@ impl<'t> Model<'t> {
             (None, _) => &empty,
         };
         let shapes: Vec<&ShapeText> = [shape, parent].into_iter().flatten().collect();
-        let bodies: Vec<&PartialBody> = shapes.iter().map(|s| &s.body).collect();
+        let bodies: Vec<&PartialBody> = shapes.iter().filter_map(|s| s.body.as_deref()).collect();
         let mut lists: Vec<&ListStyle> = shapes.iter().map(|s| &s.levels).collect();
         lists.extend([style, &self.default_text]);
         let fonts = master.map_or_else(|| Rc::new(ThemeFonts::of(None)), |m| m.fonts.clone());
@@ -330,11 +340,11 @@ fn defaults() -> TextBox {
 
 impl TemplateText for Model<'_> {
     fn title(&self, layout: usize) -> TextBox {
-        self.resolve(layout, Slot::Title).unwrap_or_else(defaults)
+        self.read(layout, Slot::Title).unwrap_or_else(defaults)
     }
 
     fn content(&self, layout: usize, slot: usize) -> Option<TextBox> {
-        self.resolve(layout, Slot::Content(slot))
+        self.read(layout, Slot::Content(slot))
     }
 
     fn master_body(&self, layout: usize) -> Option<Rect> {
@@ -356,15 +366,12 @@ impl TemplateText for Model<'_> {
             return (level.clone(), level);
         };
         let master = self.master(&geometry.master);
+        let (other, default) = (master.other_style.get(0), self.default_text.get(0));
         let level = |text: &Partial| {
-            let chain: Vec<&Partial> = [
-                Some(text),
-                master.other_style.get(0),
-                self.default_text.get(0),
-            ]
-            .into_iter()
-            .flatten()
-            .collect();
+            let chain: Vec<&Partial> = [Some(text), other.as_ref(), default.as_ref()]
+                .into_iter()
+                .flatten()
+                .collect();
             resolve_level(&chain, &master.fonts)
         };
         (level(&self.table_header), level(&self.table_body))
@@ -397,14 +404,110 @@ struct Partial {
     spacing: Option<i64>,
 }
 
-/// The levels a list style sets, each with its index (0 for `a:lvl1pPr`): only those it has, so a
-/// placeholder that sets none costs nothing.
+/// The levels a list style sets, each by its index (0 for `a:lvl1pPr`) and only the properties it
+/// sets: a placeholder costs memory in proportion to what its list style says, not to its levels.
 #[derive(Debug, Clone, Default)]
-struct ListStyle(Vec<(usize, Partial)>);
+struct ListStyle(Box<[(usize, Box<[Prop]>)]>);
 
 impl ListStyle {
-    fn get(&self, level: usize) -> Option<&Partial> {
-        self.0.iter().find(|(i, _)| *i == level).map(|(_, p)| p)
+    fn get(&self, level: usize) -> Option<Partial> {
+        self.0
+            .iter()
+            .find(|(i, _)| *i == level)
+            .map(|(_, props)| Partial::from_props(props))
+    }
+}
+
+/// One property a level sets, as a list style keeps it.
+#[derive(Debug, Clone)]
+enum Prop {
+    Margin(i64),
+    Indent(i64),
+    LineSpacing(Spacing),
+    SpaceBefore(Spacing),
+    SpaceAfter(Spacing),
+    TabSize(i64),
+    Tabs(Box<[i64]>),
+    LatinLineBreak(bool),
+    Bullet(Bullet),
+    BulletSize(BulletSize),
+    BulletFont(Option<String>),
+    Size(i64),
+    Latin(String),
+    EastAsian(String),
+    Complex(String),
+    Bold(bool),
+    Italic(bool),
+    Caps(Caps),
+    Kern(i64),
+    Spacing(i64),
+}
+
+impl Partial {
+    /// The properties it sets.
+    fn props(&self) -> Box<[Prop]> {
+        let mut props = Vec::new();
+        macro_rules! push {
+            ($($field:ident => $prop:expr),* $(,)?) => {
+                $(if let Some(value) = &self.$field {
+                    props.push($prop(value.clone()));
+                })*
+            };
+        }
+        push!(
+            margin => Prop::Margin,
+            indent => Prop::Indent,
+            line_spacing => Prop::LineSpacing,
+            space_before => Prop::SpaceBefore,
+            space_after => Prop::SpaceAfter,
+            tab_size => Prop::TabSize,
+            latin_line_break => Prop::LatinLineBreak,
+            bullet => Prop::Bullet,
+            bullet_size => Prop::BulletSize,
+            bullet_font => Prop::BulletFont,
+            size => Prop::Size,
+            latin => Prop::Latin,
+            east_asian => Prop::EastAsian,
+            complex => Prop::Complex,
+            bold => Prop::Bold,
+            italic => Prop::Italic,
+            caps => Prop::Caps,
+            kern => Prop::Kern,
+            spacing => Prop::Spacing,
+        );
+        if let Some(tabs) = &self.tabs {
+            props.push(Prop::Tabs(tabs.clone().into_boxed_slice()));
+        }
+        props.into_boxed_slice()
+    }
+
+    fn from_props(props: &[Prop]) -> Partial {
+        let mut level = Partial::default();
+        for prop in props {
+            match prop.clone() {
+                Prop::Margin(v) => level.margin = Some(v),
+                Prop::Indent(v) => level.indent = Some(v),
+                Prop::LineSpacing(v) => level.line_spacing = Some(v),
+                Prop::SpaceBefore(v) => level.space_before = Some(v),
+                Prop::SpaceAfter(v) => level.space_after = Some(v),
+                Prop::TabSize(v) => level.tab_size = Some(v),
+                Prop::Tabs(v) => level.tabs = Some(v.into_vec()),
+                Prop::LatinLineBreak(v) => level.latin_line_break = Some(v),
+                Prop::Bullet(v) => level.bullet = Some(v),
+                Prop::BulletSize(v) => level.bullet_size = Some(v),
+                Prop::BulletFont(v) => level.bullet_font = Some(v),
+                Prop::Size(v) => level.size = Some(v),
+                Prop::Latin(v) => level.latin = Some(v),
+                Prop::EastAsian(v) => level.east_asian = Some(v),
+                Prop::Complex(v) => level.complex = Some(v),
+                Prop::Bold(v) => level.bold = Some(v),
+                Prop::Italic(v) => level.italic = Some(v),
+                Prop::Caps(v) => level.caps = Some(v),
+                Prop::Kern(v) => level.kern = Some(v),
+                Prop::Spacing(v) => level.spacing = Some(v),
+            }
+        }
+        level
     }
 }
 
@@ -417,10 +520,11 @@ fn levels(list: Option<&Element>) -> ListStyle {
     ListStyle(
         (0..9)
             .filter_map(|i| {
-                list.child(MAIN_A, &format!("lvl{}pPr", i + 1))
-                    .map(|pr| (i, level(pr)))
+                let props = level(list.child(MAIN_A, &format!("lvl{}pPr", i + 1))?).props();
+                (!props.is_empty()).then_some((i, props))
             })
-            .collect(),
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
     )
 }
 
@@ -573,7 +677,7 @@ fn on_off(value: &str) -> Option<bool> {
 }
 
 /// A box's body properties as one `a:bodyPr` sets them.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 struct PartialBody {
     left: Option<i64>,
     top: Option<i64>,
@@ -583,6 +687,12 @@ struct PartialBody {
     autofit: Option<Autofit>,
     columns: Option<i64>,
     vertical: Option<bool>,
+}
+
+impl PartialBody {
+    fn is_empty(&self) -> bool {
+        *self == PartialBody::default()
+    }
 }
 
 fn body(pr: Option<&Element>) -> PartialBody {
@@ -741,8 +851,8 @@ fn resolve_level(chain: &[&Partial], theme: &ThemeFonts) -> Level {
 /// Each level resolved along `chain`.
 fn resolve_levels(chain: &[&ListStyle], theme: &ThemeFonts) -> Levels {
     std::array::from_fn(|i| {
-        let levels: Vec<&Partial> = chain.iter().filter_map(|style| style.get(i)).collect();
-        resolve_level(&levels, theme)
+        let levels: Vec<Partial> = chain.iter().filter_map(|style| style.get(i)).collect();
+        resolve_level(&levels.iter().collect::<Vec<_>>(), theme)
     })
 }
 
@@ -905,6 +1015,43 @@ mod tests {
         // A level nothing sets is the defaults.
         assert_eq!(levels[4].line_spacing, Spacing::Percent(100_000));
         assert_eq!(levels[4].run.size, 1_800);
+    }
+
+    #[test]
+    fn a_level_keeps_each_property_it_sets() {
+        // Every property, through the compact form a list style keeps, and back.
+        let full = Partial {
+            margin: Some(1),
+            indent: Some(-2),
+            line_spacing: Some(Spacing::Percent(3)),
+            space_before: Some(Spacing::Points(4)),
+            space_after: Some(Spacing::Percent(5)),
+            tab_size: Some(6),
+            tabs: Some(vec![7, 8]),
+            latin_line_break: Some(true),
+            bullet: Some(Bullet::Number {
+                scheme: "arabicPeriod".into(),
+                start: 9,
+            }),
+            bullet_size: Some(BulletSize::Points(10)),
+            bullet_font: Some(None),
+            size: Some(11),
+            latin: Some("Latin".into()),
+            east_asian: Some("East".into()),
+            complex: Some("Complex".into()),
+            bold: Some(false),
+            italic: Some(true),
+            caps: Some(Caps::Small),
+            kern: Some(12),
+            spacing: Some(-13),
+        };
+        let props = full.props();
+        assert_eq!(props.len(), 20);
+        assert_eq!(
+            format!("{:?}", Partial::from_props(&props)),
+            format!("{full:?}")
+        );
+        assert!(Partial::default().props().is_empty());
     }
 
     #[test]
