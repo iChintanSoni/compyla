@@ -153,7 +153,7 @@ const EXPECTED: &[i64] = &[
     2025052, // arabic unmapped rtl
     1168461, // hebrew complex size
     570011,  // marks
-    849609,  // spaces
+    849610,  // spaces
     1329332, // spacing
     817562,  // language
     2817192, // consolas

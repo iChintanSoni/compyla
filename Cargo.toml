@@ -40,13 +40,15 @@ lto = true
 codegen-units = 1
 
 # ttf-parser and rustybuzz treat an oversized offset or count as their own bug, with a debug
-# assertion. A hostile font reaches those (markdown-spec.md §12.1), and release builds have no debug
-# assertions, so dev and test builds drop them too, to test what ships.
+# assertion or an overflow check. A hostile font reaches those (markdown-spec.md §12.1), and release
+# builds have neither, so dev and test builds drop both for these two crates, to test what ships.
 [profile.dev.package.ttf-parser]
 debug-assertions = false
+overflow-checks = false
 
 [profile.dev.package.rustybuzz]
 debug-assertions = false
+overflow-checks = false
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
