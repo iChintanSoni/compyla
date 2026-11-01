@@ -182,6 +182,12 @@ fn sfnt_at(base: usize, extra: Vec<([u8; 4], Vec<u8>)>) -> Vec<u8> {
 /// A `cmap` with `records` Unicode encoding records, all pointing at one format 4 subtable that
 /// maps `a` to `glyph`.
 fn cmap(records: u16, glyph: u16) -> Vec<u8> {
+    cmap_of(records, &[(u16::from(b'a'), glyph)])
+}
+
+/// A `cmap` with `records` Unicode encoding records, all pointing at one format 4 subtable that
+/// maps each code point to its glyph (sorted by code point, all in the BMP).
+fn cmap_of(records: u16, maps: &[(u16, u16)]) -> Vec<u8> {
     let mut out = 0u16.to_be_bytes().to_vec();
     out.extend(records.to_be_bytes());
     let subtable_at = 4 + 8 * u32::from(records);
@@ -190,26 +196,17 @@ fn cmap(records: u16, glyph: u16) -> Vec<u8> {
         out.extend(3u16.to_be_bytes()); // BMP
         out.extend(subtable_at.to_be_bytes());
     }
-    // Format 4: two segments, `a`..`a` and the closing 0xFFFF.
-    let delta = glyph.wrapping_sub(u16::from(b'a'));
-    let words: [u16; 16] = [
-        4,
-        32,
-        0,
-        4,
-        2,
-        0,
-        0, // format, length, language, segCountX2, search fields
-        u16::from(b'a'),
-        0xFFFF, // end codes
-        0,      // reserved pad
-        u16::from(b'a'),
-        0xFFFF, // start codes
-        delta,
-        1, // deltas
-        0,
-        0, // range offsets
-    ];
+    // Format 4: a segment per code point, then the closing 0xFFFF. The words are the format,
+    // length, language, segment count × 2 and three search fields; the end codes, a pad, the start
+    // codes (equal to the end codes), the deltas and the range offsets.
+    let segments = maps.len() as u16 + 1;
+    let ends: Vec<u16> = maps.iter().map(|&(c, _)| c).chain([0xFFFF]).collect();
+    let mut words: Vec<u16> = vec![4, 16 + 8 * segments, 0, 2 * segments, 0, 0, 0];
+    words.extend(&ends);
+    words.push(0);
+    words.extend(&ends);
+    words.extend(maps.iter().map(|&(c, g)| g.wrapping_sub(c)).chain([1]));
+    words.extend(std::iter::repeat_n(0, segments as usize));
     out.extend(words.iter().flat_map(|w| w.to_be_bytes()));
     out
 }
@@ -292,4 +289,78 @@ fn a_collection_past_the_face_limit_isnt_a_font() {
         .unwrap_err(),
         Unreadable::NotAFont
     );
+}
+
+#[test]
+fn a_collection_with_huge_name_tables_is_read_quickly() {
+    // 5,000 family-name records, each 60,000 bytes long, sharing one string: matching would decode
+    // every one, so records whose length can't match aren't decoded, and a face listed 256 times
+    // is read once.
+    let records = 5_000u16;
+    let length = 60_000u16;
+    let mut name = 0u16.to_be_bytes().to_vec();
+    name.extend(records.to_be_bytes());
+    name.extend((6 + 12 * records).to_be_bytes());
+    for _ in 0..records {
+        for word in [3u16, 1, 0x409, 1, length, 0] {
+            name.extend(word.to_be_bytes());
+        }
+    }
+    name.extend(std::iter::repeat_n(0x41u8, length as usize));
+    let faces = compyla_fonts::MAX_FACES;
+    let first = 12 + 4 * faces;
+    let mut collection = b"ttcf\x00\x01\x00\x00".to_vec();
+    collection.extend(faces.to_be_bytes());
+    for _ in 0..faces {
+        collection.extend(first.to_be_bytes());
+    }
+    collection.extend(sfnt_at(
+        first as usize,
+        vec![(*b"cmap", cmap(1, 1)), (*b"name", name)],
+    ));
+    let started = Instant::now();
+    assert!(Face::load(collection, "Brand Sans", Style::Bold).is_ok());
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "{:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
+fn a_mark_whose_base_no_face_maps_advances_nothing() {
+    // A face mapping `b` and U+0301 to glyph 1 (600 of 1,000 units), whose GDEF classes it as a
+    // base glyph, so shaped alone the acute would advance. Its base 漢 is unmapped.
+    let mut gdef = Vec::new();
+    for word in [1u16, 0, 12, 0, 0, 0, 1, 1, 1, 1] {
+        gdef.extend(word.to_be_bytes()); // the header, then a format 1 class definition: glyph 1 → 1
+    }
+    let face = Face::load(
+        sfnt(vec![
+            (*b"cmap", cmap_of(1, &[(u16::from(b'b'), 1), (0x0301, 1)])),
+            (*b"GDEF", gdef),
+        ]),
+        "Marks",
+        Style::Regular,
+    )
+    .unwrap();
+    assert!(face.maps('\u{0301}'));
+    let size = 12 * 12_700;
+    let run = Run {
+        text: "b漢\u{0301}",
+        fonts: Fonts {
+            latin: Font::Face(&face),
+            east_asian: None,
+            complex: None,
+        },
+        size,
+        complex_size: size,
+        style: Style::Regular,
+        features: Features::default(),
+        spacing: 0,
+        language: None,
+        rtl: None,
+    };
+    // `b` at 600/1,000 em and 漢 at 1 em; the mark nothing.
+    assert_eq!(measure(&run), 600 * size / 1000 + size);
 }

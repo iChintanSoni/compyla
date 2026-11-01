@@ -151,8 +151,10 @@ fn within_limits(data: &[u8], index: u32) -> bool {
 /// The index of the face a collection of `count` faces holds for `family` and `style`.
 fn choose(data: &[u8], count: u32, family: &str, style: Style) -> u32 {
     let mut family_match = None;
+    let mut seen = std::collections::HashSet::new();
     for index in 0..count {
-        if !within_limits(data, index) {
+        // A face listed twice gives the same answer twice: read it once.
+        if !within_limits(data, index) || !seen.insert(face_offset(data, index)) {
             continue;
         }
         let Ok(face) = ttf_parser::Face::parse(data, index) else {
@@ -175,9 +177,20 @@ fn choose(data: &[u8], count: u32, family: &str, style: Style) -> u32 {
 /// Whether one of the face's family-name records (name ID 1) is `family`, compared by ASCII-lowercase
 /// form (§3). A record that isn't Unicode is read as ASCII, its other bytes matching nothing.
 fn names_family(face: &ttf_parser::Face<'_>, family: &str) -> bool {
+    // A record of the wrong length can't match, and isn't decoded: a face may have thousands.
+    let utf16 = family.encode_utf16().count() * 2;
+    let bytes = family.chars().count();
     face.names()
         .into_iter()
         .filter(|name| name.name_id == ttf_parser::name_id::FAMILY)
+        .filter(|name| {
+            let len = name.name.len();
+            if name.is_unicode() {
+                len == utf16
+            } else {
+                len == bytes
+            }
+        })
         .any(|name| {
             let text = name.to_string().unwrap_or_else(|| {
                 name.name

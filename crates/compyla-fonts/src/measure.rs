@@ -185,22 +185,24 @@ pub fn measure<'a>(run: &Run<'a>) -> i64 {
     }
     // A character no face maps that advances nothing stays in the piece around it, so it doesn't
     // break shaping across it (kerning across a soft hyphen, say); the shaper hides it, or shapes
-    // it as `.notdef`, which advances nothing.
+    // it as `.notdef`, which advances nothing. Not a mark: one whose base no face maps stays
+    // unmapped, and advances nothing, rather than be shaped alone by a face that maps it.
+    let joins = |i: usize| chars::advances_nothing(plain[i]) && !chars::is_mark(plain[i]);
     let mut last = None;
-    for i in 0..picks.len() {
-        match picks[i] {
-            Pick::Unmapped if chars::advances_nothing(plain[i]) => {
-                if let Some(pick) = last {
-                    picks[i] = pick;
+    for (i, pick) in picks.iter_mut().enumerate() {
+        match *pick {
+            Pick::Unmapped if joins(i) => {
+                if let Some(font) = last {
+                    *pick = font;
                 }
             }
-            Pick::Font(_) => last = Some(picks[i]),
+            Pick::Font(_) => last = Some(*pick),
             Pick::Unmapped => {}
         }
     }
     if let Some(first) = picks.iter().position(|p| matches!(p, Pick::Font(_))) {
         for i in 0..first {
-            if chars::advances_nothing(plain[i]) {
+            if joins(i) {
                 picks[i] = picks[first];
             }
         }
