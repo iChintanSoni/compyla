@@ -108,8 +108,13 @@ fn local(name: &str) -> &str {
 
 /// `presentation.xml` with its slide list replaced by `slides` (each a slide id and the
 /// relationship id of its part), custom shows removed, and section lists removed from its
-/// extensions.
-pub fn edit(bytes: &[u8], slides: &[(u32, String)]) -> Result<Vec<u8>, String> {
+/// extensions. With `notes_master` (the relationship id of a notes master the output adds, §8.8),
+/// its notes master list names that one instead.
+pub fn edit(
+    bytes: &[u8],
+    slides: &[(u32, String)],
+    notes_master: Option<&str>,
+) -> Result<Vec<u8>, String> {
     let bytes = utf8(bytes)?;
     let bytes = bytes.as_slice();
     let root = parts(bytes)?;
@@ -138,8 +143,14 @@ pub fn edit(bytes: &[u8], slides: &[(u32, String)]) -> Result<Vec<u8>, String> {
     } else {
         list
     };
+    let notes = notes_master.map_or_else(String::new, |id| {
+        format!(
+            "<{prefix}notesMasterIdLst{declaration}><{prefix}notesMasterId {r}:id=\"{id}\"/></{prefix}notesMasterIdLst>"
+        )
+    });
 
-    // CT_Presentation's sequence: the slide list comes before the slide size.
+    // CT_Presentation's sequence: the notes master list comes after the slide master list, and
+    // before the handout master list and the slide list; the slide list before the slide size.
     const AFTER: [&str; 11] = [
         "sldSz",
         "notesSz",
@@ -155,22 +166,33 @@ pub fn edit(bytes: &[u8], slides: &[(u32, String)]) -> Result<Vec<u8>, String> {
     ];
     let mut out = bytes[..root.open_end].to_vec();
     let mut cursor = root.open_end;
-    let mut placed = false;
+    let (mut notes_placed, mut placed) = (false, false);
     for child in &root.children {
         out.extend(&bytes[cursor..child.start]);
         cursor = child.end;
         let name = local(&child.name);
+        if !notes_placed
+            && (matches!(name, "handoutMasterIdLst" | "sldIdLst") || AFTER.contains(&name))
+        {
+            out.extend(notes.as_bytes());
+            notes_placed = true;
+        }
         if !placed && AFTER.contains(&name) {
             out.extend(list.as_bytes());
             placed = true;
         }
         match name {
             "sldIdLst" | "custShowLst" => {}
+            // The template's list names a notes master it doesn't have: the added one replaces it.
+            "notesMasterIdLst" if notes_master.is_some() => {}
             "extLst" => out.extend(without_sections(&bytes[child.start..child.end])?),
             _ => out.extend(&bytes[child.start..child.end]),
         }
     }
     out.extend(&bytes[cursor..root.close]);
+    if !notes_placed {
+        out.extend(notes.as_bytes());
+    }
     if !placed {
         out.extend(list.as_bytes());
     }
@@ -255,7 +277,8 @@ mod tests {
     fn replaces_the_slide_list_and_keeps_the_rest() {
         let xml = br#"<?xml version="1.0"?>
 <p:presentation xmlns:p="urn:p" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldMasterIdLst><p:sldMasterId id="1" r:id="rId1"/></p:sldMasterIdLst><p:sldIdLst><p:sldId id="256" r:id="rId9"/></p:sldIdLst><p:sldSz cx="1" cy="2"/><p:custShowLst><p:custShow/></p:custShowLst><p:extLst><p:ext uri="a"><s:sectionLst xmlns:s="urn:s"/></p:ext><p:ext uri="b"><x/></p:ext></p:extLst></p:presentation>"#;
-        let out = String::from_utf8(edit(xml, &[(256, "cmpSlide1".into())]).unwrap()).unwrap();
+        let out =
+            String::from_utf8(edit(xml, &[(256, "cmpSlide1".into())], None).unwrap()).unwrap();
         assert!(
             out.contains(r#"</p:sldMasterIdLst><p:sldIdLst><p:sldId id="256" r:id="cmpSlide1"/></p:sldIdLst><p:sldSz cx="1" cy="2"/>"#),
             "{out}"
@@ -265,11 +288,34 @@ mod tests {
     }
 
     #[test]
+    fn an_added_notes_master_is_listed_in_place_of_the_templates_list() {
+        // An emptied notes master list, and a handout master list it goes before.
+        let xml = br#"<p:presentation xmlns:p="urn:p" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldMasterIdLst><p:sldMasterId id="1" r:id="rId1"/></p:sldMasterIdLst><p:notesMasterIdLst></p:notesMasterIdLst><p:handoutMasterIdLst><p:handoutMasterId r:id="rId2"/></p:handoutMasterIdLst><p:sldSz cx="1" cy="2"/></p:presentation>"#;
+        let out = String::from_utf8(
+            edit(xml, &[(256, "cmpSlide1".into())], Some("cmpNotesMaster")).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            out.contains(r#"</p:sldMasterIdLst><p:notesMasterIdLst><p:notesMasterId r:id="cmpNotesMaster"/></p:notesMasterIdLst><p:handoutMasterIdLst>"#),
+            "{out}"
+        );
+        assert_eq!(out.matches("notesMasterIdLst>").count(), 2, "{out}");
+        // Without a handout master list, it goes before the slide list.
+        let plain = br#"<presentation xmlns="urn:p"><sldMasterIdLst/><sldSz cx="1" cy="2"/></presentation>"#;
+        let out =
+            String::from_utf8(edit(plain, &[(256, "s1".into())], Some("n1")).unwrap()).unwrap();
+        assert!(
+            out.contains(r#"<sldMasterIdLst/><notesMasterIdLst xmlns:cmp="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><notesMasterId cmp:id="n1"/></notesMasterIdLst><sldIdLst"#),
+            "{out}"
+        );
+    }
+
+    #[test]
     fn utf16_parts_are_edited_as_utf8() {
         let xml = r#"<?xml version="1.0" encoding="UTF-16"?><presentation xmlns="urn:p"><sldSz cx="1" cy="2"/></presentation>"#;
         let mut utf16 = vec![0xFF, 0xFE];
         utf16.extend(xml.encode_utf16().flat_map(u16::to_le_bytes));
-        let out = String::from_utf8(edit(&utf16, &[(256, "s1".into())]).unwrap()).unwrap();
+        let out = String::from_utf8(edit(&utf16, &[(256, "s1".into())], None).unwrap()).unwrap();
         assert!(
             out.starts_with(r#"<?xml version="1.0" encoding="UTF-8"?>"#),
             "{out}"
@@ -301,7 +347,8 @@ mod tests {
         assert!(
             edit(
                 br#"<p:presentation xmlns:p="urn:p"/>"#,
-                &[(256, "s1".into())]
+                &[(256, "s1".into())],
+                None
             )
             .is_err()
         );
@@ -336,7 +383,7 @@ mod tests {
     #[test]
     fn declares_a_prefix_where_the_template_binds_none() {
         let xml = br#"<presentation xmlns="urn:p"><sldMasterIdLst/><sldSz cx="1" cy="2"/></presentation>"#;
-        let out = String::from_utf8(edit(xml, &[(256, "s1".into())]).unwrap()).unwrap();
+        let out = String::from_utf8(edit(xml, &[(256, "s1".into())], None).unwrap()).unwrap();
         assert!(
             out.contains(r#"<sldMasterIdLst/><sldIdLst xmlns:cmp="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sldId id="256" cmp:id="s1"/></sldIdLst><sldSz"#),
             "{out}"

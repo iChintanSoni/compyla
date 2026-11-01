@@ -470,6 +470,8 @@ def main():
     # Sample slides of the template's own, which its master and a layout still jump to (§8.8).
     pptx(ROOT / "render/122-pptx-template-slide-links/brand.potx", main_type="template",
          patch=template_slides)
+    # A template without a notes master, for a deck with notes (§8.8).
+    pptx(ROOT / "render/123-pptx-notes-without-notes-master/brand.potx", main_type="template")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,68 @@
+{
+  "diagnostics": [],
+  "output": {
+    "slides": [
+      {
+        "layout": "Title Slide",
+        "title": "Notes",
+        "texts": [],
+        "notes": "Welcome everyone."
+      },
+      {
+        "layout": "Titel und Inhalt",
+        "title": "Plan",
+        "texts": [
+          "Text."
+        ],
+        "notes": "First\nSecond"
+      }
+    ],
+    "package": {
+      "partsPresent": [
+        "ppt/notesMasters/notesMaster1.xml",
+        "ppt/notesMasters/_rels/notesMaster1.xml.rels",
+        "ppt/theme/theme1.xml",
+        "ppt/theme/theme2.xml",
+        "ppt/notesSlides/notesSlide1.xml",
+        "ppt/notesSlides/notesSlide2.xml"
+      ],
+      "xpath": [
+        {
+          "part": "ppt/presentation.xml",
+          "expr": "count(/p:presentation/p:notesMasterIdLst/p:notesMasterId)",
+          "equals": 1
+        },
+        {
+          "part": "ppt/presentation.xml",
+          "expr": "local-name(/p:presentation/p:notesMasterIdLst/following-sibling::*[1])",
+          "equals": "sldIdLst"
+        },
+        {
+          "part": "ppt/_rels/presentation.xml.rels",
+          "expr": "string(//rel:Relationship[@Type='http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesMaster']/@Target)",
+          "equals": "notesMasters/notesMaster1.xml"
+        },
+        {
+          "part": "ppt/notesMasters/_rels/notesMaster1.xml.rels",
+          "expr": "string(//rel:Relationship[@Type='http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme']/@Target)",
+          "equals": "../theme/theme2.xml"
+        },
+        {
+          "part": "ppt/notesSlides/_rels/notesSlide2.xml.rels",
+          "expr": "string(//rel:Relationship[@Type='http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesMaster']/@Target)",
+          "equals": "../notesMasters/notesMaster1.xml"
+        },
+        {
+          "part": "[Content_Types].xml",
+          "expr": "count(//*[local-name()='Override'][@PartName='/ppt/notesMasters/notesMaster1.xml'][@ContentType='application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml'])",
+          "equals": 1
+        },
+        {
+          "part": "[Content_Types].xml",
+          "expr": "count(//*[local-name()='Override'][@PartName='/ppt/theme/theme2.xml'][@ContentType='application/vnd.openxmlformats-officedocument.theme+xml'])",
+          "equals": 1
+        }
+      ]
+    }
+  }
+}
