@@ -187,6 +187,11 @@ impl<'a> Measurer<'a> {
     pub fn measure(&mut self, run: &Run<'a>) -> i64 {
         width(&mut self.shapers, run)
     }
+
+    /// How many faces it has parsed for shaping, and keeps.
+    pub fn faces(&self) -> usize {
+        self.shapers.faces.len()
+    }
 }
 
 /// The width of `run` in EMU (§3), with faces parsed for it alone: a [`Measurer`] keeps them.

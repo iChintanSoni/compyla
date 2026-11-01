@@ -442,13 +442,15 @@ font bytes only through the chain below, so they run offline and pinned (archite
     except characters the previous bullet makes advance nothing, and Wide and Fullwidth characters,
     which advance 1 em.
   - **Lines and heights.** Line break opportunities are UAX #14's as `icu_segmenter` 2.4.0 finds
-    them with its default options and its rules for scripts without a dictionary (Unicode 18.0), the
-    segmenter the pinned Typst lays pdf out with (D14); a word in a script that needs a dictionary
-    to break (Thai, Lao, Khmer, Myanmar) has no opportunity inside it. A break inside a word (§8.6)
-    falls between extended grapheme clusters (UAX #29), from the same crate. A face's ascent and
-    descent, for a last line's height (§8.6), are its OS/2 `usWinAscent` and `usWinDescent`, else,
-    without an OS/2 table, its `hhea` ascender and descender (its descender's magnitude); where both
-    are 0, Carlito's, 1,950 and 550. Consolas without a font has 1,884 and 514.
+    them with its default options and its rules for scripts without a dictionary (Unicode 18.0): the
+    crate and version the pinned Typst lays pdf out with (D14), though Typst adds models for scripts
+    that need a dictionary, its own data for Chinese and Japanese, and breaks inside links and at
+    hyphenation points. A word in a script that needs a dictionary to break (Thai, Lao, Khmer,
+    Myanmar) has no opportunity inside it here. A break inside a word (§8.6) falls between extended
+    grapheme clusters (UAX #29), from the same crate. A face's ascent and descent, for a last line's
+    height (§8.6), are its OS/2 `usWinAscent` and `usWinDescent`, else, without an OS/2 table long
+    enough to hold them, its `hhea` ascender and its descender's magnitude; where both are 0,
+    Carlito's, 1,950 and 550. Consolas without a font has 1,884 and 514.
   - **Known bias.** Carlito measures Calibri exactly and Calibri Light about 1–2% wide. A family
     measured with Carlito because it is unresolved may differ more from the font the viewer
     substitutes: Arial is about 10% wider than Carlito, and Aptos about 4% wider.

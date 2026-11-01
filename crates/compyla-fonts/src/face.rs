@@ -115,8 +115,8 @@ impl Face {
     }
 
     /// Its ascent and descent in its units, for a last line's height (§3, §8.6): the OS/2 table's
-    /// `usWinAscent` and `usWinDescent`, else `hhea`'s ascender and its descender's magnitude, else,
-    /// where both are 0, Carlito's.
+    /// `usWinAscent` and `usWinDescent`, else, where it has no OS/2 table long enough to hold them,
+    /// `hhea`'s ascender and its descender's magnitude; where both are 0, Carlito's.
     pub fn ascent_descent(&self) -> (u32, u32) {
         self.ascent_descent
     }
@@ -144,20 +144,23 @@ impl Face {
 pub(crate) const CARLITO_ASCENT_DESCENT: (u32, u32) = (1950, 550);
 
 fn ascent_descent(face: &ttf_parser::Face) -> (u32, u32) {
-    // ttf-parser reads the unsigned win values as signed and negates the descent; undo both.
-    let metrics = match face.tables().os2 {
-        Some(os2) => (
-            u32::from(os2.windows_ascender() as u16),
-            u32::from(os2.windows_descender().wrapping_neg() as u16),
-        ),
-        None => {
-            let hhea = face.tables().hhea;
-            (
-                u32::from(hhea.ascender.max(0) as u16),
-                u32::from(hhea.descender.saturating_neg().max(0) as u16),
-            )
-        }
-    };
+    // The OS/2 win values are unsigned, read from the table's bytes: ttf-parser's accessors read
+    // them as signed and negate the descent, which overflows for 0x8000.
+    let os2 = face
+        .raw_face()
+        .table(ttf_parser::Tag::from_bytes(b"OS/2"))
+        .filter(|table| table.len() >= 78)
+        .map(|table| {
+            let word = |at: usize| u32::from(u16::from_be_bytes([table[at], table[at + 1]]));
+            (word(74), word(76))
+        });
+    let metrics = os2.unwrap_or_else(|| {
+        let hhea = face.tables().hhea;
+        (
+            u32::from(hhea.ascender.max(0).unsigned_abs()),
+            u32::from(hhea.descender.unsigned_abs()),
+        )
+    });
     match metrics {
         (0, 0) => CARLITO_ASCENT_DESCENT,
         metrics => metrics,

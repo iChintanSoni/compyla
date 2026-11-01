@@ -8,7 +8,7 @@
 //! default-ignorables) come from the Unicode Character Database 17.0.0 (`unicode/make_tables.py`),
 //! the version `unicode-script` uses; bidi classes (`unicode-bidi`) and the shaper's canonical
 //! combining classes (`unicode-ccc`) are Unicode 16.0, the latest those crates have. Line breaks and
-//! grapheme clusters come from `icu_segmenter`, Unicode 18.0, which Typst breaks lines with.
+//! grapheme clusters come from `icu_segmenter`, Unicode 18.0, the crate Typst breaks lines with.
 
 mod chars;
 mod face;
@@ -19,7 +19,7 @@ mod tables;
 pub use face::{
     Face, MAX_CMAP_RECORDS, MAX_FACES, MAX_FONT_BYTES, MAX_TABLES, Style, Unreadable, carlito,
 };
-pub use lines::{SEGMENTER_UNICODE_VERSION, graphemes, line_breaks};
+pub use lines::{SEGMENTER_UNICODE_VERSION, graphemes, hard_break, line_breaks};
 pub use measure::{Features, Font, Fonts, Ligatures, Measurer, Run, measure};
 
 /// The families the engine bundles a stand-in for (§3): Carlito for Calibri and Calibri Light, and
