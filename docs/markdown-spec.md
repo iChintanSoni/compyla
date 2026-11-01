@@ -344,8 +344,14 @@ render.
 font bytes only through the chain below, so they run offline and pinned (architecture.md D14).
 *(C62)*
 - **Families checked:** the theme's major and minor fonts (`latin`, and `ea` and `cs` where they
-  aren't empty), plus the fonts named by every style the output uses. Symbol fonts used only for
-  bullets (e.g. Wingdings) and a theme's per-script fonts (`a:font script="…"`) are not checked.
+  aren't empty), plus the fonts named by every style the output uses. With a pptx template, those
+  are the typefaces (`a:latin`, `a:ea`, `a:cs`) of the parts a pptx output keeps: the presentation's
+  default text style and table styles, each slide master and its layouts, and the notes and handout
+  masters, each master with its own theme's major and minor fonts. With a docx template, they are
+  the fonts its document defaults name (`w:rFonts`), and those of the styles the output writes with.
+  Theme references (`+mj-lt`, Word's `w:asciiTheme` and its siblings) aren't families. Symbol fonts
+  used only for bullets (e.g. Wingdings) and a theme's per-script fonts (`a:font script="…"`) are
+  not checked.
 - **Families and styles.** A family is named as the template names it, and families compare by their
   ASCII-lowercase form. A style is regular, bold, italic or bold italic (`boldItalic` in JSON). Each
   style resolves on its own. A style that doesn't resolve while its family's regular does is
@@ -361,10 +367,11 @@ font bytes only through the chain below, so they run offline and pinned (archite
 
   A family whose regular style none of these resolves is measured with Carlito and produces
   `font_unresolved` (warning, strict-promotable, validate stage, §11.2) once; the viewer substitutes
-  a font. In pptx output, a family the template embeds (`p:embeddedFont`) isn't reported: the output
-  keeps the embedding and PowerPoint shows it. The engine doesn't read Embedded OpenType, so such a
-  family is measured as the chain resolves it, else with Carlito; in other outputs (a pdf from a
-  `.potx`) it is reported like any other.
+  a font. In pptx output, a family the template embeds (`p:embeddedFont`, whose regular face
+  `p:regular` is a part of the package) isn't reported: the output keeps the embedding and
+  PowerPoint shows it. The engine doesn't read Embedded OpenType, so such a family is measured as
+  the chain resolves it, else with Carlito; in other outputs (a pdf from a `.potx`) it is reported
+  like any other.
 - **Ahead of rendering,** `compyla fonts sync` pins a font for each family checked that has no
   stand-in and that the template doesn't embed in a form the engine reads: from a user-supplied
   file, else from **Google Fonts**. It may pin a metric-compatible open font under the template's
@@ -1335,13 +1342,16 @@ The core performs no I/O (architecture.md D11). Hosts supply resolvers:
   directory). For a family and style the lockfile lists, it returns the cached file named by the
   pinned SHA-256; a file whose digest doesn't match is *not found*, so a lockfile pins bytes, not
   names. The cache is `$COMPYLA_CACHE/fonts` when that is set, else the user's cache directory:
-  `$XDG_CACHE_HOME/compyla/fonts` (`~/.cache/compyla/fonts` when it is unset) on Linux,
-  `~/Library/Caches/compyla/fonts` on macOS and `%LOCALAPPDATA%\compyla\fonts` on Windows. Each file
-  is named by its digest in lower-case hex, without an extension. `compyla fonts sync` writes the
-  lockfile and fills the cache; the resolver never touches the network.
+  `$XDG_CACHE_HOME/compyla/fonts` (`~/.cache/compyla/fonts` when it is unset or not an absolute
+  path) on Linux, `~/Library/Caches/compyla/fonts` on macOS and `%LOCALAPPDATA%\compyla\fonts` on
+  Windows. Each file is named by its digest in lower-case hex, without an extension. `compyla fonts
+  sync` writes the lockfile and fills the cache; the resolver never touches the network.
 - **The lockfile** lists a family and style at most once, families compared by their ASCII-lowercase
   form (§3) and spelled as the template spells them. Entries are sorted by that form, by code point,
-  then by style in the order regular, bold, italic, bold italic.
+  then by style in the order regular, bold, italic, bold italic. A lockfile that can't be read,
+  doesn't match its schema or lists a family and style twice stops the CLI with exit 2 (§10.8),
+  whether `--lockfile` names it or it was found, and whatever the format: a pin is never skipped
+  silently.
 - In every host, the bytes a resolver returns are checked by content (§4.7), never trusted by
   extension.
 

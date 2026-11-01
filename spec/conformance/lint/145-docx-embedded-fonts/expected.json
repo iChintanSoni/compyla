@@ -3,6 +3,14 @@
     {
       "code": "font_unresolved",
       "severity": "warning"
+    },
+    {
+      "code": "font_unresolved",
+      "severity": "warning"
+    },
+    {
+      "code": "font_unresolved",
+      "severity": "warning"
     }
   ]
 }
