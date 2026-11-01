@@ -857,6 +857,7 @@ PowerPoint lays it out with (each checked in PowerPoint for Mac 16.114), at the 
 widths differ from the engine's by a fraction of a point a line (it appears to round each advance to
 ⅛ pt), and a family measured with a stand-in that is a little wide (Calibri Light, §3) runs wider,
 so a word that only just fits or doesn't may wrap differently.
+
 - **The box.** A placeholder's box is its own `a:xfrm`, else its layout placeholder's, else that of
   its master placeholder: the master's title placeholder for `title` and `ctrTitle`, and its body
   placeholder for any content placeholder (`body`, `obj` or no type, `subTitle`, `tbl`, `pic`, …). A
