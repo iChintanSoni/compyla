@@ -1,0 +1,23 @@
+[package]
+name = "compyla-fonts"
+description = "Font faces and text measurement for Compyla's compose stage, with the bundled house stand-in Carlito (markdown-spec.md §3, architecture.md D14). No I/O."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+# Carlito is under the SIL Open Font License; every distribution carries fonts/OFL.txt (§3, C62).
+include = ["src/**", "fonts/**", "unicode/**", "Cargo.toml"]
+
+[dependencies]
+rustybuzz.workspace = true
+ttf-parser.workspace = true
+unicode-bidi.workspace = true
+unicode-script.workspace = true
+
+[dev-dependencies]
+sha2 = "0.10"
+
+[lints]
+workspace = true

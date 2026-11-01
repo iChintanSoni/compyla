@@ -4,7 +4,7 @@ name: Rust
 on:
   push:
     branches: [main]
-    paths: ["crates/**", "hosts/**", "spec/**", "Cargo.toml", "Cargo.lock", ".github/workflows/rust.yml"]
+    paths: ["crates/**", "hosts/**", "spec/**", "Cargo.toml", "Cargo.lock", ".github/workflows/rust.yml", ".github/scripts/wasi-run.mjs"]
   pull_request:
     branches: [main]
 
@@ -39,7 +39,7 @@ jobs:
           # A PR checks out its merge commit: its first parent is the base branch. Listed apart
           # from the match, so a failing diff fails this step instead of skipping every job.
           files=$(git diff --name-only HEAD^1 HEAD)
-          if grep -qE '^(crates/|hosts/|spec/|Cargo\.toml$|Cargo\.lock$|\.github/workflows/rust\.yml$)' <<<"$files"; then
+          if grep -qE '^(crates/|hosts/|spec/|Cargo\.toml$|Cargo\.lock$|\.github/workflows/rust\.yml$|\.github/scripts/wasi-run\.mjs$)' <<<"$files"; then
             echo "relevant=true" >> "$GITHUB_OUTPUT"
           else
             echo "relevant=false" >> "$GITHUB_OUTPUT"
@@ -89,8 +89,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.89"
+          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --workspace --lib --bins
+      # Measurement is in every build, WASM included (markdown-spec.md §13, C62).
+      - run: cargo check -p compyla-fonts --target wasm32-unknown-unknown
 
   wasm:
     name: core-only WASM build
@@ -101,9 +104,17 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: wasm32-unknown-unknown
+          targets: wasm32-unknown-unknown, wasm32-wasip1
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release -p compyla-wasm --target wasm32-unknown-unknown
+      # Measurement gives the same widths on wasm32 as natively (§13, C62): compyla-fonts' tests,
+      # its committed widths included, run on wasm32 under Node's WASI.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: cargo test -p compyla-fonts --target wasm32-wasip1
+        env:
+          CARGO_TARGET_WASM32_WASIP1_RUNNER: node ${{ github.workspace }}/.github/scripts/wasi-run.mjs
 
   # The one check branch protection requires: it fails if any job above failed or was cancelled,
   # and passes when they ran green or were skipped as irrelevant.

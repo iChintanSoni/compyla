@@ -17,6 +17,7 @@ publish = false
 
 [workspace.dependencies]
 compyla-core = { path = "crates/compyla-core" }
+compyla-fonts = { path = "crates/compyla-fonts" }
 compyla = { path = "crates/compyla", default-features = false }
 compyla-ooxml = { path = "crates/compyla-ooxml" }
 compyla-pptx = { path = "crates/compyla-pptx" }
@@ -24,6 +25,11 @@ compyla-xlsx = { path = "crates/compyla-xlsx" }
 crc32fast = "1.5"
 miniz_oxide = "0.9"
 quick-xml = "0.42"
+# The font stack the pinned typst uses (architecture.md D14): ttf-parser 0.25 and rustybuzz 0.20.
+rustybuzz = "0.20.1"
+ttf-parser = "0.25.1"
+unicode-bidi = "0.3.18"
+unicode-script = "0.5.8"
 comrak = { version = "0.59", default-features = false }
 saphyr-parser = "0.3"
 serde = { version = "1", features = ["derive"] }
@@ -32,6 +38,15 @@ serde_json = { version = "1", features = ["preserve_order"] }
 [profile.release]
 lto = true
 codegen-units = 1
+
+# ttf-parser and rustybuzz treat an oversized offset or count as their own bug, with a debug
+# assertion. A hostile font reaches those (markdown-spec.md §12.1), and release builds have no debug
+# assertions, so dev and test builds drop them too, to test what ships.
+[profile.dev.package.ttf-parser]
+debug-assertions = false
+
+[profile.dev.package.rustybuzz]
+debug-assertions = false
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
