@@ -639,7 +639,7 @@ fn masters_sharing_a_large_theme_read_it_once() {
     let model = compyla_ooxml::text::Model::new(&template, &layouts);
     let started = Instant::now();
     for layout in 0..layouts.len() {
-        assert_eq!(model.title(layout).levels[0].run.latin, "Brand Display");
+        assert_eq!(&*model.title(layout).levels[0].run.latin, "Brand Display");
     }
     assert!(started.elapsed() < BOUND, "{:?}", started.elapsed());
     // One theme part, read once: counted, so a build of any speed would show a second read.

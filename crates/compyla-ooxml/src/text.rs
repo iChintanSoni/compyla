@@ -7,6 +7,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use compyla_core::validate::pptx::text::{
     Autofit, Body, Bullet, BulletSize, Caps, Insets, Level, Levels, Rect, Run, Spacing,
@@ -392,11 +393,11 @@ struct Partial {
     bullet: Option<Bullet>,
     bullet_size: Option<BulletSize>,
     /// `Some(None)` for `a:buFontTx`: the bullet follows the text's font.
-    bullet_font: Option<Option<String>>,
+    bullet_font: Option<Option<Arc<str>>>,
     size: Option<i64>,
-    latin: Option<String>,
-    east_asian: Option<String>,
-    complex: Option<String>,
+    latin: Option<Arc<str>>,
+    east_asian: Option<Arc<str>>,
+    complex: Option<Arc<str>>,
     bold: Option<bool>,
     italic: Option<bool>,
     caps: Option<Caps>,
@@ -431,11 +432,11 @@ enum Prop {
     LatinLineBreak(bool),
     Bullet(Bullet),
     BulletSize(BulletSize),
-    BulletFont(Option<String>),
+    BulletFont(Option<Arc<str>>),
     Size(i64),
-    Latin(String),
-    EastAsian(String),
-    Complex(String),
+    Latin(Arc<str>),
+    EastAsian(Arc<str>),
+    Complex(Arc<str>),
     Bold(bool),
     Italic(bool),
     Caps(Caps),
@@ -554,9 +555,9 @@ fn level(pr: &Element) -> Partial {
             "buNone" => level.bullet = Some(Bullet::None),
             "buBlip" => level.bullet = Some(Bullet::Picture),
             "buChar" => {
-                level.bullet = Some(Bullet::Char(
-                    child.attr("char").unwrap_or_default().to_string(),
-                ))
+                level.bullet = Some(Bullet::Char(Arc::from(
+                    child.attr("char").unwrap_or_default(),
+                )))
             }
             // A scheme ST_TextAutonumberScheme doesn't have leaves the bullet unset.
             "buAutoNum" => {
@@ -571,7 +572,7 @@ fn level(pr: &Element) -> Partial {
                     });
                 }
             }
-            "buFont" => level.bullet_font = Some(child.attr("typeface").map(str::to_string)),
+            "buFont" => level.bullet_font = Some(child.attr("typeface").map(Arc::from)),
             "buFontTx" => level.bullet_font = Some(None),
             "buSzPct" => {
                 level.bullet_size = percent(child.attr("val"))
@@ -604,7 +605,7 @@ fn run(pr: &Element, level: &mut Partial) {
     let typeface = |slot: &str| {
         pr.child(MAIN_A, slot)
             .and_then(|font| font.attr("typeface"))
-            .map(str::to_string)
+            .map(Arc::from)
     };
     level.latin = typeface("latin");
     level.east_asian = typeface("ea");
@@ -758,8 +759,8 @@ fn resolve_body(chain: &[&PartialBody]) -> Body {
 /// siblings name.
 #[derive(Debug, Clone)]
 struct ThemeFonts {
-    major: [String; 3],
-    minor: [String; 3],
+    major: [Arc<str>; 3],
+    minor: [Arc<str>; 3],
 }
 
 impl ThemeFonts {
@@ -775,17 +776,12 @@ impl ThemeFonts {
                     .and_then(|s| s.path(&[(MAIN_A, group), (MAIN_A, slot)]))
                     .and_then(|font| font.attr("typeface"))
                     .unwrap_or_default()
-                    .to_string()
             };
             let first = face("latin");
             [
-                if first.is_empty() {
-                    latin.to_string()
-                } else {
-                    first
-                },
-                face("ea"),
-                face("cs"),
+                Arc::from(if first.is_empty() { latin } else { first }),
+                Arc::from(face("ea")),
+                Arc::from(face("cs")),
             ]
         };
         ThemeFonts {
@@ -794,16 +790,16 @@ impl ThemeFonts {
         }
     }
 
-    /// A typeface as text names it, a theme reference resolved.
-    fn resolve(&self, typeface: &str) -> String {
-        let (group, slot) = match typeface {
+    /// A typeface as text names it, a theme reference resolved; another is shared, not copied.
+    fn resolve(&self, typeface: &Arc<str>) -> Arc<str> {
+        let (group, slot) = match &**typeface {
             "+mj-lt" => (&self.major, 0),
             "+mj-ea" => (&self.major, 1),
             "+mj-cs" => (&self.major, 2),
             "+mn-lt" => (&self.minor, 0),
             "+mn-ea" => (&self.minor, 1),
             "+mn-cs" => (&self.minor, 2),
-            _ => return typeface.to_string(),
+            _ => return typeface.clone(),
         };
         group[slot].clone()
     }
@@ -818,8 +814,11 @@ fn resolve_level(chain: &[&Partial], theme: &ThemeFonts) -> Level {
             chain.iter().find_map(|p| p.$field.clone())
         };
     }
-    let font =
-        |name: Option<String>, default: &str| theme.resolve(name.as_deref().unwrap_or(default));
+    // Text no style names a font for is in the theme's minor fonts.
+    let font = |name: Option<Arc<str>>, slot: usize| match name {
+        Some(name) => theme.resolve(&name),
+        None => theme.minor[slot].clone(),
+    };
     Level {
         margin: first!(margin).unwrap_or(defaults.margin),
         indent: first!(indent).unwrap_or(defaults.indent),
@@ -836,9 +835,9 @@ fn resolve_level(chain: &[&Partial], theme: &ThemeFonts) -> Level {
             .map(|typeface| theme.resolve(&typeface)),
         run: Run {
             size: first!(size).unwrap_or(defaults.run.size),
-            latin: font(first!(latin), "+mn-lt"),
-            east_asian: font(first!(east_asian), "+mn-ea"),
-            complex: font(first!(complex), "+mn-cs"),
+            latin: font(first!(latin), 0),
+            east_asian: font(first!(east_asian), 1),
+            complex: font(first!(complex), 2),
             bold: first!(bold).unwrap_or(defaults.run.bold),
             italic: first!(italic).unwrap_or(defaults.run.italic),
             caps: first!(caps).unwrap_or(defaults.run.caps),
@@ -872,9 +871,9 @@ fn table_text(styles: Option<&Element>, id: &str) -> (Partial, Partial) {
                 .map(cell_text)
                 .unwrap_or_default(),
             None => Partial {
-                latin: Some("+mn-lt".into()),
-                east_asian: Some("+mn-ea".into()),
-                complex: Some("+mn-cs".into()),
+                latin: Some(Arc::from("+mn-lt")),
+                east_asian: Some(Arc::from("+mn-ea")),
+                complex: Some(Arc::from("+mn-cs")),
                 bold: (name == "firstRow").then_some(true),
                 ..Partial::default()
             },
@@ -897,7 +896,7 @@ fn cell_text(style: &Element) -> Partial {
         let typeface = |slot: &str| {
             font.child(MAIN_A, slot)
                 .and_then(|f| f.attr("typeface"))
-                .map(str::to_string)
+                .map(Arc::from)
         };
         text.latin = typeface("latin");
         text.east_asian = typeface("ea");
@@ -909,9 +908,9 @@ fn cell_text(style: &Element) -> Partial {
             _ => None,
         };
         if let Some(group) = group {
-            text.latin = Some(format!("+{group}-lt"));
-            text.east_asian = Some(format!("+{group}-ea"));
-            text.complex = Some(format!("+{group}-cs"));
+            text.latin = Some(Arc::from(format!("+{group}-lt")));
+            text.east_asian = Some(Arc::from(format!("+{group}-ea")));
+            text.complex = Some(Arc::from(format!("+{group}-cs")));
         }
     }
     text
@@ -969,8 +968,8 @@ mod tests {
             r#"<a:lvl3pPr><a:buBlip><a:blip/></a:buBlip></a:lvl3pPr><a:lvl4pPr><a:buAutoNum type="bogus"/></a:lvl4pPr>"#,
         ));
         let theme = ThemeFonts {
-            major: ["Major".into(), "Major EA".into(), String::new()],
-            minor: ["Minor".into(), String::new(), String::new()],
+            major: [Arc::from("Major"), Arc::from("Major EA"), Arc::from("")],
+            minor: [Arc::from("Minor"), Arc::from(""), Arc::from("")],
         };
         let levels = resolve_levels(&[&levels(Some(&list))], &theme);
         let first = &levels[0];
@@ -997,18 +996,14 @@ mod tests {
         assert_eq!((run.caps, run.kern, run.spacing), (Caps::Small, 1_200, -50));
         // Theme references resolve; an unset one is the minor font's.
         assert_eq!(
-            (
-                run.latin.as_str(),
-                run.east_asian.as_str(),
-                run.complex.as_str()
-            ),
+            (&*run.latin, &*run.east_asian, &*run.complex),
             ("Major", "Brand Mincho", "")
         );
         let second = &levels[1];
         assert_eq!(second.bullet, Bullet::Char("-".into()));
         assert_eq!(second.bullet_font.as_deref(), Some("Minor"));
         assert_eq!(second.bullet_size, BulletSize::Percent(80_000));
-        assert_eq!(second.run.latin, "Minor");
+        assert_eq!(&*second.run.latin, "Minor");
         // A picture bullet; a number of no scheme the schema has is no bullet set.
         assert_eq!(levels[2].bullet, Bullet::Picture);
         assert_eq!(levels[3].bullet, Bullet::None);
@@ -1139,7 +1134,7 @@ mod tests {
         assert_eq!(first.bullet, Bullet::Char("\u{2022}".into()));
         assert_eq!(first.bullet_font.as_deref(), Some("Arial"));
         assert_eq!(
-            (first.run.size, first.run.latin.as_str(), first.run.kern),
+            (first.run.size, &*first.run.latin, first.run.kern),
             (2_800, "Calibri", 1_200)
         );
         assert_eq!(
@@ -1151,7 +1146,7 @@ mod tests {
         // Titles take the master's title style in the theme's major font.
         let title = model.title(content);
         assert_eq!(
-            (title.levels[0].run.size, title.levels[0].run.latin.as_str()),
+            (title.levels[0].run.size, &*title.levels[0].run.latin),
             (4_000, "Calibri Light")
         );
         assert_eq!(
@@ -1195,7 +1190,7 @@ mod tests {
         // Nothing in the house chain sizes text boxes or table cells: 18 pt, the header bold.
         let text_box = model.text_box(content);
         assert_eq!(
-            (text_box[0].run.size, text_box[0].run.latin.as_str()),
+            (text_box[0].run.size, &*text_box[0].run.latin),
             (1_800, "Calibri")
         );
         let (header, cell) = model.table(content);
@@ -1248,11 +1243,12 @@ mod tests {
                     );
                     format!("{head}{tail}")
                 }
-                // The subtitle's `wrap` isn't a wrapping type, so the master's applies.
+                // The subtitle sets its left inset; its `wrap` and `vert` aren't values of their
+                // types, so the master's apply.
                 "ppt/slideLayouts/slideLayout1.xml" => {
                     let at = xml.find(r#"name="Subtitle 2""#).unwrap();
                     let (head, tail) = xml.split_at(at);
-                    format!("{head}{}", tail.replacen("<a:bodyPr/>", r#"<a:bodyPr wrap="Square" vert="sideways"/>"#, 1))
+                    format!("{head}{}", tail.replacen("<a:bodyPr/>", r#"<a:bodyPr lIns="5" wrap="Square" vert="sideways"/>"#, 1))
                 }
                 "ppt/slideMasters/_rels/slideMaster1.xml.rels" => {
                     xml.replace("relationships/theme\"", "relationships/Theme\"")
@@ -1352,15 +1348,18 @@ mod tests {
         // `buFontTx` over the master's `buFont`: the bullet follows the text.
         assert_eq!(first.bullet_font, None);
         // The master's body style names the font.
-        assert_eq!(first.run.latin, "Source Serif 4");
+        assert_eq!(&*first.run.latin, "Source Serif 4");
 
-        // The subtitle has nothing valid of its own: all the master's body placeholder, which
+        // The subtitle has only its left inset: the rest is the master's body placeholder, which
         // shrinks, doesn't wrap, has two columns (so it isn't measured) and names Arial.
         let subtitle = model.content(at("Title Slide"), 0).unwrap();
         assert_eq!(subtitle.levels[0].run.size, 3_000);
         assert_eq!(subtitle.levels[0].bullet_font.as_deref(), Some("Arial"));
         assert_eq!(subtitle.body.autofit, Autofit::Shrink);
-        assert_eq!(subtitle.body.insets.top, 0);
+        assert_eq!(
+            (subtitle.body.insets.left, subtitle.body.insets.top),
+            (5, 0)
+        );
         assert!(!subtitle.body.wrap && !subtitle.body.measured);
 
         // Titles take the master title placeholder's own list style, with or without a title
@@ -1369,31 +1368,43 @@ mod tests {
         assert_eq!(model.title(at("Blank")).levels[0].run.size, 5_000);
 
         // The theme, related by a type in another case, names Brand Display and Brand Sans.
-        assert_eq!(model.title(titled).levels[0].run.latin, "Brand Display");
+        assert_eq!(&*model.title(titled).levels[0].run.latin, "Brand Display");
         let text_box = model.text_box(titled);
-        assert_eq!(text_box[0].run.latin, "Brand Sans");
+        assert_eq!(&*text_box[0].run.latin, "Brand Sans");
         // Text boxes don't take the master's other style; table cells do.
         assert_eq!(text_box[0].run.size, 1_800);
         let (header, cell) = model.table(titled);
         assert_eq!((header.run.size, cell.run.size), (1_000, 1_000));
         // No table style part: Medium Style 2, in the minor font, its header bold.
-        assert_eq!(header.run.latin, "Brand Sans");
+        assert_eq!(&*header.run.latin, "Brand Sans");
         assert!(header.run.bold && !cell.run.bold);
 
         // A layout of the second master takes that master's theme.
         let second = at("Second Blank");
-        assert_eq!(model.title(second).levels[0].run.latin, "Second Major");
-        assert_eq!(model.text_box(second)[0].run.latin, "Second Minor");
+        assert_eq!(&*model.title(second).levels[0].run.latin, "Second Major");
+        assert_eq!(&*model.text_box(second)[0].run.latin, "Second Minor");
+
+        // Typefaces are shared, not copied, however many boxes resolve them: a style's and the
+        // theme's alike.
+        let again = model.content(titled, 0).unwrap();
+        assert!(Arc::ptr_eq(
+            &content.levels[0].run.latin,
+            &again.levels[0].run.latin
+        ));
+        assert!(Arc::ptr_eq(
+            &model.text_box(titled)[0].run.latin,
+            &model.text_box(titled)[0].run.latin
+        ));
 
         // Past the layouts: §8.6's defaults alone, nothing from the template.
         let past = layouts.len();
         assert!(model.content(past, 0).is_none());
         let title = model.title(past);
         assert_eq!(
-            (title.levels[0].run.size, title.levels[0].run.latin.as_str()),
+            (title.levels[0].run.size, &*title.levels[0].run.latin),
             (1_800, "Calibri")
         );
-        assert_eq!(model.text_box(past)[0].run.latin, "Calibri");
+        assert_eq!(&*model.text_box(past)[0].run.latin, "Calibri");
         assert!(!model.table(past).0.run.bold);
         assert_eq!(model.master_body(past), None);
     }
@@ -1406,15 +1417,15 @@ mod tests {
             r#"</a:majorFont></a:fontScheme></a:themeElements></a:notTheme>"#
         ));
         let fonts = ThemeFonts::of(Some(&other.children[0]));
-        assert_eq!(fonts.resolve("+mj-lt"), "Calibri Light");
-        assert_eq!(fonts.resolve("+mn-lt"), "Calibri");
+        assert_eq!(&*fonts.resolve(&Arc::from("+mj-lt")), "Calibri Light");
+        assert_eq!(&*fonts.resolve(&Arc::from("+mn-lt")), "Calibri");
         // The same under `a:theme` is read.
         let theme = element(concat!(
             r#"<a:theme><a:themeElements><a:fontScheme><a:majorFont><a:latin typeface="Odd"/>"#,
             r#"</a:majorFont></a:fontScheme></a:themeElements></a:theme>"#
         ));
         assert_eq!(
-            ThemeFonts::of(Some(&theme.children[0])).resolve("+mj-lt"),
+            &*ThemeFonts::of(Some(&theme.children[0])).resolve(&Arc::from("+mj-lt")),
             "Odd"
         );
     }
@@ -1443,15 +1454,15 @@ mod tests {
         let layouts = layouts::read(&template).unwrap();
         let model = Model::new(&template, &layouts);
         let (header, cell) = model.table(0);
-        assert_eq!(header.run.latin, "Brand Header");
+        assert_eq!(&*header.run.latin, "Brand Header");
         assert!(!header.run.bold);
-        assert_eq!(cell.run.latin, "Brand Table");
-        assert_eq!(model.text_box(0)[0].run.latin, "Brand Default");
+        assert_eq!(&*cell.run.latin, "Brand Table");
+        assert_eq!(&*model.text_box(0)[0].run.latin, "Brand Default");
         // Past the layouts, nothing from the template: not its default text style or table style.
         let past = layouts.len();
-        assert_eq!(model.text_box(past)[0].run.latin, "Calibri");
-        assert_eq!(model.title(past).levels[0].run.latin, "Calibri");
-        assert_eq!(model.table(past).1.run.latin, "Calibri");
+        assert_eq!(&*model.text_box(past)[0].run.latin, "Calibri");
+        assert_eq!(&*model.title(past).levels[0].run.latin, "Calibri");
+        assert_eq!(&*model.table(past).1.run.latin, "Calibri");
 
         // A built-in default style the part doesn't define is measured as Medium Style 2.
         let builtin = edited(
