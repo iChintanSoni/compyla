@@ -394,8 +394,8 @@ font bytes only through the chain below, so they run offline and pinned (archite
     `w:iCs`). An East Asian or complex font that is empty or unnamed means the latin one. A
     character that face doesn't map is measured with the first of the run's latin, East Asian and
     complex faces, then Carlito, that maps it; the Consolas stand-in maps every character. A mark is
-    measured with its base's face whatever that face maps; where the face maps neither the mark nor
-    a composition of it with its base, the mark advances nothing.
+    measured with the face its base is measured with, whatever that face maps; where the face maps
+    neither the mark nor a composition of it with its base, the mark advances nothing.
   - **Pieces.** A run is split into pieces wherever the face or size changes, the script changes
     (each character's resolved script: a Common or Inherited character takes the script of the
     nearest character before it that has one, else after it) or the bidi level changes (UAX #9; a
@@ -404,17 +404,19 @@ font bytes only through the chain below, so they run offline and pinned (archite
   - **Shaping.** Each piece is shaped with its face's OpenType layout, for its script and direction
     and the document's language (§2). These features apply: `rvrn`, `ccmp`, `locl`, `rlig`, `ltra`,
     `ltrm`, `rtla`, `rtlm`, `mark`, `mkmk`, `abvm`, `blwm`, `rclt`, `curs` and `dist`, `calt` (in
-    docx only where the run's `w14:cntxtAlts` is on), and the features the script's shaping model
-    requires (Arabic's joining forms, the Indic reordering and conjunct features, and the like).
-    Kerning (`kern`) applies in pptx where the run's effective `kern` is greater than 0 and the size
-    is at least `kern`; with `kern` 0 or absent everywhere it doesn't. Standard ligatures don't
-    apply in pptx. Both are as PowerPoint renders text (checked in PowerPoint 16.114 for Mac;
-    ECMA-376's wording for an absent `kern` says otherwise). In docx, kerning applies where the
-    run's effective `w:kern` is greater than 0 and the size is at least its value in half-points,
-    and the ligatures its `w14:ligatures` names apply: each of `standard` (`liga`), `contextual`
-    (`clig`), `historical` (`hlig`) and `discretional` (`dlig`) that the value's name contains, all
-    four for `all`, none for `none`. No other feature applies, including `frac`, `numr` and `dnom`,
-    which shapers turn on around U+2044 FRACTION SLASH by themselves, and `rand` and `trak`.
+    docx only where the run's `w14:cntxtAlts` is on), and the features a shaper adds on its own for
+    the piece's script (Arabic's joining forms, the Indic reordering and conjunct features). `calt`
+    applies in pptx unverified: it changes no width in Calibri, Carlito or Aptos. Kerning (`kern`)
+    applies in pptx where the run's effective `kern` is greater than 0 and the size is at least
+    `kern`; with `kern` 0 or absent everywhere it doesn't. Standard ligatures don't apply in pptx.
+    Both are as PowerPoint renders text (checked in PowerPoint 16.114 for Mac; ECMA-376's wording
+    for an absent `kern` says otherwise). In docx, kerning applies where the run's effective
+    `w:kern` is greater than 0 and the size is at least its value in half-points, and the ligatures
+    its `w14:ligatures` names apply: each of `standard` (`liga`), `contextual` (`clig`),
+    `historical` (`hlig`) and `discretional` (`dlig`) that the value's name contains, compared
+    without case, all four for `all`, none for `none`. No other feature applies, including `frac`,
+    `numr` and `dnom`, which shapers turn on around U+2044 FRACTION SLASH by themselves, and `rand`
+    and `trak`.
   - **Width.** A piece's width is the sum of its shaped glyphs' advances in font units, times the
     size in EMU (1 pt = 12,700 EMU), divided by the face's units per em, rounded down, in exact
     integer arithmetic, plus the run's character spacing (pptx `spc`, docx `w:spacing`) once for
