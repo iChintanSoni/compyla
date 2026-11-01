@@ -158,6 +158,7 @@ if (process.argv.includes("--schemas")) {
   const schemas = ["ir.schema.json", "diagnostic.schema.json", "diagnostics.schema.json", "template-report.schema.json", "lockfile.schema.json", "conformance/case.schema.json", "conformance/compose.schema.json", "conformance/render.schema.json"];
   run(["--check-metaschema", ...schemas.map((s) => join(specDir, s))]);
   run(["--schemafile", join(specDir, "diagnostics.schema.json"), join(specDir, "diagnostics.json")]);
+  run(["--schemafile", join(specDir, "lockfile.schema.json"), join(specDir, "lockfile.example.json")]);
 
   const instances = { ir: [], compose: [], render: [], inspect: [], case: [] };
   for (const { suite, name, fixture, expected } of fixtures) {

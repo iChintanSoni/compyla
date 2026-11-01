@@ -1,0 +1,33 @@
+{
+  "lockfileVersion": 1,
+  "fonts": [
+    {
+      "family": "Arial",
+      "style": "regular",
+      "source": "google",
+      "from": "https://fonts.google.com/specimen/Arimo",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "family": "Arial",
+      "style": "bold",
+      "source": "google",
+      "from": "https://fonts.google.com/specimen/Arimo",
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    {
+      "family": "Brand Sans",
+      "style": "regular",
+      "source": "file",
+      "from": "fonts/BrandSans-Regular.otf",
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    {
+      "family": "Brand Sans",
+      "style": "boldItalic",
+      "source": "file",
+      "from": "fonts/BrandSans-BoldItalic.otf",
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+    }
+  ]
+}
