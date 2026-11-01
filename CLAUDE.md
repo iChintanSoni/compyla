@@ -80,7 +80,8 @@ Each conformance suite is a single `#[test]` that loops over every fixture direc
 failures by fixture name, so `cargo test` can't select one fixture. `render_suite` prints its pending
 fixtures only with `-- --nocapture`. To reproduce one fixture by hand, run its `input.md` through the
 CLI with its `case.json` options as `--format`, `--strict` and `--template <fixture dir>/<file>`. The
-CLI resolves assets from the filesystem, not from the fixture's `assets` list.
+CLI resolves assets from the filesystem, not from the fixture's `assets` list, and fonts from
+`compyla.lock` and the font cache (`--lockfile`), not from the fixture's `fonts`.
 
 Using the CLI (`hosts/cli`). Write output outside the repo: without `-o`, `convert` writes next to
 its input.

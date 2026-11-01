@@ -1,9 +1,10 @@
 {
-  "description": "A supplied template whose notes master is related by a type spelled `NotesMaster` (§8.8, §10.4): the type compares by its last segment without case, so that notes master is the template's, no house notes master is added, and the deck's notes pages use it.",
+  "description": "A supplied template whose notes master is related by a type spelled `NotesMaster` (§8.8, §10.4): the type compares by its last segment without case, so that notes master is the template's, no house notes master is added, and the deck's notes pages use it. With no font resolver, the template's fonts Brand Display and Source Serif 4 are `font_unresolved`; Brand Sans, which it embeds, isn't reported in pptx output (§3).",
   "spec": [
     "§8.8",
     "§10.4",
-    "C61"
+    "C61",
+    "C62"
   ],
   "oracle": "none",
   "format": "pptx"

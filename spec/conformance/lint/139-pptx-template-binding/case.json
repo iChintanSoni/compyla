@@ -1,10 +1,11 @@
 {
-  "description": "With a supplied template (§8.5): its own layout name is valid (`Titel und Inhalt`, one slot per content placeholder); a house layout it lacks by name and by type binds to its Title and Content layout, with layout_not_in_template once per layout; the valid names in unknown_layout include the template's.",
+  "description": "With a supplied template (§8.5): its own layout name is valid (`Titel und Inhalt`, one slot per content placeholder); a house layout it lacks by name and by type binds to its Title and Content layout, with layout_not_in_template once per layout; the valid names in unknown_layout include the template's. With no font resolver, the template's fonts Brand Display and Source Serif 4 are `font_unresolved`; Brand Sans, which it embeds, isn't reported in pptx output (§3).",
   "spec": [
     "§8.5",
     "§8.6",
     "§10.2",
-    "C56"
+    "C56",
+    "C62"
   ],
   "oracle": "none",
   "format": "pptx",
