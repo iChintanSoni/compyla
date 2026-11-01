@@ -449,7 +449,7 @@ font bytes only through the chain below, so they run offline and pinned (archite
     Myanmar) has no opportunity inside it here. A break inside a word (§8.6) falls between extended
     grapheme clusters (UAX #29), from the same crate. A face's ascent and descent, for a last line's
     height (§8.6), are its OS/2 `usWinAscent` and `usWinDescent`, else, without an OS/2 table long
-    enough to hold them, its `hhea` ascender and its descender's magnitude; where both are 0,
+    enough to hold them, the magnitudes of its `hhea` ascender and descender; where both are 0,
     Carlito's, 1,950 and 550. Consolas without a font has 1,884 and 514.
   - **Known bias.** Carlito measures Calibri exactly and Calibri Light about 1–2% wide. A family
     measured with Carlito because it is unresolved may differ more from the font the viewer

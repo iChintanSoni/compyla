@@ -31,7 +31,8 @@ pub fn graphemes(text: &str) -> Vec<usize> {
 }
 
 /// Whether `c` breaks a line wherever it is: UAX #14's mandatory breaks (classes BK, CR, LF and NL),
-/// which are LF, VT, FF, CR, NEL (U+0085), LINE SEPARATOR and PARAGRAPH SEPARATOR.
+/// which are LF, VT, FF, CR, NEL (U+0085), LINE SEPARATOR and PARAGRAPH SEPARATOR. A CR followed by
+/// an LF is one break, after the LF.
 pub fn hard_break(c: char) -> bool {
     matches!(
         c,
