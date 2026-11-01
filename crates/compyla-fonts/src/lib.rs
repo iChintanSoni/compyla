@@ -4,15 +4,19 @@
 //! WASM, napi-rs and PyO3, and measures alike in all of them (§13).
 //!
 //! Faces are parsed with `ttf-parser` and shaped with `rustybuzz`, the stack the pinned `typst`
-//! uses. The Unicode properties measurement needs come from the Unicode Character Database 17.0.0
-//! (`unicode/make_tables.py`), the version `unicode-script` uses.
+//! uses. The Unicode properties measurement reads itself (marks, controls, spaces, East Asian Width,
+//! default-ignorables) come from the Unicode Character Database 17.0.0 (`unicode/make_tables.py`),
+//! the version `unicode-script` uses; bidi classes (`unicode-bidi`) and the shaper's canonical
+//! combining classes (`unicode-ccc`) are Unicode 16.0, the latest those crates have.
 
 mod chars;
 mod face;
 mod measure;
 mod tables;
 
-pub use face::{Face, MAX_FONT_BYTES, Style, Unreadable, carlito};
+pub use face::{
+    Face, MAX_CMAP_RECORDS, MAX_FACES, MAX_FONT_BYTES, MAX_TABLES, Style, Unreadable, carlito,
+};
 pub use measure::{Features, Font, Fonts, Ligatures, Run, measure};
 
 /// The Unicode version measurement uses.

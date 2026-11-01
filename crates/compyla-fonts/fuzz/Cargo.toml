@@ -1,6 +1,8 @@
-# Fuzzes reading and measuring hostile fonts (markdown-spec.md §12.1): `cargo +nightly fuzz run
-# measure` from this directory. Not a member of the main workspace, which builds on stable; the
-# resource-hardening work runs it (#26).
+# Fuzzes reading and measuring hostile fonts (markdown-spec.md §12.1): `cargo +nightly fuzz run -O
+# measure` from this directory. `-O` builds for release without debug assertions or overflow checks,
+# as compyla ships; ttf-parser and rustybuzz use those to flag offsets they consider their own bugs,
+# and cargo-fuzz turns them on for every crate otherwise. Not a member of the main workspace, which
+# builds on stable; the resource-hardening work runs it (#26).
 [package]
 name = "compyla-fonts-fuzz"
 version = "0.0.0"
@@ -22,3 +24,11 @@ doc = false
 bench = false
 
 [workspace]
+
+[profile.release.package.ttf-parser]
+debug-assertions = false
+overflow-checks = false
+
+[profile.release.package.rustybuzz]
+debug-assertions = false
+overflow-checks = false

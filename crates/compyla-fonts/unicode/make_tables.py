@@ -87,8 +87,14 @@ def default_ignorable(text):
 
 
 def table(name, doc, points):
-    rows = "".join(f"    (0x{a:04X}, 0x{b:04X}),\n" for a, b in merged(points))
-    return f"/// {doc}\npub const {name}: &[(u32, u32)] = &[\n{rows}];\n"
+    ranges = [f"(0x{a:04X}, 0x{b:04X})" for a, b in merged(points)]
+    head = f"pub const {name}: &[(u32, u32)] = &["
+    # As rustfmt writes it: on one line where that fits in 100 columns.
+    line = head + ", ".join(ranges) + "];"
+    if len(line) <= 100:
+        return f"/// {doc}\n{line}\n"
+    rows = "".join(f"    {r},\n" for r in ranges)
+    return f"/// {doc}\n{head}\n{rows}];\n"
 
 
 def main():

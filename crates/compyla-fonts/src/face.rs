@@ -10,6 +10,11 @@ use ttf_parser::os2::Style as Os2Style;
 
 /// The largest font file read (§12.1).
 pub const MAX_FONT_BYTES: usize = 64 * 1024 * 1024;
+/// The most faces a collection, tables a face and character-map encoding records a face may have
+/// (§12.1): far beyond real fonts, and what keeps reading and measuring a hostile one linear.
+pub const MAX_FACES: u32 = 256;
+pub const MAX_TABLES: u16 = 512;
+pub const MAX_CMAP_RECORDS: u16 = 64;
 
 /// A style (§3): what a family resolves per.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -75,13 +80,20 @@ impl Face {
         let index = match ttf_parser::fonts_in_collection(&data) {
             // A collection must hold the 4-byte offsets its 12-byte header declares, so a forged
             // count can't make the scan longer than the input.
-            Some(count) if u64::from(count) * 4 + 12 > data.len() as u64 => {
+            Some(count) if count > MAX_FACES || u64::from(count) * 4 + 12 > data.len() as u64 => {
                 return Err(Unreadable::NotAFont);
             }
             Some(count) => choose(&data, count, family, style),
             None => 0,
         };
+        if !within_limits(&data, index) {
+            return Err(Unreadable::NotAFont);
+        }
         let face = ttf_parser::Face::parse(&data, index).map_err(|_| Unreadable::NotAFont)?;
+        let cmap_records = face.tables().cmap.map_or(0, |cmap| cmap.subtables.len());
+        if cmap_records > MAX_CMAP_RECORDS {
+            return Err(Unreadable::NotAFont);
+        }
         let units_per_em = i64::from(face.units_per_em());
         if units_per_em <= 0 {
             return Err(Unreadable::NotAFont);
@@ -109,26 +121,40 @@ impl Face {
         face
     }
 
-    /// Whether the face maps `c` to a glyph.
+    /// Whether the face maps `c` to a glyph other than `.notdef` (§3).
     pub fn maps(&self, c: char) -> bool {
         ttf_parser::Face::parse(&self.data, self.index)
             .ok()
             .and_then(|face| face.glyph_index(c))
-            .is_some()
+            .is_some_and(|glyph| glyph.0 != 0)
     }
+}
 
-    /// The advance of the glyph `c` maps to, in font units, unshaped.
-    pub(crate) fn advance(&self, c: char) -> Option<i64> {
-        let face = ttf_parser::Face::parse(&self.data, self.index).ok()?;
-        let glyph = face.glyph_index(c)?;
-        face.glyph_hor_advance(glyph).map(i64::from)
+/// Where face `index` starts: 0 for a single font, else its offset in a collection.
+fn face_offset(data: &[u8], index: u32) -> Option<usize> {
+    if ttf_parser::fonts_in_collection(data).is_none() {
+        return Some(0);
     }
+    let at = 12 + 4 * index as usize;
+    let bytes = data.get(at..at + 4)?;
+    Some(u32::from_be_bytes(bytes.try_into().ok()?) as usize)
+}
+
+/// Whether face `index` declares no more tables than `MAX_TABLES`, read from its header before
+/// parsing, since parsing walks every table record.
+fn within_limits(data: &[u8], index: u32) -> bool {
+    face_offset(data, index)
+        .and_then(|offset| data.get(offset + 4..offset + 6))
+        .is_some_and(|count| u16::from_be_bytes([count[0], count[1]]) <= MAX_TABLES)
 }
 
 /// The index of the face a collection of `count` faces holds for `family` and `style`.
 fn choose(data: &[u8], count: u32, family: &str, style: Style) -> u32 {
     let mut family_match = None;
     for index in 0..count {
+        if !within_limits(data, index) {
+            continue;
+        }
         let Ok(face) = ttf_parser::Face::parse(data, index) else {
             continue;
         };

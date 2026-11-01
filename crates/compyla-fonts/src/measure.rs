@@ -75,8 +75,9 @@ pub struct Run<'a> {
     pub spacing: i64,
     /// The document's language (§2), as a BCP 47 tag.
     pub language: Option<&'a str>,
-    /// The paragraph's direction where set (pptx `rtl`, docx `w:bidi`); else its first strong
-    /// character's.
+    /// The paragraph's direction: its `rtl` (pptx) or `w:bidi` (docx) where set, else its first
+    /// strong character's, which the caller resolves over the whole paragraph. `None` resolves it
+    /// from the run's own text, which is right only for a run that is its whole paragraph.
     pub rtl: Option<bool>,
 }
 
@@ -114,11 +115,19 @@ impl<'a> Shapers<'a> {
         &self.faces[index].1
     }
 
+    /// Whether `font` maps `c` to a glyph other than `.notdef` (§3).
     fn maps(&mut self, font: Font<'a>, c: char) -> bool {
         match font {
-            Font::Face(face) => self.get(face).glyph_index(c).is_some(),
+            Font::Face(face) => self.get(face).glyph_index(c).is_some_and(|g| g.0 != 0),
             Font::Consolas => true,
         }
+    }
+
+    /// The advance of `face`'s U+0020 in its units, with its variations, where it maps one.
+    fn space(&mut self, face: &'a Face) -> Option<i64> {
+        let shaper = self.get(face);
+        let glyph = shaper.glyph_index(' ').filter(|g| g.0 != 0)?;
+        shaper.glyph_hor_advance(glyph).map(i64::from)
     }
 }
 
@@ -174,11 +183,36 @@ pub fn measure<'a>(run: &Run<'a>) -> i64 {
             picks[i] = picks[base];
         }
     }
+    // A character no face maps that advances nothing stays in the piece around it, so it doesn't
+    // break shaping across it (kerning across a soft hyphen, say); the shaper hides it, or shapes
+    // it as `.notdef`, which advances nothing.
+    let mut last = None;
+    for i in 0..picks.len() {
+        match picks[i] {
+            Pick::Unmapped if chars::advances_nothing(plain[i]) => {
+                if let Some(pick) = last {
+                    picks[i] = pick;
+                }
+            }
+            Pick::Font(_) => last = Some(picks[i]),
+            Pick::Unmapped => {}
+        }
+    }
+    if let Some(first) = picks.iter().position(|p| matches!(p, Pick::Font(_))) {
+        for i in 0..first {
+            if chars::advances_nothing(plain[i]) {
+                picks[i] = picks[first];
+            }
+        }
+    }
     let size = |class: Class| match class {
         Class::Complex => run.complex_size,
         _ => run.size,
     };
 
+    // A mark takes its base's script and level too, so it stays in its base's piece (§3).
+    let script = |i: usize| scripts[bases[i]];
+    let level = |i: usize| levels[chars[bases[i]].0];
     let mut width = 0;
     let mut start = 0;
     for end in 1..=chars.len() {
@@ -186,8 +220,8 @@ pub fn measure<'a>(run: &Run<'a>) -> i64 {
             || matches!(picks[end], Pick::Unmapped)
             || !picks[end].same(&picks[start])
             || size(classes[end]) != size(classes[start])
-            || scripts[end] != scripts[start]
-            || levels[chars[end].0] != levels[chars[start].0];
+            || script(end) != script(start)
+            || level(end) != level(start);
         if !split {
             continue;
         }
@@ -200,12 +234,18 @@ pub fn measure<'a>(run: &Run<'a>) -> i64 {
                 face.units_per_em(),
                 text,
                 piece_size,
-                scripts[start],
-                levels[bytes.start],
+                script(start),
+                level(start),
                 run,
             ),
             Pick::Font(Font::Consolas) => consolas(text, piece_size),
-            Pick::Unmapped => unmapped(plain[start], class_font(run, classes[start]), piece_size),
+            Pick::Unmapped => {
+                let space = match class_font(run, classes[start]) {
+                    Font::Face(face) => shapers.space(face).map(|a| (a, face.units_per_em())),
+                    Font::Consolas => None,
+                };
+                unmapped(plain[start], space, piece_size)
+            }
         };
         let spaced = text
             .chars()
@@ -309,8 +349,9 @@ fn consolas(text: &str, size: i64) -> i64 {
 }
 
 /// A character no face maps (§3), measured on its own: nothing for the zero-advance set, 1 em if
-/// Wide or Fullwidth, a space separator as its class face's U+0020 where that maps one, else ½ em.
-fn unmapped(c: char, class_font: Font<'_>, size: i64) -> i64 {
+/// Wide or Fullwidth, a space separator as its class face's U+0020 (`space`: its advance and units
+/// per em) where that maps one, else ½ em.
+fn unmapped(c: char, space: Option<(i64, i64)>, size: i64) -> i64 {
     if chars::advances_nothing(c) {
         return 0;
     }
@@ -318,10 +359,9 @@ fn unmapped(c: char, class_font: Font<'_>, size: i64) -> i64 {
         return size;
     }
     if chars::is_space(c)
-        && let Font::Face(face) = class_font
-        && let Some(advance) = face.advance(' ')
+        && let Some((advance, units_per_em)) = space
     {
-        return scale(advance, size, face.units_per_em());
+        return scale(advance, size, units_per_em);
     }
     scale(1, size, 2)
 }
@@ -358,7 +398,11 @@ mod tests {
     fn widths_are_shaped_advances_scaled_and_floored() {
         // Carlito's "H" advances 1276 of 2048 units: at 12 pt, 1276 × 152,400 ÷ 2048 = 94,951.17.
         let face = carlito(Style::Regular);
-        let h = face.advance('H').unwrap();
+        let h = i64::from(
+            face.shaper()
+                .glyph_hor_advance(face.shaper().glyph_index('H').unwrap())
+                .unwrap(),
+        );
         assert_eq!(measure(&run("H", carlito_fonts())), h * 12 * PT / 2048);
         assert_eq!(measure(&run("", carlito_fonts())), 0);
     }
@@ -390,13 +434,29 @@ mod tests {
         assert_eq!(measure(&run("\u{3000}", fonts)), 12 * PT);
         let thin = measure(&run("\u{2009}", fonts));
         if !face.maps('\u{2009}') {
-            assert_eq!(thin, face.advance(' ').unwrap() * 12 * PT / 2048);
+            let space = Shapers { faces: Vec::new() }.space(face).unwrap();
+            assert_eq!(thin, space * 12 * PT / 2048);
         }
         // A mark Carlito lacks, after a base it maps, advances nothing: q + U+0301.
         assert!(!face.maps('\u{0301}'));
         assert_eq!(measure(&run("q\u{0301}", fonts)), measure(&run("q", fonts)));
         // A default-ignorable character no face maps advances nothing.
         assert_eq!(measure(&run("\u{E0001}", fonts)), 0);
+    }
+
+    #[test]
+    fn a_zero_width_character_no_face_maps_doesnt_break_kerning() {
+        // Carlito lacks U+00AD SOFT HYPHEN: "T­o" kerns like "To".
+        assert!(!carlito(Style::Regular).maps('\u{00AD}'));
+        let kerned = |text| Run {
+            features: Features {
+                kerning: true,
+                ..Features::default()
+            },
+            ..run(text, carlito_fonts())
+        };
+        assert_eq!(measure(&kerned("T\u{00AD}o")), measure(&kerned("To")));
+        assert!(measure(&kerned("To")) < measure(&run("To", carlito_fonts())));
     }
 
     #[test]

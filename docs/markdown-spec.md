@@ -114,7 +114,7 @@ prototype.
 | C59 | A link destination is checked as a browser reads it: leading and trailing spaces and controls, and tabs and line breaks inside it, don't hide its scheme, and other control characters, and a leading non-ASCII space, are refused; before any query or fragment, it must pass percent-decoded too (§4.5) | ` file:///…` and `\tms-msdt:…` in IR input or a template's hyperlinks, and `%5C%5Chost` anywhere, passed the allowlist as relative references | parse/130, render/121 |
 | C60 | A kept template part's relationships to the template's own slides (of the slide type, or to a part whose content type is a slide's or whose name one of the deck's slides or notes pages takes) are removed with what refers to them, as active content is: a master's or layout's jump to a template slide loses its link and keeps its shape, a slide only such a relationship reached isn't kept, and a jump that names no slide stays. Nothing is reported unless §10.4 removes the relationship whatever refers to it (§8.8, §10.4) | A jump kept a sample slide the presentation no longer lists, or jumped to whichever new slide took the sample's part name | render/122 |
 | C61 | A deck with notes in a template without a notes master gets the house template's notes master and its theme, under part names the template doesn't use, with its slide image fitted to the slide size, and the presentation lists it; a deck without notes is written without one. A part the output writes anew never takes a relationships part the template has for its name, and new presentation relationships take ids the template's don't use (§8.8) | Every slide's notes were dropped silently; a stray relationships part could attach to new media; a template relationship id could be repeated | render/119, render/123–125 |
-| C62 | Fonts are specified: the families checked; families compared without ASCII case and resolved per style through the font resolver, a docx template's embedded fonts and bundled stand-ins (Carlito for Calibri and Calibri Light, Consolas's fixed advance); `font_unresolved` always validate-stage, and not for fonts a pptx template embeds; how a face is chosen in a collection and per character class; measurement as shaped advances with the viewers' kerning, in integer arithmetic, the same in every host; the CLI's JSON lockfile pinning SHA-256 digests in a content-addressed cache; font files limited to 64 MiB (§3, §10.3, §11.2, §12.1, §13) | The chain, lockfile, measurement and house fonts were named but not specified; `font_unresolved` was render-stage without a font resolver, so `lint` and `convert` could disagree | `crates/compyla-fonts` tests: committed widths, run natively and on wasm32 (#73); lint and render fixtures (#74) |
+| C62 | Fonts are specified: the families checked; families compared without ASCII case and resolved per style through the font resolver, a docx template's embedded fonts and bundled stand-ins (Carlito for Calibri and Calibri Light, Consolas's fixed advance); `font_unresolved` always validate-stage, and not for fonts a pptx template embeds; how a face is chosen in a collection and per character class; measurement as shaped advances with the viewers' kerning, in integer arithmetic, the same in every host; the CLI's JSON lockfile pinning SHA-256 digests in a content-addressed cache; font files limited to 64 MiB, 256 faces, 512 tables and 64 character-map records (§3, §10.3, §11.2, §12.1, §13) | The chain, lockfile, measurement and house fonts were named but not specified; `font_unresolved` was render-stage without a font resolver, so `lint` and `convert` could disagree | `crates/compyla-fonts` tests: committed widths, run natively and on wasm32 (#73); lint and render fixtures (#74) |
 
 0.2 also corrects 0.1's *text* in one place where the prototype was right: `---` in xlsx is ignored
 without a diagnostic (§5).
@@ -424,10 +424,11 @@ font bytes only through the chain below, so they run offline and pinned (archite
     pieces'. Where lines break, whether trailing spaces count, and what overflows are the compose
     stage's; lines break only at UAX #14 opportunities.
   - **Characters no face maps.** A default-ignorable code point (Default_Ignorable_Code_Point), a
-    nonspacing or enclosing mark (Mn, Me) or a control (Cc) advances nothing. Any other advances 1
-    em when its East Asian Width is Wide or Fullwidth; else a space separator (Zs) advances as the
-    face's U+0020 where it maps one; else ½ em. Tabs and line breaks are the compose stage's.
-    Unicode properties are those of the Unicode version the implementation uses.
+    nonspacing or enclosing mark (Mn, Me) or a control (Cc) advances nothing, and stays in the piece
+    around it, so it doesn't break shaping across it (kerning across a soft hyphen, say). Any other
+    advances 1 em when its East Asian Width is Wide or Fullwidth; else a space separator (Zs)
+    advances as the face's U+0020 where it maps one; else ½ em. Tabs and line breaks are the compose
+    stage's. Unicode properties are those of the Unicode version the implementation uses.
   - **Consolas without a font** advances each character 1,126/2,048 em, its advance in every style,
     except characters the previous bullet makes advance nothing, and Wide and Fullwidth characters,
     which advance 1 em.
@@ -1568,8 +1569,9 @@ particular, it needs to keep only the diagnostics it may report (§11.2). *(C47)
 | Template package, compressed / uncompressed / entries / compression ratio | 50 MiB / 256 MiB / 10,000 / 100:1 |
 | Elements in a template XML part read as a tree (a docx body is searched, not read whole) | 500,000 |
 | Font file, from a template or a resolver *(C62)* | 64 MiB |
+| Faces in a font collection; tables in a face; character-map encoding records in a face *(C62)* | 256; 512; 64 |
 
-A font over its limit, or bytes that don't parse, count as *not found* (§3), and resolution goes
+A font over a limit, or bytes that don't parse, count as *not found* (§3), and resolution goes
 on down the chain rather than the operation failing, since the output can still name the family.
 Shaping work is bounded too, so a hostile layout table can't hang an operation; a run whose shaping
 reaches the bound is measured as shaped so far.
