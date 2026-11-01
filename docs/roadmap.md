@@ -153,7 +153,8 @@ Goal: output that is faithful to a real corporate template, and identical bytes 
       `--template`, `--layout-alias` and `meta.template` against the input's directory), layout
       binding by alias, name and type with `layout_not_in_template` (§8.5), the template's own
       layouts, and slots past a bound layout's placeholders sharing its last (C56)
-- [#13](https://github.com/iChintanSoni/compyla/issues/13) A notes master for supplied templates without one
+- [x] A notes master for supplied templates without one: a deck with notes gets the house
+      template's notes master and its theme, so no notes are lost (§8.8, C61, #13)
 - [#16](https://github.com/iChintanSoni/compyla/issues/16) docx: template-first renderer with a bundled house .dotx
 - [x] xlsx per markdown-spec.md §9 (`compyla-xlsx`): placement, typed values, parsed and allowlisted
       formulas (with `_xlfn.` prefixes), Excel tables, sheet-name repairs, links and the house style

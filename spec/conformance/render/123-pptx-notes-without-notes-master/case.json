@@ -1,0 +1,9 @@
+{
+  "description": "A deck with notes in a supplied template without a notes master (§8.8): the house template's notes master and its theme are added under the first part names the template doesn't use (its theme is `theme1.xml`, so the notes master's is `theme2.xml`), the presentation lists the notes master, and each slide's notes page is written on it.",
+  "spec": [
+    "§8.8",
+    "C61"
+  ],
+  "oracle": "none",
+  "format": "pptx"
+}

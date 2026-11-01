@@ -113,6 +113,7 @@ prototype.
 | C58 | Active and external content is removed from a supplied template's kept parts: external relationships other than hyperlinks (with `TargetMode` and targets that leave the package read fail-closed), hyperlinks §4.5 doesn't allow and actions that run something, OLE objects, ActiveX controls and their legacy drawings, Office add-ins, with what refers to them (a blip loses only the attribute; anything else goes with its alternates, extension, graphic frame, animations or transition), what only they used, and the parts only they reached; one `template_content_removed` per object, action or other removed relationship (§4.5, §10.4) | Which elements go with a removed relationship, what counts as one removal, and which hyperlinks a template may keep were unspecified | render/121 |
 | C59 | A link destination is checked as a browser reads it: leading and trailing spaces and controls, and tabs and line breaks inside it, don't hide its scheme, and other control characters, and a leading non-ASCII space, are refused; before any query or fragment, it must pass percent-decoded too (§4.5) | ` file:///…` and `\tms-msdt:…` in IR input or a template's hyperlinks, and `%5C%5Chost` anywhere, passed the allowlist as relative references | parse/130, render/121 |
 | C60 | A kept template part's relationships to the template's own slides (of the slide type, or to a part whose content type is a slide's or whose name one of the deck's slides or notes pages takes) are removed with what refers to them, as active content is: a master's or layout's jump to a template slide loses its link and keeps its shape, a slide only such a relationship reached isn't kept, and a jump that names no slide stays. Nothing is reported unless §10.4 removes the relationship whatever refers to it (§8.8, §10.4) | A jump kept a sample slide the presentation no longer lists, or jumped to whichever new slide took the sample's part name | render/122 |
+| C61 | A deck with notes in a template without a notes master gets the house template's notes master and its theme, under part names the template doesn't use, and the presentation lists it; a deck without notes is written without one (§8.8) | Every slide's notes were dropped silently | render/123 |
 
 0.2 also corrects 0.1's *text* in one place where the prototype was right: `---` in xlsx is ignored
 without a diagnostic (§5).
@@ -817,9 +818,13 @@ their own except where their content needs it, so they inherit the layout's.
   the rest are shapes of their own.
 - **Links:** an external destination is a hyperlink. A fragment matching a slide title's slug
   (§8.7) jumps to that slide; one that matches none has no link.
-- **Speaker notes** (§8.2) are the body of the slide's notes page, when the template has a notes
-  master. Code and images there are plain text (an image is its alt text), and a fragment link in
-  the notes doesn't jump: a notes page's own relationship to its slide must stay unambiguous.
+- **Speaker notes** (§8.2) are the body of the slide's notes page, on the template's notes master.
+  A deck with notes in a template without one gets the house template's notes master and its theme,
+  under the first part names the template doesn't use (`ppt/notesMasters/notesMasterN.xml`,
+  `ppt/theme/themeN.xml`), and the presentation lists it, so no notes are lost; a deck without notes
+  is written without one. *(C61)* Code and images there are plain text (an image is its alt text),
+  and a fragment link in the notes doesn't jump: a notes page's own relationship to its slide must
+  stay unambiguous.
 - **The package** (§10.4): the template's own slides are removed, with every part no longer reached
   from the presentation, and a `.potx` is written as a presentation. What named those slides goes
   with them: custom shows, sections, the show settings' slide range or custom show (so the show

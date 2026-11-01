@@ -30,6 +30,7 @@ const A: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
 const P: &str = "http://schemas.openxmlformats.org/presentationml/2006/main";
 const PML: &str = "application/vnd.openxmlformats-officedocument.presentationml";
 const REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+const THEME: &str = "application/vnd.openxmlformats-officedocument.theme+xml";
 /// Medium Style 2 - Accent 1, built into every Office application.
 const TABLE_STYLE: &str = "{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}";
 /// The standard 16:9 title and body areas, where a template's master has none.
@@ -101,6 +102,14 @@ pub fn render(
             .collect(),
         ..Media::default()
     };
+    // A deck with notes in a template without a notes master gets the house template's (§8.8, C61).
+    let added_notes = match notes_master {
+        None if deck.slides.iter().any(|s| !s.notes.is_empty()) => {
+            Some(HouseNotes::new(&media.taken))
+        }
+        _ => None,
+    };
+    let notes_master = notes_master.or_else(|| added_notes.as_ref().map(|n| n.master.clone()));
     let mut slide_list = Vec::new();
     let mut presentation_rels = Relationships::new();
 
@@ -207,6 +216,17 @@ pub fn render(
             presentation_targets.push(rel.target.clone());
         }
     }
+    if let Some(notes) = &added_notes {
+        presentation_rels.add_with_id(
+            NOTES_MASTER_ID,
+            &format!("{REL}/notesMaster"),
+            &relative(&main_folder, &notes.master),
+            false,
+        );
+        presentation_targets.push(notes.master.clone());
+        new_rels.insert(notes.master.clone(), vec![notes.theme.clone()]);
+        new_parts.extend(notes.parts());
+    }
     for (index, (_, id)) in slide_list.iter().enumerate() {
         let part = format!("ppt/slides/slide{}.xml", index + 1);
         presentation_rels.add_with_id(
@@ -222,6 +242,7 @@ pub fn render(
             .as_deref()
             .unwrap_or_else(|| template.part(&template.main).unwrap_or_default()),
         &slide_list,
+        added_notes.as_ref().map(|_| NOTES_MASTER_ID),
     )
     .map_err(|why| {
         Invalid(format!(
@@ -252,6 +273,64 @@ struct Presentation {
     xml: Vec<u8>,
     rels: Relationships,
     sanitized: sanitize::Part,
+}
+
+/// The relationship id of a notes master the output adds, as `cmpSlideN` names its slides.
+const NOTES_MASTER_ID: &str = "cmpNotesMaster";
+
+/// The house template's notes master and its theme, for a deck with notes in a template without a
+/// notes master (§8.8, C61), under the first part names the template doesn't use.
+struct HouseNotes {
+    master: String,
+    theme: String,
+}
+
+impl HouseNotes {
+    fn new(taken: &HashSet<String>) -> HouseNotes {
+        let free = |name: fn(usize) -> String| {
+            (1..)
+                .map(name)
+                .find(|name| !taken.contains(&name.to_ascii_lowercase()))
+                .expect("a template has finitely many parts")
+        };
+        HouseNotes {
+            master: free(|n| format!("ppt/notesMasters/notesMaster{n}.xml")),
+            theme: free(|n| format!("ppt/theme/theme{n}.xml")),
+        }
+    }
+
+    /// The new parts: the notes master, its relationships part, and its theme.
+    fn parts(&self) -> Vec<(String, String, Vec<u8>)> {
+        let house = house();
+        let related = |source: &str, kind: &str| {
+            house
+                .related(source, kind)
+                .ok()
+                .flatten()
+                .expect("the house template has a notes master with a theme")
+        };
+        let master = related(&house.main, "notesMaster");
+        let theme = related(&master, "theme");
+        let bytes = |part: &str| house.part(part).unwrap_or_default().to_vec();
+        let mut rels = Relationships::new();
+        rels.add(
+            &format!("{REL}/theme"),
+            &relative("ppt/notesMasters", &self.theme),
+        );
+        vec![
+            (
+                self.master.clone(),
+                format!("{PML}.notesMaster+xml"),
+                bytes(&master),
+            ),
+            (
+                rels_name(&self.master),
+                package::RELATIONSHIPS.into(),
+                rels.to_xml(),
+            ),
+            (self.theme.clone(), THEME.into(), bytes(&theme)),
+        ]
+    }
 }
 
 /// The house template's layout a house layout binds to (§8.5): by name, then by OOXML type, then
@@ -1480,6 +1559,44 @@ mod tests {
         assert!(replaced.drops(&to("ppt/notesSlides/notesSlide2.xml")));
         assert!(replaced.drops(&to("ppt/slides/slide1.xml")));
         assert!(!replaced.drops(&to("ppt/slides/slide3.xml")));
+    }
+
+    #[test]
+    fn a_notes_master_is_added_only_for_notes() {
+        // render/123's template, which has no notes master.
+        let template = Template::read(include_bytes!(
+            "../../../spec/conformance/render/123-pptx-notes-without-notes-master/brand.potx"
+        ))
+        .unwrap();
+        let (parts, _) = rendered(&template, "## One\n\nText.\n");
+        assert!(!parts.keys().any(|name| name.contains("notesMaster")));
+        assert!(!text(&parts, "ppt/presentation.xml").contains("notesMasterIdLst"));
+        let (parts, _) = rendered(&template, "## One\n\n::: notes\nSay this.\n:::\n");
+        assert!(parts.contains_key("ppt/notesMasters/notesMaster1.xml"));
+        assert!(parts.contains_key("ppt/notesSlides/notesSlide1.xml"));
+    }
+
+    #[test]
+    fn an_added_notes_master_takes_names_the_template_doesnt_use() {
+        let taken: HashSet<String> = [
+            "ppt/notesmasters/notesmaster1.xml",
+            "ppt/theme/theme1.xml",
+            "ppt/theme/theme2.xml",
+        ]
+        .map(String::from)
+        .into();
+        let notes = HouseNotes::new(&taken);
+        assert_eq!(notes.master, "ppt/notesMasters/notesMaster2.xml");
+        assert_eq!(notes.theme, "ppt/theme/theme3.xml");
+        let names: Vec<String> = notes.parts().into_iter().map(|(name, ..)| name).collect();
+        assert_eq!(
+            names,
+            [
+                "ppt/notesMasters/notesMaster2.xml",
+                "ppt/notesMasters/_rels/notesMaster2.xml.rels",
+                "ppt/theme/theme3.xml"
+            ]
+        );
     }
 
     /// A package's parts by name.
