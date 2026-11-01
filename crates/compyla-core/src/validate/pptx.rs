@@ -6,6 +6,7 @@
 pub mod layout;
 pub mod model;
 mod slides;
+pub mod text;
 
 use std::collections::HashSet;
 use std::ptr;

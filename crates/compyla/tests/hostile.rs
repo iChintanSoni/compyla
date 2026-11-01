@@ -496,3 +496,46 @@ fn an_oversized_embedded_font_is_refused_by_its_size() {
     // Brand Sans, and the defaults' three.
     assert_eq!(font_unresolved(&diagnostics), 4, "{diagnostics:?}");
 }
+
+#[test]
+fn a_layout_and_master_of_many_placeholders_are_read_in_linear_time() {
+    let _serial = serial();
+    // 12,000 date placeholders on the master and 12,000 content ones on a layout: each content
+    // placeholder finds the master's it inherits from by its type and family at once (§8.6), not
+    // by a search of every date placeholder, which took 24 s here.
+    const BRAND: &[u8] =
+        include_bytes!("../../../spec/conformance/lint/139-pptx-template-binding/brand.potx");
+    let many = |kind: &str| -> String {
+        (0..12_000)
+            .map(|i| {
+                format!(
+                    r#"<p:sp><p:nvSpPr><p:cNvPr id="{}" name=""/><p:cNvSpPr/><p:nvPr><p:ph type="{kind}" idx="{}"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle><a:lvl1pPr marL="1"/></a:lstStyle><a:p/></p:txBody></p:sp>"#,
+                    100 + i,
+                    100 + i
+                )
+            })
+            .collect()
+    };
+    let (dates, contents) = (many("dt"), many("obj"));
+    let template = edited(BRAND, |name, data| {
+        let text = String::from_utf8(data).unwrap();
+        match name {
+            "ppt/slideMasters/slideMaster1.xml" => {
+                text.replacen("</p:spTree>", &format!("{dates}</p:spTree>"), 1)
+            }
+            "ppt/slideLayouts/slideLayout2.xml" => {
+                text.replacen("</p:spTree>", &format!("{contents}</p:spTree>"), 1)
+            }
+            _ => text,
+        }
+        .into_bytes()
+    });
+    let options = compyla::Options {
+        format: Some(compyla::Format::Pptx),
+        template: Some(template),
+        ..Default::default()
+    };
+    let start = Instant::now();
+    compyla::lint("# A\n", &options, &compyla::no_assets).unwrap();
+    assert!(start.elapsed() < BOUND, "{:?}", start.elapsed());
+}
