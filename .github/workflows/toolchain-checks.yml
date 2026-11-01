@@ -9,6 +9,12 @@ on:
   pull_request:
     branches: [main]
 
+# A push to a pull request cancels the PR's older run (#64). Every other run has a group of its own:
+# a group keeps only its newest pending run, so runs on main sharing one could still be cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # Pull requests always run this workflow, so branch protection can require its result; the
   # jobs below run only when the PR touches what they check. Pushes to main check everything.
