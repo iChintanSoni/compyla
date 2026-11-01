@@ -29,28 +29,23 @@ impl Rect {
     }
 }
 
-/// A template's text model, for its layouts in the order `TemplateLayouts` lists them.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct TemplateText {
-    pub layouts: Vec<LayoutText>,
-}
-
-/// What text in one layout is set in (§8.6, §8.8).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LayoutText {
-    /// The layout's title placeholder; on a layout without one, the master's title placeholder,
-    /// which a title of its own is placed over.
-    pub title: TextBox,
-    /// The content placeholders, in shape order: slot `i` fills the `i`-th.
-    pub content: Vec<TextBox>,
-    /// The master's body area, which free shapes are laid out over.
-    pub master_body: Option<Rect>,
-    /// A text box's paragraph levels: only `p:defaultTextStyle` (§8.6).
-    pub text_box: Levels,
-    /// A table cell's first level, in the header row and in the others: its table style's text,
+/// A template's text model, resolved as compose asks for it (§8.6): a template can hold far more
+/// layouts and placeholders than a deck uses, so a box is read only when it is measured. `layout`
+/// indexes `TemplateLayouts`; one past them is the defaults.
+pub trait TemplateText {
+    /// The box a slide's title is set in: the layout's title placeholder, or on a layout without
+    /// one, the master's title placeholder, which a title of its own is placed over (§8.8).
+    fn title(&self, layout: usize) -> TextBox;
+    /// The box slot `slot` is set in: the layout's `slot`-th content placeholder, in shape order,
+    /// where it has one.
+    fn content(&self, layout: usize, slot: usize) -> Option<TextBox>;
+    /// The master's body area, which free shapes are laid out over (§8.8).
+    fn master_body(&self, layout: usize) -> Option<Rect>;
+    /// A text box's paragraph levels: only `p:defaultTextStyle`.
+    fn text_box(&self, layout: usize) -> Levels;
+    /// A table cell's first level in the header row, and in the others: its table style's text,
     /// then the master's `p:otherStyle`, then `p:defaultTextStyle`.
-    pub table_header: Level,
-    pub table_body: Level,
+    fn table(&self, layout: usize) -> (Level, Level);
 }
 
 /// A box text is set in.
@@ -126,8 +121,10 @@ pub struct Level {
     pub line_spacing: Spacing,
     pub space_before: Spacing,
     pub space_after: Spacing,
-    /// The default tab stops' interval (`defTabSz`) and the paragraph's own stops, in EMU.
+    /// The default tab stops' interval (`defTabSz`), in EMU: 0 means none, so a tab past the
+    /// paragraph's own stops advances nothing.
     pub tab_size: i64,
+    /// The paragraph's own tab stops, in EMU, ascending, each once.
     pub tabs: Vec<i64>,
     /// `latinLnBrk`: a Latin word may break between any two characters.
     pub latin_line_break: bool,
@@ -176,6 +173,8 @@ pub enum Bullet {
         scheme: String,
         start: i64,
     },
+    /// A picture (`a:buBlip`): 0.7 em of the bullet's size wide, as PowerPoint draws a square one.
+    Picture,
 }
 
 /// A bullet's size: a percentage of the text's in thousandths of a percent (`a:buSzPct`), or
@@ -206,7 +205,7 @@ pub struct Run {
 }
 
 impl Default for Run {
-    /// 18 pt in the theme's minor font, which the reader resolves.
+    /// 18 pt; the reader names the theme's minor fonts (`+mn-lt` and its siblings).
     fn default() -> Run {
         Run {
             size: 1_800,

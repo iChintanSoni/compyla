@@ -145,8 +145,9 @@ The layering is strict (D8): **core crates → the `compyla` facade → hosts**.
   - the hostile-input template reader, which enforces §12.1 limits on the bytes and refuses macros,
     encryption, DTDs and unsafe paths;
   - theme extraction and `inspect_template`;
-  - each layout's placeholders and text model (`layouts::read`): boxes, insets, autofit and the
-    styles their paragraph levels inherit (§8.6, C63), in core's types, for compose to measure.
+  - each layout's placeholders (`layouts::read`), and the text model compose measures with
+    (`text::Model`, core's `TemplateText`): boxes, insets, autofit and the styles their paragraph
+    levels inherit (§8.6, C63), read only for the boxes a deck uses, each part and theme once.
 - **`compyla-pptx`** renders template-first (D12). The output *is* the template package with its
   sample slides replaced, and placeholders inherit layout geometry. With no template supplied, it
   uses the bundled `house/house.potx` (via `include_bytes!`).

@@ -869,12 +869,14 @@ widths differ from the engine's by a fraction of a point a line (it appears to r
 so a word that only just fits or doesn't may wrap differently.
 
 - **The box.** A placeholder's box is its own `a:xfrm`, else its layout placeholder's, else that of
-  its master placeholder: the master's title placeholder for `title` and `ctrTitle`, and its body
-  placeholder for any content placeholder (`body`, `obj` or no type, `subTitle`, `tbl`, `pic`, …). A
-  text box, a band of a shared slot and a table have the geometry §8.8 gives them. Text is set
-  inside the box's insets: `a:bodyPr`'s `lIns`, `tIns`, `rIns` and `bIns` from the shape, else its
-  layout placeholder, else its master placeholder, else 91,440 EMU left and right and 45,720 EMU top
-  and bottom. A box with more than one column (`numCol`) or vertical text (`vert` other than
+  its master placeholder: the master's first placeholder of its type, else its first of the same
+  family, title placeholders for `title` and `ctrTitle` and content placeholders for any other
+  content placeholder (`body`, `obj` or no type, `subTitle`, `tbl`, `pic`, …), which is normally the
+  master's title or body placeholder; dates, footers, headers and slide numbers match only their own
+  type. A text box, a band of a shared slot and a table have the geometry §8.8 gives them. Text is
+  set inside the box's insets: `a:bodyPr`'s `lIns`, `tIns`, `rIns` and `bIns` from the shape, else
+  its layout placeholder, else its master placeholder, else 91,440 EMU left and right and 45,720 EMU
+  top and bottom. A box with more than one column (`numCol`) or vertical text (`vert` other than
   `horz`), each inherited as its insets are, isn't measured, so it gets no autofit scale and no
   `content_overflow`.
 - **Text styles.** Each paragraph and run property is the first set of: the paragraph or run itself;
@@ -884,17 +886,21 @@ so a word that only just fits or doesn't may wrap differently.
   Only the level's properties count: PowerPoint ignores a list style's `a:defPPr`. A text box takes
   only its own properties and `p:defaultTextStyle`; a table cell takes its own, the table style's
   text properties (`a:tcTxStyle`) of its first row for the header row and of the whole table, the
-  master's `p:otherStyle`, then `p:defaultTextStyle`. The engine writes tables with a header row and
-  banded rows (§8.8); a style's banded-row text properties aren't measured. Where none sets them: 18
-  pt, single spacing (100%), no space before or after, no margins, tab stops every 914,400 EMU. A
-  typeface `+mj-lt` or `+mn-lt` (and `-ea`, `-cs`) is the theme's major or minor font, and fonts
-  resolve as §3 says.
+  master's `p:otherStyle`, then `p:defaultTextStyle`. A built-in table style the template's table
+  styles don't define is measured as Medium Style 2 is: the minor font, the header bold. The engine
+  writes tables with a header row and banded rows (§8.8); a style's banded-row text properties
+  aren't measured. Where none sets them: 18 pt in the theme's minor fonts, single spacing (100%), no
+  space before or after, no margins, tab stops every 914,400 EMU. A value that isn't one its
+  attribute's type allows counts as unset, so the next in order applies, and one past its type's
+  range is held to it. A typeface `+mj-lt` or `+mn-lt` (and `-ea`, `-cs`) is the theme's major or
+  minor font, and fonts resolve as §3 says.
 - **Lines.** A paragraph's lines run from its left margin (`marL`) to the box's right inset, its
   first line from `marL` + `indent`. A bullet or number sits at the start of the first line, and the
   text then starts at `marL` or right after it, whichever is further right: a bullet character is as
   wide as it is in its `a:buFont` (else the first run's font), and a number as wide as it is in the
   first run's font, whatever `a:buFont` says, both at the first run's size scaled by `a:buSzPct`, or
-  at `a:buSzPts`. Lines break at UAX #14 opportunities (§3), and where a paragraph sets
+  at `a:buSzPts`; a picture bullet (`a:buBlip`) is 0.7 em of that size wide, as PowerPoint draws a
+  square picture. Lines break at UAX #14 opportunities (§3), and where a paragraph sets
   `latinLnBrk="1"` also between any two characters of a word; a line's trailing spaces hang past its
   end without counting, and a segment wider than a whole line breaks after the last grapheme cluster
   that fits, at least one per line. A body that doesn't wrap (`wrap="none"`, inherited as its insets

@@ -34,7 +34,7 @@ pub fn families(template: &Template) -> Result<Vec<String>, Invalid> {
                 false => Ok(None),
             };
             let main = &template.main;
-            if let Some(part) = related(template, main, "theme")?
+            if let Some(part) = template.related_by_type(main, "theme")?
                 && let Some(theme) = once(&part)?
                 && theme.is(MAIN_A, "theme")
             {
@@ -44,20 +44,20 @@ pub fn families(template: &Template) -> Result<Vec<String>, Invalid> {
             if let Some(style) = presentation.child(MAIN_P, "defaultTextStyle") {
                 families.typefaces(style);
             }
-            if let Some(part) = related(template, main, "tableStyles")?
+            if let Some(part) = template.related_by_type(main, "tableStyles")?
                 && let Some(styles) = once(&part)?
             {
                 families.typefaces(&styles);
             }
             let mut masters = masters(template)?;
             for kind in ["notesMaster", "handoutMaster"] {
-                masters.extend(related(template, main, kind)?);
+                masters.extend(template.related_by_type(main, kind)?);
             }
             for master in masters {
                 let Some(xml) = once(&master)? else {
                     continue;
                 };
-                if let Some(part) = related(template, &master, "theme")?
+                if let Some(part) = template.related_by_type(&master, "theme")?
                     && let Some(theme) = once(&part)?
                     && theme.is(MAIN_A, "theme")
                 {
@@ -92,22 +92,6 @@ pub fn families(template: &Template) -> Result<Vec<String>, Invalid> {
         Kind::Xlsx => {}
     }
     Ok(families.list)
-}
-
-/// The part `source` relates to by an internal relationship whose type's last segment is `kind`,
-/// compared without ASCII case.
-fn related(template: &Template, source: &str, kind: &str) -> Result<Option<String>, Invalid> {
-    Ok(template
-        .relationships(source)?
-        .into_iter()
-        .find(|r| {
-            !r.external
-                && r.kind
-                    .rsplit('/')
-                    .next()
-                    .is_some_and(|last| last.eq_ignore_ascii_case(kind))
-        })
-        .map(|r| r.target))
 }
 
 #[derive(Default)]

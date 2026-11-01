@@ -301,6 +301,22 @@ impl Template {
             .find(|r| r.kind.ends_with(&suffix) && !r.external)
             .map(|r| r.target))
     }
+
+    /// The part `source` relates to by an internal relationship whose type's last segment is
+    /// `kind`, compared without ASCII case, as the notes master is found (markdown-spec.md §8.8).
+    pub fn related_by_type(&self, source: &str, kind: &str) -> Result<Option<String>, Invalid> {
+        Ok(self
+            .relationships(source)?
+            .into_iter()
+            .find(|r| {
+                !r.external
+                    && r.kind
+                        .rsplit('/')
+                        .next()
+                        .is_some_and(|last| last.eq_ignore_ascii_case(kind))
+            })
+            .map(|r| r.target))
+    }
 }
 
 /// A content type's media type, as content types compare: without case or parameters (RFC 2045).
