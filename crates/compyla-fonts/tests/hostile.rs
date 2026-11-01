@@ -364,3 +364,149 @@ fn a_mark_whose_base_no_face_maps_advances_nothing() {
     // `b` at 600/1,000 em and 漢 at 1 em; the mark nothing.
     assert_eq!(measure(&run), 600 * size / 1000 + size);
 }
+
+/// `font` with its `hhea` ascender and descender set.
+fn with_hhea(mut font: Vec<u8>, ascender: i16, descender: i16) -> Vec<u8> {
+    let count = u16::from_be_bytes([font[4], font[5]]) as usize;
+    let record = (0..count)
+        .map(|i| 12 + 16 * i)
+        .find(|&at| &font[at..at + 4] == b"hhea")
+        .unwrap();
+    let offset = u32::from_be_bytes(font[record + 8..record + 12].try_into().unwrap()) as usize;
+    font[offset + 4..offset + 6].copy_from_slice(&ascender.to_be_bytes());
+    font[offset + 6..offset + 8].copy_from_slice(&descender.to_be_bytes());
+    font
+}
+
+/// A version 0 `OS/2` table with these `usWinAscent` and `usWinDescent`.
+fn os2(ascent: u16, descent: u16) -> Vec<u8> {
+    let mut table = vec![0u8; 78];
+    table[74..76].copy_from_slice(&ascent.to_be_bytes());
+    table[76..78].copy_from_slice(&descent.to_be_bytes());
+    table
+}
+
+#[test]
+fn ascent_and_descent_fall_back_where_a_face_lacks_them() {
+    let load = |bytes: Vec<u8>| Face::load(bytes, "Odd", Style::Regular).unwrap();
+    // The win metrics, read as unsigned even where they'd be negative as signed values.
+    assert_eq!(
+        load(sfnt(vec![(*b"OS/2", os2(900, 300))])).ascent_descent(),
+        (900, 300)
+    );
+    assert_eq!(
+        load(sfnt(vec![(*b"OS/2", os2(40_000, 33_000))])).ascent_descent(),
+        (40_000, 33_000)
+    );
+    // Without an OS/2 table, hhea's ascender and its descender's magnitude.
+    assert_eq!(
+        load(with_hhea(sfnt(vec![]), 800, -200)).ascent_descent(),
+        (800, 200)
+    );
+    assert_eq!(
+        load(with_hhea(sfnt(vec![]), 800, i16::MIN)).ascent_descent(),
+        (800, 32_767)
+    );
+    // Where both are 0, Carlito's, so a last line's height never divides by 0 (§3).
+    assert_eq!(load(sfnt(vec![])).ascent_descent(), (1950, 550));
+    assert_eq!(
+        load(sfnt(vec![(*b"OS/2", os2(0, 0))])).ascent_descent(),
+        (1950, 550)
+    );
+    assert_eq!(
+        compyla_fonts::carlito(Style::Bold).ascent_descent(),
+        (1950, 550)
+    );
+    assert_eq!(Font::Consolas.ascent_descent(), (1884, 514));
+}
+
+/// A `GSUB` whose `ccmp` feature runs a context lookup on glyph 1 that applies a multiple
+/// substitution (1 → 1 1) and then itself again: on the first glyph only, so the text grows a glyph
+/// at each level of recursion; or, `doubling`, on a pair of them and again on each of the pair, so
+/// it doubles at each level.
+fn looping_gsub(doubling: bool) -> Vec<u8> {
+    let words =
+        |values: &[u16]| -> Vec<u8> { values.iter().flat_map(|v| v.to_be_bytes()).collect() };
+    // Lookup 0's subtable: a sequence context (format 3) of one glyph 1, or two, with its records
+    // (sequence index, lookup index), and its coverage of glyph 1 after them.
+    let context = match doubling {
+        false => words(&[3, 1, 2, 16, 0, 1, 0, 0, 1, 1, 1]),
+        true => words(&[3, 2, 3, 22, 22, 0, 1, 0, 0, 1, 0, 1, 1, 1]),
+    };
+    let lookup0 = 8 + context.len() as u16;
+    let mut gsub = words(&[1, 0, 10, 30, 44]);
+    // ScriptList (10): DFLT → a script whose default language system uses feature 0.
+    gsub.extend(words(&[1]));
+    gsub.extend(b"DFLT");
+    gsub.extend(words(&[8, 4, 0, 0, 0xFFFF, 1, 0]));
+    // FeatureList (30): ccmp → lookup 0.
+    gsub.extend(words(&[1]));
+    gsub.extend(b"ccmp");
+    gsub.extend(words(&[8, 0, 1, 0]));
+    // LookupList (44): two lookups.
+    gsub.extend(words(&[2, 6, 6 + lookup0]));
+    // Lookup 0: context (type 5).
+    gsub.extend(words(&[5, 0, 1, 8]));
+    gsub.extend(context);
+    // Lookup 1: multiple substitution (type 2), glyph 1 → glyphs 1 and 1.
+    gsub.extend(words(&[2, 0, 1, 8]));
+    gsub.extend(words(&[1, 14, 1, 8]));
+    gsub.extend(words(&[2, 1, 1]));
+    gsub.extend(words(&[1, 1, 1]));
+    gsub
+}
+
+#[test]
+fn a_looping_substitution_is_shaped_only_to_the_bound() {
+    // §12.1: shaping is bounded, and a run whose shaping reaches the bound is measured as shaped so
+    // far. The shaper's own limits are that bound (rustybuzz 0.20's): 64 levels of nested lookups,
+    // and output of 64 glyphs for each of the text's (at least 16,384), within 1,024 operations for
+    // each (at least 16,384).
+    let load = |gsub: Option<Vec<u8>>| {
+        let mut tables = vec![(*b"cmap", cmap(1, 1))];
+        tables.extend(gsub.map(|gsub| (*b"GSUB", gsub)));
+        Face::load(sfnt(tables), "Looping", Style::Regular).unwrap()
+    };
+    let (plain, growing, doubling) = (
+        load(None),
+        load(Some(looping_gsub(false))),
+        load(Some(looping_gsub(true))),
+    );
+    let width = |face: &Face| {
+        measure(&Run {
+            text: "aaaa",
+            fonts: Fonts {
+                latin: Font::Face(face),
+                east_asian: None,
+                complex: None,
+            },
+            size: 12 * 12_700,
+            complex_size: 12 * 12_700,
+            style: Style::Regular,
+            features: Features::default(),
+            spacing: 0,
+            language: None,
+            rtl: None,
+        })
+    };
+    let started = Instant::now();
+    let (plain, growing, doubling) = (width(&plain), width(&growing), width(&doubling));
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "{:?}",
+        started.elapsed()
+    );
+    // Glyph 1 advances 600 of 1,000 units: 4 a's are 4 × 0.6 × 12 pt.
+    let glyph = 600 * 12 * 12_700 / 1000;
+    assert_eq!(plain, 4 * glyph);
+    // A glyph more at each level stops at the 64th: 65 glyphs for each a.
+    assert_eq!(growing, 4 * 65 * glyph);
+    // Doubling at each level stops at the bound on work or output, long before 2^64 glyphs, and the
+    // text measures the glyphs shaped so far.
+    assert!(
+        doubling > 4 * glyph && doubling <= 16_384 * glyph,
+        "{}",
+        doubling / glyph
+    );
+    assert_eq!(doubling % glyph, 0);
+}

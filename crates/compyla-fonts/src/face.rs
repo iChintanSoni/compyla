@@ -60,6 +60,7 @@ pub struct Face {
     index: u32,
     variations: Vec<Variation>,
     units_per_em: i64,
+    ascent_descent: (u32, u32),
 }
 
 impl Face {
@@ -99,16 +100,25 @@ impl Face {
             return Err(Unreadable::NotAFont);
         }
         let variations = variations(&face, style);
+        let ascent_descent = ascent_descent(&face);
         Ok(Face {
             data,
             index,
             variations,
             units_per_em,
+            ascent_descent,
         })
     }
 
     pub fn units_per_em(&self) -> i64 {
         self.units_per_em
+    }
+
+    /// Its ascent and descent in its units, for a last line's height (§3, §8.6): the OS/2 table's
+    /// `usWinAscent` and `usWinDescent`, else `hhea`'s ascender and its descender's magnitude, else,
+    /// where both are 0, Carlito's.
+    pub fn ascent_descent(&self) -> (u32, u32) {
+        self.ascent_descent
     }
 
     /// The face for shaping, with its variations set.
@@ -127,6 +137,30 @@ impl Face {
             .ok()
             .and_then(|face| face.glyph_index(c))
             .is_some_and(|glyph| glyph.0 != 0)
+    }
+}
+
+/// Carlito's `usWinAscent` and `usWinDescent`, Calibri's too.
+pub(crate) const CARLITO_ASCENT_DESCENT: (u32, u32) = (1950, 550);
+
+fn ascent_descent(face: &ttf_parser::Face) -> (u32, u32) {
+    // ttf-parser reads the unsigned win values as signed and negates the descent; undo both.
+    let metrics = match face.tables().os2 {
+        Some(os2) => (
+            u32::from(os2.windows_ascender() as u16),
+            u32::from(os2.windows_descender().wrapping_neg() as u16),
+        ),
+        None => {
+            let hhea = face.tables().hhea;
+            (
+                u32::from(hhea.ascender.max(0) as u16),
+                u32::from(hhea.descender.saturating_neg().max(0) as u16),
+            )
+        }
+    };
+    match metrics {
+        (0, 0) => CARLITO_ASCENT_DESCENT,
+        metrics => metrics,
     }
 }
 
