@@ -421,10 +421,11 @@ def pptx_fonts(entries):
     """More families for a pptx template's output (§3). The theme's East Asian and complex fonts;
     the presentation's default text style and table styles; on a layout, calibri (a stand-in, in
     lower case), Broken Font (which the case pins to bytes that aren't a font), Brand Gothic (an
-    East Asian typeface), the master's body font again in lower case, and two families the
+    East Asian typeface), the master's body font again in lower case, and three families the
     presentation lists as embedded although it doesn't hold them: one without a relationship, one
-    external and one whose part is missing. A notes master with its own theme, Brand Notes, and text style. The embedded Brand
-    Sans is listed in upper case."""
+    external and one whose part is missing. A notes master, related by a type spelled
+    `NotesMaster`, with its own theme, Brand Notes, and text style; and a handout master sharing
+    that theme and naming Brand Handout. The embedded Brand Sans is listed in upper case."""
     parts = dict(entries)
     parts["ppt/theme/theme1.xml"] = (parts["ppt/theme/theme1.xml"]
         .replace('<a:latin typeface="Brand Display"/><a:ea typeface=""/>', '<a:latin typeface="Brand Display"/><a:ea typeface="Brand Mincho"/>', 1)
@@ -443,7 +444,8 @@ def pptx_fonts(entries):
     parts[layout] = parts[layout].replace("</p:spTree></p:cSld>", shapes + "</p:spTree></p:cSld>", 1)
     main = "ppt/presentation.xml"
     parts[main] = (parts[main]
-        .replace("</p:sldMasterIdLst>", '</p:sldMasterIdLst><p:notesMasterIdLst><p:notesMasterId r:id="rId4"/></p:notesMasterIdLst>', 1)
+        .replace("</p:sldMasterIdLst>", '</p:sldMasterIdLst><p:notesMasterIdLst><p:notesMasterId r:id="rId4"/></p:notesMasterIdLst>'
+                 '<p:handoutMasterIdLst><p:handoutMasterId r:id="rId6"/></p:handoutMasterIdLst>', 1)
         .replace('<p:font typeface="Brand Sans"/>', '<p:font typeface="BRAND SANS"/>', 1)
         .replace("</p:embeddedFontLst>",
                  '<p:embeddedFont><p:font typeface="Brand Ghost"/><p:regular r:id="rId98"/></p:embeddedFont>'
@@ -456,18 +458,27 @@ def pptx_fonts(entries):
     parts[notes] = parts[notes].replace(
         "</p:notesMaster>",
         '<p:notesStyle><a:lvl1pPr><a:defRPr><a:latin typeface="Brand Notes Body"/></a:defRPr></a:lvl1pPr></p:notesStyle></p:notesMaster>', 1)
+    handout = ('<p:sp><p:nvSpPr><p:cNvPr id="2" name="Handout"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr/>'
+               '<p:txBody><a:bodyPr/><a:p><a:r><a:rPr lang="en-US"><a:latin typeface="Brand Handout"/></a:rPr><a:t>Handout</a:t></a:r></a:p></p:txBody></p:sp>')
+    parts["ppt/handoutMasters/handoutMaster1.xml"] = (
+        f'{DECL}<p:handoutMaster xmlns:a="{A}" xmlns:r="{OFFICE}" xmlns:p="{P}"><p:cSld>{tree(handout)}</p:cSld>'
+        '<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>'
+        '</p:handoutMaster>')
+    add_rels(parts, "ppt/handoutMasters/_rels/handoutMaster1.xml.rels", ("rId1", "theme", "../theme/theme2.xml", False))
     parts["ppt/tableStyles.xml"] = (
         f'{DECL}<a:tblStyleLst xmlns:a="{A}" def="{{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}}">'
         '<a:tblStyle styleId="{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}" styleName="Brand"><a:wholeTbl><a:tcTxStyle>'
         '<a:font><a:latin typeface="Brand Table"/><a:ea typeface=""/><a:cs typeface=""/></a:font>'
         '</a:tcTxStyle></a:wholeTbl></a:tblStyle></a:tblStyleLst>')
     add_rels(parts, "ppt/_rels/presentation.xml.rels",
-             ("rId4", "notesMaster", "notesMasters/notesMaster1.xml", False),
+             ("rId4", "NotesMaster", "notesMasters/notesMaster1.xml", False),
              ("rId5", "tableStyles", "tableStyles.xml", False),
+             ("rId6", "handoutMaster", "handoutMasters/handoutMaster1.xml", False),
              ("rId97", "font", "fonts/lost.fntdata", False),
              ("rId99", "font", "https://fonts.example/remote.fntdata", True))
     parts["[Content_Types].xml"] = parts["[Content_Types].xml"].replace("</Types>", (
-        NOTES_MASTER_TYPES + f'<Override PartName="/ppt/tableStyles.xml" ContentType="{PML}.tableStyles+xml"/></Types>'))
+        NOTES_MASTER_TYPES + f'<Override PartName="/ppt/tableStyles.xml" ContentType="{PML}.tableStyles+xml"/>'
+        f'<Override PartName="/ppt/handoutMasters/handoutMaster1.xml" ContentType="{PML}.handoutMaster+xml"/></Types>'))
     return list(parts.items())
 
 

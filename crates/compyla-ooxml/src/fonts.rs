@@ -11,60 +11,70 @@ use crate::template::{Invalid, Kind, Template};
 const OBFUSCATED: &str = "application/vnd.openxmlformats-officedocument.obfuscatedFont";
 
 /// The families §3 checks for output written with `template`, each once (compared by ASCII-lowercase
-/// form) in the order first named. First the theme's major and minor fonts (latin, then East Asian
-/// and complex where not empty). Then, for pptx, the typefaces named by the parts its output keeps:
-/// the presentation's default text style, its table styles, and each slide master with its layouts,
-/// and the notes and handout masters, each master with its own theme's fonts. For docx, the fonts
-/// its document defaults name. Theme references (`+mj-lt`, Word's `*Theme` attributes), empty names
-/// and bullet fonts (`a:buFont`) aren't families. Docx styles join when the docx renderer settles
-/// which it writes with (#16). Each part is read once, however many parts list it.
+/// form) in the order first named. Theme references (`+mj-lt`, Word's `*Theme` attributes), empty
+/// names and bullet fonts (`a:buFont`) aren't families.
+///
+/// For pptx, the typefaces named by the parts its output keeps: the presentation's theme, default
+/// text style and table styles, then each slide master with its layouts, and the notes and handout
+/// masters, each master with its own theme. A relationship's type is matched by its last segment
+/// without ASCII case, as the renderer finds the notes master (§8.8, C61), and each master, layout
+/// and theme is read once, however many parts list it.
+///
+/// For docx, the theme's fonts and those its document defaults name. Its styles join when the docx
+/// renderer settles which it writes with (#16).
+///
+/// A theme's fonts are its major and minor `latin`, then `ea` and `cs` where not empty.
 pub fn families(template: &Template) -> Result<Vec<String>, Invalid> {
     let mut families = Families::default();
-    if let Some(theme) = theme(template)? {
-        families.theme(&theme);
-    }
     match template.kind {
         Kind::Pptx => {
-            let presentation = template.xml(&template.main)?.unwrap_or_default();
+            let mut read = HashSet::new();
+            let mut once = |part: &str| match read.insert(part.to_ascii_lowercase()) {
+                true => template.xml(part),
+                false => Ok(None),
+            };
+            let main = &template.main;
+            if let Some(part) = related(template, main, "theme")?
+                && let Some(theme) = once(&part)?
+                && theme.is(MAIN_A, "theme")
+            {
+                families.theme(&theme);
+            }
+            let presentation = template.xml(main)?.unwrap_or_default();
             if let Some(style) = presentation.child(MAIN_P, "defaultTextStyle") {
                 families.typefaces(style);
             }
-            if let Some(part) = template.related(&template.main, "tableStyles")?
-                && let Some(styles) = template.xml(&part)?
+            if let Some(part) = related(template, main, "tableStyles")?
+                && let Some(styles) = once(&part)?
             {
                 families.typefaces(&styles);
             }
             let mut masters = masters(template)?;
             for kind in ["notesMaster", "handoutMaster"] {
-                masters.extend(template.related(&template.main, kind)?);
+                masters.extend(related(template, main, kind)?);
             }
-            let mut read = HashSet::new();
-            let mut first = |part: &str| read.insert(part.to_ascii_lowercase());
             for master in masters {
-                if !first(&master) {
-                    continue;
-                }
-                let Some(xml) = template.xml(&master)? else {
+                let Some(xml) = once(&master)? else {
                     continue;
                 };
-                if let Some(part) = template.related(&master, "theme")?
-                    && first(&part)
-                    && let Some(theme) = template.xml(&part)?
+                if let Some(part) = related(template, &master, "theme")?
+                    && let Some(theme) = once(&part)?
                     && theme.is(MAIN_A, "theme")
                 {
                     families.theme(&theme);
                 }
                 families.typefaces(&xml);
                 for layout in layouts_of(template, &master, &xml)? {
-                    if first(&layout)
-                        && let Some(layout) = template.xml(&layout)?
-                    {
+                    if let Some(layout) = once(&layout)? {
                         families.typefaces(&layout);
                     }
                 }
             }
         }
         Kind::Docx => {
+            if let Some(theme) = theme(template)? {
+                families.theme(&theme);
+            }
             if let Some(part) = template.related(&template.main, "styles")?
                 && let Some(styles) = template.xml(&part)?
                 && let Some(fonts) = styles.path(&[
@@ -82,6 +92,22 @@ pub fn families(template: &Template) -> Result<Vec<String>, Invalid> {
         Kind::Xlsx => {}
     }
     Ok(families.list)
+}
+
+/// The part `source` relates to by an internal relationship whose type's last segment is `kind`,
+/// compared without ASCII case.
+fn related(template: &Template, source: &str, kind: &str) -> Result<Option<String>, Invalid> {
+    Ok(template
+        .relationships(source)?
+        .into_iter()
+        .find(|r| {
+            !r.external
+                && r.kind
+                    .rsplit('/')
+                    .next()
+                    .is_some_and(|last| last.eq_ignore_ascii_case(kind))
+        })
+        .map(|r| r.target))
 }
 
 #[derive(Default)]
@@ -296,7 +322,8 @@ mod tests {
     fn the_families_are_named_as_the_template_names_them() {
         // lint/144: the theme's fonts with its East Asian and complex ones, the default text style,
         // the table styles, the master's body style, its layouts' typefaces (a duplicate in another
-        // case, a stand-in in lower case), the notes master's theme and text; each once.
+        // case, a stand-in in lower case), the notes master's theme and text, and the handout
+        // master's text; each once.
         let pptx = Template::read(include_bytes!(
             "../../../spec/conformance/lint/144-pptx-fonts-unresolved/brand.potx"
         ))
@@ -319,6 +346,7 @@ mod tests {
                 "Brand Lost",
                 "Brand Notes",
                 "Brand Notes Body",
+                "Brand Handout",
             ]
         );
         // Of its embedded fonts, only the one whose regular face is in the package counts.
