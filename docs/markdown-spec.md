@@ -361,46 +361,64 @@ font bytes only through the chain below, so they run offline and pinned (archite
 
   A family whose regular style none of these resolves is measured with Carlito and produces
   `font_unresolved` (warning, strict-promotable, validate stage, §11.2) once; the viewer substitutes
-  a font. A family a pptx template embeds (`p:embeddedFont`) isn't reported: the output keeps the
-  embedding and PowerPoint shows it. The engine doesn't read Embedded OpenType, so it is measured as
-  the chain resolves it, else with Carlito.
-- **Ahead of rendering,** `compyla fonts sync` pins a font for each family the template uses that
-  has no stand-in and that the template doesn't embed in a form the engine reads: from a
-  user-supplied file, else from **Google Fonts**. It may pin a metric-compatible open font under the
-  template's family name (Arimo for Arial, Tinos for Times New Roman, Cousine for Courier New,
-  Caladea for Cambria). Pins go in a lockfile (§10.3).
+  a font. In pptx output, a family the template embeds (`p:embeddedFont`) isn't reported: the output
+  keeps the embedding and PowerPoint shows it. The engine doesn't read Embedded OpenType, so such a
+  family is measured as the chain resolves it, else with Carlito; in other outputs (a pdf from a
+  `.potx`) it is reported like any other.
+- **Ahead of rendering,** `compyla fonts sync` pins a font for each family checked that has no
+  stand-in and that the template doesn't embed in a form the engine reads: from a user-supplied
+  file, else from **Google Fonts**. It may pin a metric-compatible open font under the template's
+  family name (Arimo for Arial, Tinos for Times New Roman, Cousine for Courier New, Caladea for
+  Cambria). Pins go in a lockfile (§10.3).
 - **Font bytes** are a TrueType or OpenType font, or a collection, within §12.1's limit; bytes that
   aren't a font the engine reads count as not found. In a collection, the face is the first whose
-  family name (name ID 1) matches the family and whose style matches (OS/2 `fsSelection` bold and
-  italic bits), else the first whose family matches, else the first face. A single font is used
-  whatever its names say, so a pinned substitute measures under the template's name. A variable font
-  is measured at its default instance, with `wght` at 700 for bold and `ital` at 1 for italic where
-  it has those axes.
+  family name (name ID 1, in any of its records) matches the family and whose style matches (OS/2
+  `fsSelection` bold and italic bits), else the first whose family matches, else the first face. A
+  single font is used whatever its names say, so a pinned substitute measures under the template's
+  name. A variable font is measured with `wght` at 400, or 700 for bold, and for italic `ital` at 1,
+  or where it has no `ital`, `slnt` at its minimum, each where it has that axis and clamped to its
+  range; its other axes stay at their defaults.
 - **Measurement** serves the compose stage (D15): what fits a placeholder, a cell or a page. A run
-  is text with one size and one set of run properties. It is split further by script (UAX #24;
-  Common and Inherited characters take a neighbor's script) and by bidi level (UAX #9; a paragraph's
-  direction is its first strong character's).
-  - **Faces.** A character is measured with the run's `ea` font if its script is Han, Hiragana,
-    Katakana, Hangul or Bopomofo or its East Asian Width (UAX #11) is Wide or Fullwidth; with its
-    `cs` font if its script is Arabic, Hebrew, Syriac, Thaana, N'Ko, Devanagari, Bengali, Gurmukhi,
-    Gujarati, Oriya, Tamil, Telugu, Kannada, Malayalam, Sinhala, Thai, Lao, Tibetan, Myanmar or
-    Khmer; and with its `latin` font otherwise. An `ea` or `cs` font the run's properties and theme
-    leave empty means the `latin` one.
-  - **Shaping.** Each piece is shaped with its face's OpenType layout for its script, direction and
-    language (the document's `lang`, §2, else none). The face's required shaping features always
-    apply. Kerning applies in pptx where the size is at least the run's effective `kern` (never when
-    there is none), and nowhere else. Ligatures and other optional features never apply.
+  is text with one size and one set of run properties.
+  - **Classes.** Each character has a class from its own Script and East Asian Width (UAX #24, UAX
+    #11): *East Asian* if its script is Han, Hiragana, Katakana, Hangul or Bopomofo or its width is
+    Wide or Fullwidth; *complex* if its script is Arabic, Hebrew, Syriac, Thaana, N'Ko, Devanagari,
+    Bengali, Gurmukhi, Gujarati, Oriya, Tamil, Telugu, Kannada, Malayalam, Sinhala, Thai, Lao,
+    Tibetan, Myanmar or Khmer; *latin* otherwise, Common characters included. An Inherited character
+    takes the class of the character before it.
+  - **Faces.** A character is measured with the run's font for its class: in pptx, its `a:latin`,
+    `a:ea` or `a:cs` typeface; in docx, `w:ascii` for U+0000–U+007F and `w:hAnsi` otherwise,
+    `w:eastAsia` or `w:cs`; theme references resolved through the theme. An East Asian or complex
+    font that is empty or unnamed means the latin one. A character that face doesn't map is measured
+    with the first of the run's latin, East Asian and complex faces, then Carlito, that maps it; the
+    Consolas stand-in maps every character.
+  - **Pieces.** A run is split into pieces wherever the face changes, the script changes (each
+    character's resolved script: a Common or Inherited character takes the script of the nearest
+    character before it that has one, else after it) or the bidi level changes (UAX #9; a
+    paragraph's direction is its `rtl` in pptx or `w:bidi` in docx where set, else its first strong
+    character's).
+  - **Shaping.** Each piece is shaped with its face's OpenType layout, for its script and direction
+    and the document's language (§2). These features apply: `ccmp`, `locl`, `rlig`, `mark`, `mkmk`,
+    `abvm`, `blwm`, `calt`, `rclt`, `curs` and `dist`, and the features the script's shaping model
+    requires (Arabic's joining forms, the Indic reordering and conjunct features, and the like).
+    Kerning (`kern`) applies in pptx where the run's effective `kern` is greater than 0 and the size
+    is at least `kern`; with `kern` 0 or absent everywhere it doesn't, as PowerPoint renders it
+    (checked in PowerPoint 16.114 for Mac; ECMA-376's wording for an absent `kern` says otherwise).
+    In docx, kerning applies where the run's effective `w:kern` is greater than 0 and the size is at
+    least its value in half-points, and the ligature features its `w14:ligatures` names apply:
+    `standard` turns on `liga`, `contextual` `clig`, `historical` `hlig`, `discretional` `dlig`. No
+    other feature applies.
   - **Width.** A piece's width is the sum of its shaped glyphs' advances in font units, times the
     size in EMU (1 pt = 12,700 EMU), divided by the face's units per em, rounded down, in exact
-    integer arithmetic, plus the run's character spacing (pptx `spc`, docx `w:spacing`) once per
-    character. A run's width is the sum of its pieces'. Where lines break, whether trailing spaces
-    count, and what overflows are the compose stage's; lines break only at UAX #14 opportunities.
-  - **Characters a face lacks.** A default-ignorable code point (Default_Ignorable_Code_Point), a
-    nonspacing or enclosing mark (Mn, Me) or a control (Cc) advances nothing. A space separator (Zs)
-    advances as the face's U+0020. Any other character is measured with the first of the run's
-    `latin`, `ea` and `cs` faces, then Carlito, that maps it; if none does, it advances 1 em when
-    its East Asian Width is Wide or Fullwidth and ½ em otherwise. Tabs and line breaks are the
-    compose stage's. Unicode properties are those of the Unicode version the implementation uses.
+    integer arithmetic, plus the run's character spacing (pptx `spc`, docx `w:spacing`) once for
+    each character that advances. A run's width is the sum of its pieces'. Where lines break,
+    whether trailing spaces count, and what overflows are the compose stage's; lines break only at
+    UAX #14 opportunities.
+  - **Characters no face maps.** A default-ignorable code point (Default_Ignorable_Code_Point), a
+    nonspacing or enclosing mark (Mn, Me) or a control (Cc) advances nothing. Any other advances 1
+    em when its East Asian Width is Wide or Fullwidth; else a space separator (Zs) advances as the
+    face's U+0020 where it maps one; else ½ em. Tabs and line breaks are the compose stage's.
+    Unicode properties are those of the Unicode version the implementation uses.
   - **Consolas without a font** advances each character 1,126/2,048 em, its advance in every style,
     except characters the previous bullet makes advance nothing, and Wide and Fullwidth characters,
     which advance 1 em.
@@ -669,7 +687,7 @@ becomes an internal hyperlink. A fragment that matches no slug produces `link_an
 | `invalid_page_size` / `invalid_margins` | warning | §7 |
 | `invalid_directive_args` / `unknown_directive_option` | warning | §1.6 |
 | `unknown_directive` / `directive_misplaced` | warning | §1.5 |
-| `font_unresolved` | warning | §3; validate stage when a template and font resolver are available |
+| `font_unresolved` | warning | §3, §11.2 |
 
 ## 7. Profile: pdf
 
@@ -1542,10 +1560,10 @@ particular, it needs to keep only the diagnostics it may report (§11.2). *(C47)
 | Elements in a template XML part read as a tree (a docx body is searched, not read whole) | 500,000 |
 | Font file, from a template or a resolver *(C62)* | 64 MiB |
 
-A font over its limit, or bytes that don't parse, count as *not found* (§3): the family is
-unresolved, and `font_unresolved`'s message says why, rather than the operation failing, since the
-output can still name the family. Shaping work is bounded too, so a hostile layout table can't hang
-an operation; a run whose shaping reaches the bound is measured as shaped so far.
+A font over its limit, or bytes that don't parse, count as *not found* (§3), and resolution goes
+on down the chain rather than the operation failing, since the output can still name the family.
+Shaping work is bounded too, so a hostile layout table can't hang an operation; a run whose shaping
+reaches the bound is measured as shaped so far.
 
 ### 12.2 Security
 
