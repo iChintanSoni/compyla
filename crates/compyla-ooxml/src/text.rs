@@ -1395,6 +1395,11 @@ mod tests {
             &model.text_box(titled)[0].run.latin,
             &model.text_box(titled)[0].run.latin
         ));
+        // A theme reference (the title style's `+mj-lt`) too.
+        assert!(Arc::ptr_eq(
+            &model.title(titled).levels[0].run.latin,
+            &model.title(titled).levels[0].run.latin
+        ));
 
         // Past the layouts: §8.6's defaults alone, nothing from the template.
         let past = layouts.len();
