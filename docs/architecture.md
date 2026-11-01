@@ -414,8 +414,8 @@ so `lint` and `convert` agree: the facade hands compose the template's text mode
 insets and autofit, and the text styles it inherits) and a measurer over the resolved faces, compose
 fills lines and decides what fits, and the renderer writes those decisions. Lines follow
 PowerPoint's own rules, each checked in PowerPoint for Mac rather than read from the standard: a
-line's pitch is 1.2 × its size × its spacing whatever the font (only the last line reaches into the
-face's descent where spacing is tight), trailing spaces hang, tab stops count from the inset.
+line's pitch is 1.2 × its size × its spacing whatever the font (only the last line differs, ending
+at the face's descent below ¾ of its pitch), trailing spaces hang, tab stops count from the inset.
 Measurement stays a diagnostic. PowerPoint does the final layout, its widths differ by a fraction of
 a point a line, and a stand-in that is a little wide (Carlito for Calibri Light) can wrap a word
 sooner.
