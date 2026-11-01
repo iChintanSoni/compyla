@@ -17,7 +17,7 @@ use compyla_core::validate::pptx::model::{Content, Deck, Fit, Slide};
 use compyla_ooxml::dom::REL_NS;
 use compyla_ooxml::package::{self, HYPERLINK, Properties, Relationships};
 use compyla_ooxml::sanitize::{self, Removed};
-use compyla_ooxml::template::{Invalid, Template};
+use compyla_ooxml::template::{Invalid, Relationship, Template};
 use compyla_ooxml::xml::Writer;
 
 use crate::text::{Bullets, LinkTarget, Text};
@@ -77,8 +77,8 @@ pub fn render(
     if layouts.is_empty() {
         return Err(Invalid("has no slide layouts".into()));
     }
-    // The presentation part keeps nothing active or external either (§10.4).
-    let main = sanitize::part(template, &template.main)?;
+    // The presentation part keeps nothing active or external either (§10.4), nor its slides.
+    let main = sanitize::part(template, &template.main, &|r| to_slide(template, r))?;
     let main_rels = main.relationships.clone();
     let notes_master = main_rels
         .iter()
@@ -102,11 +102,6 @@ pub fn render(
     };
     let mut slide_list = Vec::new();
     let mut presentation_rels = Relationships::new();
-    // The template's own relationships stay, but not its slides.
-    let kept: Vec<_> = main_rels
-        .iter()
-        .filter(|r| !r.kind.ends_with("/slide"))
-        .collect();
 
     // Each layout's content placeholders, found once however many slides use it.
     let contents: Vec<Vec<&Placeholder>> = layouts.iter().map(Layout::content).collect();
@@ -190,7 +185,7 @@ pub fn render(
         slide_list.push((256 + index as u32, format!("cmpSlide{}", index + 1)));
     }
 
-    // The presentation's relationships: the template's own, then the slides.
+    // The presentation's relationships: the template's own (less its slides), then the deck's.
     let mut presentation_targets = Vec::new();
     // Kept with their ids: the presentation part refers to them.
     let main_folder = template
@@ -198,7 +193,7 @@ pub fn render(
         .rsplit_once('/')
         .map_or("", |(f, _)| f)
         .to_string();
-    for rel in &kept {
+    for rel in &main_rels {
         if rel.external {
             presentation_rels.add_with_id(&rel.id, &rel.kind, &rel.target, true);
         } else {
@@ -275,6 +270,23 @@ fn bind(layout: HouseLayout, layouts: &[Layout]) -> usize {
 fn rels_name(part: &str) -> String {
     let (folder, file) = part.rsplit_once('/').unwrap_or(("", part));
     format!("{folder}/_rels/{file}.rels")
+}
+
+/// Whether the template gives `name` the PresentationML content type `kind`.
+fn typed(template: &Template, name: &str, kind: &str) -> bool {
+    template
+        .content_type(name)
+        .is_some_and(|t| t.eq_ignore_ascii_case(&format!("{PML}.{kind}+xml")))
+}
+
+/// A relationship to one of the template's own slides, which the deck's replace (§8.8, C60): of
+/// the slide type (by its last segment, without case, so Strict's too), or to a part whose content
+/// type is a slide's. Every part kept loses these, with what refers to them, so nothing jumps to a
+/// slide that isn't there.
+fn to_slide(template: &Template, relationship: &Relationship) -> bool {
+    let kind = relationship.kind.rsplit('/').next().unwrap_or_default();
+    !relationship.external
+        && (kind.eq_ignore_ascii_case("slide") || typed(template, &relationship.target, "slide"))
 }
 
 /// The placeholder each slot's blocks go into (§8.8): slot `i` the `i`-th content placeholder. A
@@ -1029,16 +1041,9 @@ fn assemble(
         .iter()
         .map(|(n, ..)| n.to_ascii_lowercase())
         .collect();
-    let typed = |name: &str, kind: &str| {
-        template
-            .content_type(name)
-            .is_some_and(|t| t.eq_ignore_ascii_case(&format!("{PML}.{kind}+xml")))
-    };
-    // The view settings' outline lists the template's slides, which are gone (§8.8): what it
-    // relates to is neither followed nor kept.
-    let viewed = |part: &str, kind: &str| typed(part, "viewProps") && kind.ends_with("/slide");
     // What the package reaches from its main part, following the relationships each template part
-    // keeps once its active and external content is removed.
+    // keeps once its active and external content, and its relationships to the template's slides,
+    // are removed (§8.8, §10.4).
     let mut reachable: HashSet<String> = HashSet::new();
     let mut sanitized: HashMap<String, sanitize::Part> = HashMap::new();
     let mut queue = vec![main.clone()];
@@ -1051,21 +1056,17 @@ fn assemble(
             Some(targets) => targets.clone(),
             None if new_names.contains(&lower) => Vec::new(),
             None => {
-                let mut clean = sanitize::part(template, &part)?;
+                let mut clean = sanitize::part(template, &part, &|r| to_slide(template, r))?;
                 let targets = clean
                     .relationships
                     .iter()
-                    .filter(|r| !r.external && !viewed(&part, &r.kind))
+                    .filter(|r| !r.external)
                     .map(|r| r.target.clone())
                     .collect();
-                // Only what writing the package needs is kept (§12.1): new bytes, what was
-                // removed, and the view settings' relationships, which are rewritten.
-                let view = typed(&part, "viewProps");
-                if !view {
-                    clean.relationships = Vec::new();
-                }
-                if view || clean.xml.is_some() || clean.rels.is_some() || !clean.removed.is_empty()
-                {
+                // Only what writing the package needs is kept (§12.1): new bytes, and what was
+                // removed.
+                clean.relationships = Vec::new();
+                if clean.xml.is_some() || clean.rels.is_some() || !clean.removed.is_empty() {
                     sanitized.insert(lower, clean);
                 }
                 targets
@@ -1126,29 +1127,9 @@ fn assemble(
             entries.push((name.to_string(), presentation.rels.to_xml()));
             continue;
         }
-        let clean = sanitized.get(&rels_owner(name).to_ascii_lowercase());
-        if is_rels(name) && typed(&rels_owner(name), "viewProps") {
-            let owner = rels_owner(name);
-            let folder = owner.rsplit_once('/').map_or("", |(f, _)| f);
-            let mut kept = Relationships::new();
-            for r in clean.iter().flat_map(|c| &c.relationships) {
-                if viewed(&owner, &r.kind) {
-                    continue;
-                }
-                let target = if r.external {
-                    r.target.clone()
-                } else {
-                    relative(folder, &r.target)
-                };
-                kept.add_with_id(&r.id, &r.kind, &target, r.external);
-            }
-            if !kept.is_empty() {
-                entries.push((name.to_string(), kept.to_xml()));
-            }
-            continue;
-        }
         if is_rels(name) {
-            let data = clean
+            let data = sanitized
+                .get(&rels_owner(name).to_ascii_lowercase())
                 .and_then(|c| c.rels.clone())
                 .unwrap_or_else(|| data.to_vec());
             entries.push((name.to_string(), data));
@@ -1162,10 +1143,10 @@ fn assemble(
             overrides.insert(name.to_string(), content_type.to_string());
         }
         // Show and view settings may name the template's slides or custom shows, which are gone.
-        let data = if typed(name, "presProps") {
+        let data = if typed(template, name, "presProps") {
             presentation::show_properties(data)
                 .map_err(|why| Invalid(format!("has show settings that can't be edited: {why}")))?
-        } else if typed(name, "viewProps") {
+        } else if typed(template, name, "viewProps") {
             presentation::view_properties(data)
                 .map_err(|why| Invalid(format!("has view settings that can't be edited: {why}")))?
         } else {
@@ -1363,7 +1344,76 @@ mod tests {
             br#"<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree/></p:cSld></p:sld>"#.to_vec(),
         ));
         let template = Template::read(&compyla_ooxml::zip::write(&entries)).unwrap();
-        let document = compyla_core::parse("## One\n\nText.\n").document;
+        let (parts, _) = rendered(&template, "## One\n\nText.\n");
+        assert!(!parts.contains_key("ppt/slides/template.xml"));
+        let view_rels = text(&parts, "ppt/_rels/viewProps.xml.rels");
+        assert!(!view_rels.contains("<Relationship "), "{view_rels}");
+        let view = text(&parts, "ppt/viewProps.xml");
+        assert!(
+            view.contains("<p:outlineViewPr><p:cViewPr/></p:outlineViewPr>"),
+            "{view}"
+        );
+        let types = text(&parts, "[Content_Types].xml");
+        assert!(!types.contains("template.xml"), "{types}");
+    }
+
+    #[test]
+    fn kept_parts_lose_their_relationships_to_the_template_slides() {
+        // The house master with a picture of a slide part, and a jump through a Strict slide
+        // relationship to a slide the content types don't name.
+        let master = "ppt/slideMasters/slideMaster1.xml";
+        let master_rels = "ppt/slideMasters/_rels/slideMaster1.xml.rels";
+        let picture = r#"<p:pic><p:nvPicPr><p:cNvPr id="90" name="Sample"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="rId90"/></p:blipFill><p:spPr/></p:pic>"#;
+        let jump = r#"<p:sp><p:nvSpPr><p:cNvPr id="91" name="Jump"><a:hlinkClick r:id="rId91" action="ppaction://hlinksldjump"/></p:cNvPr><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr/></p:sp>"#;
+        let slide = r#"<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree/></p:cSld></p:sld>"#;
+        let mut entries = compyla_ooxml::read::entries(HOUSE).unwrap();
+        for (name, data) in &mut entries {
+            let text = String::from_utf8(data.clone()).unwrap();
+            *data = match name.as_str() {
+                "[Content_Types].xml" => text.replace(
+                    "</Types>",
+                    &format!(
+                        r#"<Override PartName="/ppt/slides/sample.xml" ContentType="{PML}.slide+xml"/></Types>"#
+                    ),
+                ),
+                name if name == master => {
+                    text.replace("</p:spTree>", &format!("{picture}{jump}</p:spTree>"))
+                }
+                name if name == master_rels => text.replace(
+                    "</Relationships>",
+                    &format!(
+                        r#"<Relationship Id="rId90" Type="{REL}/image" Target="../slides/sample.xml"/><Relationship Id="rId91" Type="http://purl.oclc.org/ooxml/officeDocument/relationships/slide" Target="../slides/strict.xml"/></Relationships>"#
+                    ),
+                ),
+                _ => continue,
+            }
+            .into_bytes();
+        }
+        entries.push(("ppt/slides/sample.xml".into(), slide.as_bytes().to_vec()));
+        entries.push(("ppt/slides/strict.xml".into(), slide.as_bytes().to_vec()));
+        let template = Template::read(&compyla_ooxml::zip::write(&entries)).unwrap();
+        let (parts, removed) = rendered(&template, "## One\n\nText.\n");
+        assert!(removed.is_empty(), "{removed:?}");
+        assert!(
+            !parts.contains_key("ppt/slides/sample.xml")
+                && !parts.contains_key("ppt/slides/strict.xml")
+        );
+        let out = text(&parts, master);
+        assert!(
+            out.contains(r#"<a:blip/>"#) && out.contains(r#"name="Jump"></p:cNvPr>"#),
+            "{out}"
+        );
+        let rels = text(&parts, master_rels);
+        assert!(!rels.contains("rId90") && !rels.contains("rId91"), "{rels}");
+    }
+
+    /// A package's parts by name.
+    type Parts = HashMap<String, Vec<u8>>;
+
+    /// `source` composed and rendered into `template`: the package's parts, and what the
+    /// template's kept parts had removed.
+    fn rendered(template: &Template, source: &str) -> (Parts, Vec<(String, Removed)>) {
+        let document = compyla_core::parse(source).document;
         let sidecar = compyla_core::Sidecar::default();
         let input = compyla_core::validate::Input {
             document: &document,
@@ -1378,22 +1428,16 @@ mod tests {
         ) else {
             unreachable!()
         };
-        let bytes = render(&deck, &template, &Properties::default(), &|_| None)
-            .unwrap()
-            .bytes;
-        let parts: HashMap<String, Vec<u8>> = compyla_ooxml::read::entries(&bytes)
+        let rendered = render(&deck, template, &Properties::default(), &|_| None).unwrap();
+        let parts = compyla_ooxml::read::entries(&rendered.bytes)
             .unwrap()
             .into_iter()
             .collect();
-        assert!(!parts.contains_key("ppt/slides/template.xml"));
-        assert!(!parts.contains_key("ppt/_rels/viewProps.xml.rels"));
-        let view = String::from_utf8(parts["ppt/viewProps.xml"].clone()).unwrap();
-        assert!(
-            view.contains("<p:outlineViewPr><p:cViewPr/></p:outlineViewPr>"),
-            "{view}"
-        );
-        let types = String::from_utf8(parts["[Content_Types].xml"].clone()).unwrap();
-        assert!(!types.contains("template.xml"), "{types}");
+        (parts, rendered.removed)
+    }
+
+    fn text(parts: &Parts, name: &str) -> String {
+        String::from_utf8(parts[name].clone()).unwrap()
     }
 
     #[test]

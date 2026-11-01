@@ -54,6 +54,15 @@ def package_rels(main):
     return rels(("rId1", "officeDocument", main, False))
 
 
+def add_rels(parts, name, *items):
+    """Adds relationships to `parts[name]`, creating it if needed; a type is a URI or the last
+    segment of an Office one."""
+    body = "".join(
+        f'<Relationship Id="{i}" Type="{t if t.startswith("http") else OFFICE + "/" + t}" Target="{target}"{EXTERNAL if ext else ""}/>'
+        for i, t, target, ext in items)
+    parts[name] = parts.get(name, rels()).replace("</Relationships>", body + "</Relationships>")
+
+
 def theme(major, minor, odd=False, accent1="2F5BEA"):
     colors = {"dk1": '<a:sysClr val="windowText" lastClr="000000"/>', "lt1": '<a:sysClr val="window" lastClr="FFFFFF"/>',
               "dk2": '<a:srgbClr val="1f2a44"/>', "lt2": '<a:srgbClr val="E8ECF3"/>',
@@ -150,12 +159,6 @@ def active_content(entries):
     mc = "http://schemas.openxmlformats.org/markup-compatibility/2006"
     ole_uri = "http://schemas.openxmlformats.org/presentationml/2006/ole"
 
-    def add_rels(name, *items):
-        body = "".join(
-            f'<Relationship Id="{i}" Type="{t if t.startswith("http") else OFFICE + "/" + t}" Target="{target}"{EXTERNAL if ext else ""}/>'
-            for i, t, target, ext in items)
-        parts[name] = parts.get(name, rels()).replace("</Relationships>", body + "</Relationships>")
-
     def frame(id, ole):
         return (f'<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="{id}" name="Object {id}"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>'
                 '<p:xfrm><a:off x="838200" y="4000000"/><a:ext cx="1270000" cy="952500"/></p:xfrm>'
@@ -178,7 +181,7 @@ def active_content(entries):
     spaced = linking(15, "Space", '<a:hlinkClick r:id="rId25"/>')
     master = "ppt/slideMasters/slideMaster1.xml"
     parts[master] = parts[master].replace("</p:spTree></p:cSld>", picture + link + refused + program + spoof + spaced + "</p:spTree></p:cSld>", 1)
-    add_rels("ppt/slideMasters/_rels/slideMaster1.xml.rels",
+    add_rels(parts, "ppt/slideMasters/_rels/slideMaster1.xml.rels",
              ("rId20", "image", "https://tracker.example/pixel.png", True),
              ("rId21", "hyperlink", "https://example.com/", True),
              ("rId22", "hyperlink", "ms-msdt:/id PCWDiagnostic", True),
@@ -210,7 +213,7 @@ def active_content(entries):
              f'<a:graphic><a:graphicData uri="{web_ns}"><we:webextensionref xmlns:we="{web_ns}" r:id="rId16"/></a:graphicData></a:graphic></p:graphicFrame>')
     layout = "ppt/slideLayouts/slideLayout2.xml"
     parts[layout] = (parts[layout].replace("</p:spTree></p:cSld>", embedded + linked + addin + "</p:spTree>" + controls + "</p:cSld>" + timing, 1))
-    add_rels("ppt/slideLayouts/_rels/slideLayout2.xml.rels",
+    add_rels(parts, "ppt/slideLayouts/_rels/slideLayout2.xml.rels",
              ("rId10", "package", "../embeddings/Microsoft_Word_Document.docx", False),
              ("rId11", "image", "../media/preview.png", False),
              ("rId12", "oleObject", "file:///C:/Finance/budget.xlsx", True),
@@ -233,15 +236,15 @@ def active_content(entries):
     parts["ppt/media/control.png"] = b"\x89PNG\r\n\x1a\n control"
     parts["ppt/activeX/activeX1.xml"] = (f'{DECL}<ax:ocx xmlns:ax="http://schemas.microsoft.com/office/2006/activeX" xmlns:r="{OFFICE}" '
                                          'ax:classid="{D7053240-CE69-11CD-A777-00DD01143C57}" ax:persistence="persistStorage" r:id="rId1"/>')
-    add_rels("ppt/activeX/_rels/activeX1.xml.rels",
+    add_rels(parts, "ppt/activeX/_rels/activeX1.xml.rels",
              ("rId1", "http://schemas.microsoft.com/office/2006/relationships/activeXControlBinary", "activeX1.bin", False))
     parts["ppt/activeX/activeX1.bin"] = b"\x00" * 32
 
-    add_rels("ppt/_rels/presentation.xml.rels", ("rId9", "image", "https://tracker.example/deck.png", True))
+    add_rels(parts, "ppt/_rels/presentation.xml.rels", ("rId9", "image", "https://tracker.example/deck.png", True))
     # A target mode spelled in lower case is still external.
     parts["ppt/_rels/presentation.xml.rels"] = parts["ppt/_rels/presentation.xml.rels"].replace("</Relationships>", (
         f'<Relationship Id="rId8" Type="{OFFICE}/image" Target="https://tracker.example/lower.png" TargetMode="external"/></Relationships>'))
-    add_rels("ppt/theme/_rels/theme1.xml.rels", ("rId1", "image", "https://tracker.example/theme.png", True))
+    add_rels(parts, "ppt/theme/_rels/theme1.xml.rels", ("rId1", "image", "https://tracker.example/theme.png", True))
     parts["[Content_Types].xml"] = parts["[Content_Types].xml"].replace("</Types>", (
         '<Default Extension="bin" ContentType="application/vnd.ms-office.activeX"/>'
         '<Default Extension="docx" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document"/>'
@@ -249,6 +252,62 @@ def active_content(entries):
         '<Default Extension="vml" ContentType="application/vnd.openxmlformats-officedocument.vmlDrawing"/>'
         '<Override PartName="/ppt/activeX/activeX1.xml" ContentType="application/vnd.ms-office.activeX+xml"/>'
         '<Override PartName="/ppt/webextensions/webextension1.xml" ContentType="application/vnd.ms-office.webextension+xml"/></Types>'))
+    return list(parts.items())
+
+
+def template_slides(entries):
+    """Sample slides of the template's own, and kept parts that still relate to them (§8.8, §10.4,
+    C60): three slides the presentation lists, the second with a picture and the last two in a
+    custom show; on the master, a button that jumps to the first slide and a relationship to the
+    second that nothing refers to; on a layout, a text link that jumps to the third with a sound,
+    and a button that jumps to the next slide, which names none."""
+    parts = dict(entries)
+
+    def shape(id, name, hlink="", run=""):
+        return (f'<p:sp><p:nvSpPr><p:cNvPr id="{id}" name="{name}">{hlink}</p:cNvPr><p:cNvSpPr/><p:nvPr/></p:nvSpPr>'
+                f'<p:spPr/><p:txBody><a:bodyPr/><a:p><a:r>{run}<a:t>{name}</a:t></a:r></a:p></p:txBody></p:sp>')
+
+    def slide(title, *shapes):
+        heading = (f'<p:sp><p:nvSpPr><p:cNvPr id="2" name="Title 1"/><p:cNvSpPr/><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr>'
+                   f'<p:spPr/><p:txBody><a:bodyPr/><a:p><a:r><a:t>{title}</a:t></a:r></a:p></p:txBody></p:sp>')
+        return (f'{DECL}<p:sld xmlns:a="{A}" xmlns:r="{OFFICE}" xmlns:p="{P}"><p:cSld>{tree(heading, *shapes)}</p:cSld>'
+                '<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>')
+
+    picture = ('<p:pic><p:nvPicPr><p:cNvPr id="3" name="Sample picture" descr="Sample"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr>'
+               '<p:blipFill><a:blip r:embed="rId2"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>'
+               '<p:spPr><a:xfrm><a:off x="838200" y="1825625"/><a:ext cx="1270000" cy="952500"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>')
+    for number, (title, layout, shapes) in enumerate([("Welcome", 1, ()), ("Sample", 2, (picture,)), ("Appendix", 3, ())], 1):
+        parts[f"ppt/slides/slide{number}.xml"] = slide(title, *shapes)
+        add_rels(parts, f"ppt/slides/_rels/slide{number}.xml.rels", ("rId1", "slideLayout", f"../slideLayouts/slideLayout{layout}.xml", False))
+    add_rels(parts, "ppt/slides/_rels/slide2.xml.rels", ("rId2", "image", "../media/sample.png", False))
+    parts["ppt/media/sample.png"] = b"\x89PNG\r\n\x1a\n sample"
+
+    main = "ppt/presentation.xml"
+    parts[main] = (parts[main]
+                   .replace("</p:sldMasterIdLst>", '</p:sldMasterIdLst><p:sldIdLst><p:sldId id="256" r:id="rId4"/><p:sldId id="257" r:id="rId5"/><p:sldId id="258" r:id="rId6"/></p:sldIdLst>', 1)
+                   .replace("</p:embeddedFontLst>", '</p:embeddedFontLst><p:custShowLst><p:custShow name="Short" id="0"><p:sldLst><p:sld r:id="rId5"/><p:sld r:id="rId6"/></p:sldLst></p:custShow></p:custShowLst>', 1))
+    add_rels(parts, "ppt/_rels/presentation.xml.rels", *[(f"rId{n + 3}", "slide", f"slides/slide{n}.xml", False) for n in (1, 2, 3)])
+
+    master = "ppt/slideMasters/slideMaster1.xml"
+    home = shape(30, "Home", '<a:hlinkClick r:id="rId30" action="ppaction://hlinksldjump"/>')
+    parts[master] = parts[master].replace("</p:spTree></p:cSld>", home + "</p:spTree></p:cSld>", 1)
+    add_rels(parts, "ppt/slideMasters/_rels/slideMaster1.xml.rels",
+             ("rId30", "slide", "../slides/slide1.xml", False),
+             ("rId31", "slide", "../slides/slide2.xml", False))
+
+    layout = "ppt/slideLayouts/slideLayout2.xml"
+    appendix = shape(30, "Appendix", run='<a:rPr lang="en-US"><a:hlinkClick r:id="rId2" action="ppaction://hlinksldjump"><a:snd r:embed="rId3" name="click.wav"/></a:hlinkClick></a:rPr>')
+    following = shape(31, "Next", '<a:hlinkClick r:id="" action="ppaction://hlinkshowjump?jump=nextslide"/>')
+    parts[layout] = parts[layout].replace("</p:spTree></p:cSld>", appendix + following + "</p:spTree></p:cSld>", 1)
+    add_rels(parts, "ppt/slideLayouts/_rels/slideLayout2.xml.rels",
+             ("rId2", "slide", "../slides/slide3.xml", False),
+             ("rId3", "audio", "../media/click.wav", False))
+    parts["ppt/media/click.wav"] = b"RIFF\x04\x00\x00\x00WAVE"
+
+    parts["[Content_Types].xml"] = parts["[Content_Types].xml"].replace("</Types>", (
+        '<Default Extension="png" ContentType="image/png"/><Default Extension="wav" ContentType="audio/wav"/>'
+        + "".join(f'<Override PartName="/ppt/slides/slide{n}.xml" ContentType="{PML}.slide+xml"/>' for n in (1, 2, 3))
+        + "</Types>"))
     return list(parts.items())
 
 
@@ -375,6 +434,9 @@ def main():
     # Active and external content a deck mustn't carry over from its template (§10.4).
     pptx(ROOT / "render/121-pptx-template-active-content/brand.potx", main_type="template",
          patch=active_content)
+    # Sample slides of the template's own, which its master and a layout still jump to (§8.8).
+    pptx(ROOT / "render/122-pptx-template-slide-links/brand.potx", main_type="template",
+         patch=template_slides)
 
 
 if __name__ == "__main__":
