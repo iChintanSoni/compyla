@@ -482,25 +482,33 @@ fn template(
 
 /// `font_unresolved`, once, for each family §3 checks that the font chain doesn't resolve: the font
 /// resolver, then a font a docx template embeds, then a bundled stand-in. In pptx output, a family
-/// the template embeds isn't reported: the output keeps the embedding, and PowerPoint shows it.
+/// the template embeds isn't reported: the output keeps the embedding, and PowerPoint shows it. The
+/// template's parts are read whatever the resolver finds, so whether it's valid doesn't depend on
+/// the resolver.
 fn unresolved_fonts(
     template: &compyla_ooxml::template::Template,
     format: Format,
     resolver: Option<&FontResolver<'_>>,
     out: &mut Sink,
 ) -> Result<(), compyla_ooxml::template::Invalid> {
-    use compyla_fonts::{Face, STAND_INS, Style};
-    let embedded = match format {
-        Format::Pptx => compyla_ooxml::fonts::pptx_embedded(template)?,
-        _ => Vec::new(),
+    use compyla_fonts::{Face, MAX_FONT_BYTES, STAND_INS, Style, Unreadable};
+    use compyla_ooxml::fonts;
+    let families = fonts::families(template)?;
+    let kept = match format {
+        Format::Pptx => fonts::pptx_embedded(template)?,
+        _ => Default::default(),
     };
-    for family in compyla_ooxml::fonts::families(template)? {
-        let same = |other: &String| other.trim().eq_ignore_ascii_case(&family);
-        if embedded.iter().any(same) || STAND_INS.iter().any(|s| s.eq_ignore_ascii_case(&family)) {
+    let embedded = fonts::Embedded::read(template)?;
+    for family in families {
+        if kept.contains(&family.to_ascii_lowercase())
+            || STAND_INS.iter().any(|s| s.eq_ignore_ascii_case(&family))
+        {
             continue;
         }
         let mut refused = None;
-        let mut readable = |bytes: Vec<u8>| match Face::load(bytes, &family, Style::Regular) {
+        let mut readable = |bytes: Result<Vec<u8>, Unreadable>| match bytes
+            .and_then(|bytes| Face::load(bytes, &family, Style::Regular))
+        {
             Ok(_) => true,
             Err(why) => {
                 refused = Some(why);
@@ -509,8 +517,14 @@ fn unresolved_fonts(
         };
         let resolved = resolver
             .and_then(|resolve| resolve(&family, Style::Regular))
-            .is_some_and(&mut readable)
-            || compyla_ooxml::fonts::docx_embedded(template, &family)?.is_some_and(&mut readable);
+            .is_some_and(|bytes| readable(Ok(bytes)))
+            || embedded.regular(&family).is_some_and(|font| {
+                // Refused by its size before its bytes are copied.
+                readable(match font.size() > MAX_FONT_BYTES {
+                    true => Err(Unreadable::TooLarge),
+                    false => Ok(font.bytes()),
+                })
+            });
         if resolved {
             continue;
         }

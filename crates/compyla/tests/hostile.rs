@@ -311,8 +311,8 @@ fn a_hostile_embedded_font_is_unresolved_not_a_panic() {
     let start = Instant::now();
     let diagnostics = compyla::lint("# A\n", &options, &compyla::no_assets).unwrap();
     assert!(start.elapsed() < BOUND, "{:?}", start.elapsed());
-    // Brand Serif, refused, and Brand Body.
-    assert_eq!(font_unresolved(&diagnostics), 2, "{diagnostics:?}");
+    // Brand Serif, refused, and the defaults' three.
+    assert_eq!(font_unresolved(&diagnostics), 4, "{diagnostics:?}");
 }
 
 #[test]
@@ -378,4 +378,94 @@ fn a_template_naming_thousands_of_families_is_linear_and_capped() {
     assert!(start.elapsed() < BOUND, "{:?}", start.elapsed());
     assert_eq!(font_unresolved(&diagnostics), compyla_core::diagnostic::CAP);
     assert_eq!(diagnostics.last().unwrap().code, "diagnostics_truncated");
+}
+
+#[test]
+fn a_template_embedding_thousands_of_fonts_is_linear() {
+    // 50,000 embedded fonts and a master naming each of them in lower case: each family is looked
+    // up once among the embedded, not compared with each (§3, §12.1).
+    const BRAND: &[u8] =
+        include_bytes!("../../../spec/conformance/lint/139-pptx-template-binding/brand.potx");
+    let embedded: String = (0..50_000)
+        .map(|i| {
+            format!(
+                r#"<p:embeddedFont><p:font typeface="Embedded {i}"/><p:regular r:id="rId3"/></p:embeddedFont>"#
+            )
+        })
+        .collect();
+    let runs: String = (0..50_000)
+        .map(|i| {
+            format!(r#"<a:r><a:rPr><a:latin typeface="embedded {i}"/></a:rPr><a:t>x</a:t></a:r>"#)
+        })
+        .collect();
+    let template = edited(BRAND, |name, data| {
+        let text = String::from_utf8(data).unwrap();
+        match name {
+            "ppt/presentation.xml" => text.replacen("</p:embeddedFontLst>", &format!("{embedded}</p:embeddedFontLst>"), 1),
+            "ppt/slideMasters/slideMaster1.xml" => text.replacen(
+                "</p:spTree></p:cSld>",
+                &format!(r#"<p:sp><p:nvSpPr><p:cNvPr id="90" name="Many"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:p>{runs}</a:p></p:txBody></p:sp></p:spTree></p:cSld>"#),
+                1,
+            ),
+            _ => text,
+        }
+        .into_bytes()
+    });
+    let options = compyla::Options {
+        format: Some(compyla::Format::Pptx),
+        template: Some(template),
+        ..Default::default()
+    };
+    let start = Instant::now();
+    let diagnostics = compyla::lint("# A\n", &options, &compyla::no_assets).unwrap();
+    assert!(start.elapsed() < BOUND, "{:?}", start.elapsed());
+    // Only the template's own Brand Display and Source Serif 4.
+    assert_eq!(font_unresolved(&diagnostics), 2, "{diagnostics:?}");
+}
+
+#[test]
+fn an_oversized_embedded_font_is_refused_by_its_size() {
+    // lint/145's template, whose plain Brand Sans is now 65 MiB: runs of 32 bytes, which compress
+    // within the template's limits (§12.1).
+    const BRAND: &[u8] =
+        include_bytes!("../../../spec/conformance/lint/145-docx-embedded-fonts/brand.dotx");
+    let mut state = 1u32;
+    let huge: Vec<u8> = (0..(65 << 20) / 32)
+        .flat_map(|_| {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            [(state >> 24) as u8; 32]
+        })
+        .collect();
+    // Written with the fastest deflate: the engine's own writer takes seconds over 65 MiB in a
+    // debug build.
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let fast = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .compression_level(Some(1));
+    for (name, data) in compyla_ooxml::read::entries(BRAND).unwrap() {
+        writer.start_file(name.as_str(), fast).unwrap();
+        let data = if name == "word/fonts/font2.ttf" {
+            &huge
+        } else {
+            &data
+        };
+        std::io::Write::write_all(&mut writer, data).unwrap();
+    }
+    let template = writer.finish().unwrap().into_inner();
+    let options = compyla::Options {
+        format: Some(compyla::Format::Docx),
+        template: Some(template),
+        ..Default::default()
+    };
+    let start = Instant::now();
+    let diagnostics = compyla::lint("# A\n", &options, &compyla::no_assets).unwrap();
+    assert!(start.elapsed() < BOUND, "{:?}", start.elapsed());
+    let refused: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "font_unresolved" && d.message.contains("larger than 64 MiB"))
+        .collect();
+    assert_eq!(refused.len(), 1, "{diagnostics:?}");
+    assert!(refused[0].message.contains("Brand Sans"));
+    // Brand Sans, and the defaults' three.
+    assert_eq!(font_unresolved(&diagnostics), 4, "{diagnostics:?}");
 }

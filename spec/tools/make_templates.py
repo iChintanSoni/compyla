@@ -418,28 +418,68 @@ def obfuscated(font, guid):
 
 
 def pptx_fonts(entries):
-    """A layout naming more fonts (§3): Calibri, which has a stand-in; Broken Font, which the case
-    pins to bytes that aren't a font; and Brand Gothic, as an East Asian typeface."""
+    """More families for a pptx template's output (§3). The theme's East Asian and complex fonts;
+    the presentation's default text style and table styles; on a layout, calibri (a stand-in, in
+    lower case), Broken Font (which the case pins to bytes that aren't a font), Brand Gothic (an
+    East Asian typeface), the master's body font again in lower case, and two families the
+    presentation lists as embedded although it doesn't hold them: one without a relationship, one
+    external and one whose part is missing. A notes master with its own theme, Brand Notes, and text style. The embedded Brand
+    Sans is listed in upper case."""
     parts = dict(entries)
+    parts["ppt/theme/theme1.xml"] = (parts["ppt/theme/theme1.xml"]
+        .replace('<a:latin typeface="Brand Display"/><a:ea typeface=""/>', '<a:latin typeface="Brand Display"/><a:ea typeface="Brand Mincho"/>', 1)
+        .replace('<a:latin typeface="Brand Sans"/><a:ea typeface=""/><a:cs typeface=""/>', '<a:latin typeface="Brand Sans"/><a:ea typeface=""/><a:cs typeface="Brand Naskh"/>', 1))
     layout = "ppt/slideLayouts/slideLayout2.xml"
     shapes = "".join(
         f'<p:sp><p:nvSpPr><p:cNvPr id="{20 + i}" name="{name}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr/>'
         f'<p:txBody><a:bodyPr/><a:p><a:r><a:rPr lang="en-US">{font}</a:rPr><a:t>{name}</a:t></a:r></a:p></p:txBody></p:sp>'
-        for i, (name, font) in enumerate([("Stand-in", '<a:latin typeface="Calibri"/>'),
+        for i, (name, font) in enumerate([("Stand-in", '<a:latin typeface="calibri"/>'),
                                            ("Broken", '<a:latin typeface="Broken Font"/>'),
-                                           ("Gothic", '<a:ea typeface="Brand Gothic"/>')]))
+                                           ("Gothic", '<a:ea typeface="Brand Gothic"/>'),
+                                           ("Again", '<a:latin typeface="source serif 4"/>'),
+                                           ("Ghost", '<a:latin typeface="Brand Ghost"/>'),
+                                           ("Remote", '<a:latin typeface="Brand Remote"/>'),
+                                           ("Lost", '<a:latin typeface="Brand Lost"/>')]))
     parts[layout] = parts[layout].replace("</p:spTree></p:cSld>", shapes + "</p:spTree></p:cSld>", 1)
+    main = "ppt/presentation.xml"
+    parts[main] = (parts[main]
+        .replace("</p:sldMasterIdLst>", '</p:sldMasterIdLst><p:notesMasterIdLst><p:notesMasterId r:id="rId4"/></p:notesMasterIdLst>', 1)
+        .replace('<p:font typeface="Brand Sans"/>', '<p:font typeface="BRAND SANS"/>', 1)
+        .replace("</p:embeddedFontLst>",
+                 '<p:embeddedFont><p:font typeface="Brand Ghost"/><p:regular r:id="rId98"/></p:embeddedFont>'
+                 '<p:embeddedFont><p:font typeface="Brand Remote"/><p:regular r:id="rId99"/></p:embeddedFont>'
+                 '<p:embeddedFont><p:font typeface="Brand Lost"/><p:regular r:id="rId97"/></p:embeddedFont></p:embeddedFontLst>'
+                 '<p:defaultTextStyle><a:lvl1pPr><a:defRPr><a:latin typeface="Brand Default"/></a:defRPr></a:lvl1pPr></p:defaultTextStyle>', 1))
+    add_notes_master(parts)
+    parts["ppt/theme/theme2.xml"] = theme("Brand Notes", "Calibri")
+    notes = "ppt/notesMasters/notesMaster1.xml"
+    parts[notes] = parts[notes].replace(
+        "</p:notesMaster>",
+        '<p:notesStyle><a:lvl1pPr><a:defRPr><a:latin typeface="Brand Notes Body"/></a:defRPr></a:lvl1pPr></p:notesStyle></p:notesMaster>', 1)
+    parts["ppt/tableStyles.xml"] = (
+        f'{DECL}<a:tblStyleLst xmlns:a="{A}" def="{{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}}">'
+        '<a:tblStyle styleId="{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}" styleName="Brand"><a:wholeTbl><a:tcTxStyle>'
+        '<a:font><a:latin typeface="Brand Table"/><a:ea typeface=""/><a:cs typeface=""/></a:font>'
+        '</a:tcTxStyle></a:wholeTbl></a:tblStyle></a:tblStyleLst>')
+    add_rels(parts, "ppt/_rels/presentation.xml.rels",
+             ("rId4", "notesMaster", "notesMasters/notesMaster1.xml", False),
+             ("rId5", "tableStyles", "tableStyles.xml", False),
+             ("rId97", "font", "fonts/lost.fntdata", False),
+             ("rId99", "font", "https://fonts.example/remote.fntdata", True))
+    parts["[Content_Types].xml"] = parts["[Content_Types].xml"].replace("</Types>", (
+        NOTES_MASTER_TYPES + f'<Override PartName="/ppt/tableStyles.xml" ContentType="{PML}.tableStyles+xml"/></Types>'))
     return list(parts.items())
 
 
 def docx_fonts(entries):
-    """Embedded fonts (§3): Brand Serif obfuscated as Word embeds it, Brand Sans plain; and the
-    document defaults naming Brand Body, which nothing resolves."""
+    """Embedded fonts (§3): Brand Serif obfuscated as Word embeds it, its name in the font table in
+    another case, and Brand Sans plain; and the document defaults naming Brand Body, Brand Ming (East
+    Asian) and Brand Arabic (complex), which nothing resolves."""
     parts = dict(entries)
     guid = "{1F2E3D4C-5B6A-4789-9A0B-C1D2E3F40516}"
     parts["word/fontTable.xml"] = (
         f'{DECL}<w:fonts xmlns:w="{W}" xmlns:r="{OFFICE}">'
-        f'<w:font w:name="Brand Serif"><w:embedRegular r:id="rId1" w:fontKey="{guid}"/></w:font>'
+        f'<w:font w:name="brand SERIF"><w:embedRegular r:id="rId1" w:fontKey="{guid}"/></w:font>'
         '<w:font w:name="Brand Sans"><w:embedRegular r:id="rId2"/></w:font></w:fonts>')
     parts["word/_rels/fontTable.xml.rels"] = rels(("rId1", "font", "fonts/font1.odttf", False),
                                                   ("rId2", "font", "fonts/font2.ttf", False))
@@ -447,7 +487,7 @@ def docx_fonts(entries):
     parts["word/fonts/font2.ttf"] = tiny_font()
     parts["word/styles.xml"] = parts["word/styles.xml"].replace(
         '<w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi"/>',
-        '<w:rFonts w:ascii="Brand Body" w:hAnsi="Brand Body" w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi"/>', 1)
+        '<w:rFonts w:ascii="Brand Body" w:hAnsi="Brand Body" w:eastAsia="Brand Ming" w:cs="Brand Arabic" w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi"/>', 1)
     parts["[Content_Types].xml"] = parts["[Content_Types].xml"].replace("</Types>", (
         '<Default Extension="odttf" ContentType="application/vnd.openxmlformats-officedocument.obfuscatedFont"/>'
         '<Default Extension="ttf" ContentType="application/x-font-ttf"/></Types>'))
@@ -581,9 +621,9 @@ def main():
     # A template without a notes master, for a deck with notes (§8.8).
     pptx(ROOT / "render/123-pptx-notes-without-notes-master/brand.potx", main_type="template")
     pptx(ROOT / "render/124-pptx-notes-master-4x3/brand.potx", main_type="template", patch=four_three_notes)
-    # Fonts (§3, C62): a pptx layout naming more families, one pinned to bytes that aren't a font;
-    # a docx embedding its fonts, one obfuscated; and a .potx made into a pdf, which doesn't keep
-    # the embedding.
+    # Fonts (§3, C62): a pptx template naming more families in the parts its output keeps, one pinned
+    # to bytes that aren't a font; a docx embedding its fonts, one obfuscated; and a .potx made into
+    # a pdf, which doesn't keep the embedding.
     fonts = ROOT / "lint/144-pptx-fonts-unresolved"
     pptx(fonts / "brand.potx", main_type="template", patch=pptx_fonts)
     (fonts / "display.ttf").write_bytes(tiny_font())

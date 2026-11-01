@@ -207,6 +207,34 @@ fn a_theme_part_that_isnt_a_theme_is_no_theme() {
     );
 }
 
+#[test]
+fn a_broken_font_table_is_invalid_whatever_the_resolver_finds() {
+    // lint/145's template with its font table cut short: it's read even when the resolver has
+    // every family, so the template's validity doesn't depend on the lockfile (§3, §10.4).
+    let brand = include_bytes!("../../../spec/conformance/lint/145-docx-embedded-fonts/brand.dotx");
+    let entries: Vec<(String, Vec<u8>)> = compyla_ooxml::read::entries(brand)
+        .unwrap()
+        .into_iter()
+        .map(|(name, data)| match name.as_str() {
+            "word/fontTable.xml" => (name, data[..data.len() / 2].to_vec()),
+            _ => (name, data),
+        })
+        .collect();
+    let options = compyla::Options {
+        format: Some(compyla::Format::Docx),
+        template: Some(compyla_ooxml::zip::write(&entries)),
+        ..Default::default()
+    };
+    let with = codes("# A\n", &options);
+    let without: Vec<String> = compyla::lint("# A\n", &options, &compyla::no_assets)
+        .unwrap()
+        .into_iter()
+        .map(|d| d.code)
+        .collect();
+    assert_eq!(with, ["template_invalid"]);
+    assert_eq!(without, ["template_invalid"]);
+}
+
 const ACTIVE: &[u8] =
     include_bytes!("../../../spec/conformance/render/121-pptx-template-active-content/brand.potx");
 

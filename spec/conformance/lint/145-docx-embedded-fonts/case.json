@@ -1,5 +1,5 @@
 {
-  "description": "A docx template's embedded fonts resolve its families (§3): Brand Serif, obfuscated as Word embeds it (ECMA-376 Part 1, section 17.8.1), and Brand Sans, embedded plain. Brand Body, which its document defaults name, resolves nowhere: `font_unresolved`.",
+  "description": "A docx template's embedded fonts resolve its families (§3): Brand Serif, obfuscated as Word embeds it (ECMA-376 Part 1, section 17.8.1) and named brand SERIF in the font table, and Brand Sans, embedded plain. Brand Body, Brand Ming and Brand Arabic, which its document defaults name for latin, East Asian and complex text, resolve nowhere: `font_unresolved` for each.",
   "spec": [
     "§3",
     "C62"
