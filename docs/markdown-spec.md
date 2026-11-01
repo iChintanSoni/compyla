@@ -115,6 +115,7 @@ prototype.
 | C60 | A kept template part's relationships to the template's own slides (of the slide type, or to a part whose content type is a slide's or whose name one of the deck's slides or notes pages takes) are removed with what refers to them, as active content is: a master's or layout's jump to a template slide loses its link and keeps its shape, a slide only such a relationship reached isn't kept, and a jump that names no slide stays. Nothing is reported unless §10.4 removes the relationship whatever refers to it (§8.8, §10.4) | A jump kept a sample slide the presentation no longer lists, or jumped to whichever new slide took the sample's part name | render/122 |
 | C61 | A deck with notes in a template without a notes master gets the house template's notes master and its theme, under part names the template doesn't use, with its slide image fitted to the slide size, and the presentation lists it; a deck without notes is written without one. A part the output writes anew never takes a relationships part the template has for its name, and new presentation relationships take ids the template's don't use (§8.8) | Every slide's notes were dropped silently; a stray relationships part could attach to new media; a template relationship id could be repeated | render/119, render/123–125 |
 | C62 | Fonts are specified: the families checked; families compared without ASCII case and resolved per style through the font resolver, a docx template's embedded fonts and bundled stand-ins (Carlito for Calibri and Calibri Light, Consolas's fixed advance); `font_unresolved` always validate-stage, and not for fonts a pptx template embeds; how a face is chosen in a collection and per character class; measurement as shaped advances with the viewers' kerning, in integer arithmetic, the same in every host; the CLI's JSON lockfile pinning SHA-256 digests in a content-addressed cache; font files limited to 64 MiB, 256 faces, 512 tables and 64 character-map records (§3, §10.3, §11.2, §12.1, §13) | The chain, lockfile, measurement and house fonts were named but not specified; `font_unresolved` was render-stage without a font resolver, so `lint` and `convert` could disagree | `crates/compyla-fonts` tests: committed widths, run natively and on wasm32; lint/139, lint/144–146, render/119, render/121–125 |
+| C63 | Text in pptx is measured against its box as PowerPoint lays it out: insets, styles inherited along placeholder, layout, master and presentation, UAX #14 lines whose trailing spaces hang, lines 1.2 × the size × their spacing, paragraph spacing, tab stops from the inset, and table rows that grow with their text. `content_overflow` is validate-stage, once for each box. A box that shrinks text (`normAutofit`) gets PowerPoint's scale written, and reports only when 25% doesn't fit; `spAutoFit` is measured as fixed (§3, §8.6, §8.7) | `content_overflow` was render-stage and how text was measured wasn't specified; PowerPoint doesn't autofit a file it opens, so a shrinking template's text overflowed until someone edited it | lint and render fixtures (#82) |
 
 0.2 also corrects 0.1's *text* in one place where the prototype was right: `---` in xlsx is ignored
 without a diagnostic (§5).
@@ -429,7 +430,8 @@ font bytes only through the chain below, so they run offline and pinned (archite
     integer arithmetic, plus the run's character spacing (pptx `spc`, docx `w:spacing`) once for
     each character outside the set that advances nothing (below). A run's width is the sum of its
     pieces'. Where lines break, whether trailing spaces count, and what overflows are the compose
-    stage's; lines break only at UAX #14 opportunities.
+    stage's (§8.6): lines break at UAX #14 opportunities, and inside a word only where it is wider
+    than a whole line.
   - **Characters no face maps.** A default-ignorable code point (Default_Ignorable_Code_Point), a
     nonspacing or enclosing mark (Mn, Me) or a control (Cc) advances nothing, and stays in the piece
     around it, so it doesn't break shaping across it (kerning across a soft hyphen, say). Any other
@@ -846,8 +848,67 @@ Content that doesn't fit produces `layout_overflow` (warning) against the **reso
 explicit or inferred. With an explicit layout it is positioned at the layout directive; otherwise at
 the first block that doesn't fit. When the layout wasn't chosen explicitly, the hint suggests
 splitting the slide. Content beyond the last slot is placed in the last slot; on a layout without
-slots, it forms one slot of its own (§8.8), so content is never dropped. Text that measures
-larger than its placeholder produces `content_overflow` (warning, render stage).
+slots, it forms one slot of its own (§8.8), so content is never dropped. Text that doesn't fit the
+box it is written into produces `content_overflow` (below).
+
+**Measured fit.** *(C63)* Text is measured against the box §8.8 writes it into, by the rules
+PowerPoint lays it out with (each checked in PowerPoint for Mac 16.114), at the validate stage, so
+`lint` and `convert` agree (C40). Measurement is a diagnostic: PowerPoint does the final layout, and
+where a family is measured with a stand-in that is a little wide (Calibri Light, §3), a line may
+break a word sooner than PowerPoint's.
+
+- **The box.** A placeholder's box is its own `a:xfrm`, else its layout placeholder's, else that of
+  the master placeholder of its type (§8.8); a text box, a band of a shared slot and a table have
+  the geometry §8.8 gives them. Text is set inside the box's insets: `a:bodyPr`'s `lIns`, `tIns`,
+  `rIns` and `bIns` from the shape, else its layout placeholder, else its master placeholder, else
+  91,440 EMU left and right and 45,720 EMU top and bottom.
+- **Text styles.** Each paragraph and run property is the first set of: the paragraph or run itself;
+  the `a:lstStyle` of the placeholder, then of its layout placeholder, then of its master
+  placeholder, at the paragraph's level (`a:lvlNpPr`, then `a:defPPr`); the master's `p:titleStyle`
+  for a title placeholder (`title`, `ctrTitle`) and `p:bodyStyle` for any other; the presentation's
+  `p:defaultTextStyle`. A text box takes only its own and `p:defaultTextStyle`; a table cell takes
+  its own, the table style's text properties, the master's `p:otherStyle`, then
+  `p:defaultTextStyle`. Where none sets them: 18 pt, single spacing (100%), no space before or
+  after, no margins, tab stops every 914,400 EMU. A typeface `+mj-lt` or `+mn-lt` (and `-ea`, `-cs`)
+  is the theme's major or minor font, and fonts resolve as §3 says.
+- **Lines.** A paragraph's lines run from its left margin (`marL`) to the box's right inset. Its
+  first line begins at `marL` + `indent`, where a bullet or number takes its width (in its
+  `a:buFont`, else the first run's font, at its `a:buSzPct` of the first run's size); its text then
+  starts at `marL` or right after the bullet, whichever is further right. Lines break at UAX #14
+  opportunities (§3), and a line's trailing spaces hang past its end without counting; a segment
+  wider than a whole line breaks after the last grapheme cluster that fits, at least one per line. A
+  line break (`a:br`) ends a line. A tab advances to the next tab stop, counted from the box's left
+  inset, not the margin.
+- **Height.** A line is as tall as its largest run's size × 1.2 × its percentage line spacing
+  (`a:lnSpc`, `a:spcPct`), whatever the font, or exactly its spacing in points (`a:spcPts`). Each
+  paragraph but the first adds its space before (`a:spcBef`) and each but the last its space after
+  (`a:spcAft`): in points as given, or as a percentage of 1.2 × its first run's size. An empty
+  paragraph is one line at its end-of-paragraph size (`a:endParaRPr`). In integer EMU, a line is
+  `size × 12 × spacing ÷ 1,000,000` (size in EMU, spacing in thousandths of a percent), rounded
+  down. The text fits when its lines and spacing add up to at most the box's height inside its
+  insets.
+- **Autofit.** A box whose `a:bodyPr` (inherited as its insets are) has `a:normAutofit` shrinks text
+  that doesn't fit. PowerPoint does this only once the text is edited, not when it opens a file, so
+  the engine does it and writes the result: it tries, in order, font scale 100% with line spacing
+  reduced by 0 and then 10 points, 92.5% reduced by 10 and then 20, then 85%, 77.5% and so on down
+  to 25%, each reduced by 20, and keeps the first step at which the text fits. A scaled size is the
+  size × the scale, rounded to a whole point, halves up. The reduction lowers percentage line
+  spacing by that many points (90% becomes 70%) and leaves spacing in points alone; space before and
+  after in points isn't scaled, and as a percentage follows the scaled size. The shape's own
+  `a:bodyPr` gets `<a:normAutofit fontScale="…" lnSpcReduction="…"/>` for any step past the first.
+  `content_overflow` is reported only where 25% doesn't fit either, and that step is written. A box
+  that grows to fit its text (`a:spAutoFit`) is measured as one without autofit: PowerPoint resizes
+  it only when its text is edited. The house template's placeholders have no autofit, so a house
+  deck keeps its sizes and reports what overflows.
+- **What is measured:** the title, each slot's text (paragraphs, lists, demoted headings, code and
+  quotes, as §8.8 writes them) and each table. A table row is as tall as its height (`h`) or its
+  tallest cell's text plus the cell's top and bottom margins (`marT`, `marB`, else 45,720 EMU),
+  whichever is taller; a cell's text is set in its column's width less `marL` and `marR` (else
+  91,440 EMU); the table fits when its rows fit its box. Tables don't shrink. Images are fitted
+  (§8.8) and speaker notes aren't measured.
+- **The diagnostic** is reported once for each box that overflows, at the first block whose text
+  reaches past the box (a title at its heading), with the measured height and the box's. Its hint
+  suggests shortening the text, splitting the slide or a layout with more room.
 
 ### 8.7 Validation
 
@@ -863,7 +924,7 @@ larger than its placeholder produces `content_overflow` (warning, render stage).
 | `invalid_directive_args` / `unknown_directive_option` | warning | §1.6 |
 | `unknown_directive` / `directive_misplaced` | warning | §1.5, §8.2–§8.4 |
 | `pptx_ignored_content` | warning | An image or table inside a list item or a quote in a slide's content: a text body can't hold it, so it shows as its alt text or as tab-separated rows (§8.8) |
-| `content_overflow` | warning | Render stage, §8.6 |
+| `content_overflow` | warning | Validate stage, §8.6 |
 | `font_unresolved` | warning | §3 |
 
 ### 8.8 Rendering *(C51, C53, C55)*
