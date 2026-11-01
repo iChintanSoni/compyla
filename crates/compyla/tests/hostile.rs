@@ -683,7 +683,12 @@ fn many_slots_of_a_large_layout_are_read_in_linear_time() {
         .unwrap();
     let model = compyla_ooxml::text::Model::new(&template, &layouts);
     let started = Instant::now();
-    for slot in 0..SLOTS {
+    for slot in 0..100 {
+        assert!(model.content(layout, slot).is_some());
+    }
+    // The layout and its master, each read once.
+    assert_eq!(model.parts_read(), 2);
+    for slot in 100..SLOTS {
         assert!(model.content(layout, slot).is_some());
     }
     assert!(started.elapsed() < BOUND, "{:?}", started.elapsed());
