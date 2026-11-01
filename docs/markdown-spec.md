@@ -886,14 +886,15 @@ so a word that only just fits or doesn't may wrap differently.
   Only the level's properties count: PowerPoint ignores a list style's `a:defPPr`. A text box takes
   only its own properties and `p:defaultTextStyle`; a table cell takes its own, the table style's
   text properties (`a:tcTxStyle`) of its first row for the header row and of the whole table, the
-  master's `p:otherStyle`, then `p:defaultTextStyle`. A built-in table style the template's table
-  styles don't define is measured as Medium Style 2 is: the minor font, the header bold. The engine
-  writes tables with a header row and banded rows (§8.8); a style's banded-row text properties
-  aren't measured. Where none sets them: 18 pt in the theme's minor fonts, single spacing (100%), no
-  space before or after, no margins, tab stops every 914,400 EMU. A value that isn't one its
-  attribute's type allows counts as unset, so the next in order applies, and one past its type's
-  range is held to it. A typeface `+mj-lt` or `+mn-lt` (and `-ea`, `-cs`) is the theme's major or
-  minor font, and fonts resolve as §3 says.
+  master's `p:otherStyle`, then `p:defaultTextStyle`. A table style the template's table styles
+  don't define (a built-in one, as the template names it) is measured as Medium Style 2 is: the
+  minor font, the header bold. The engine writes tables with a header row and banded rows (§8.8); a
+  style's banded-row text properties aren't measured. Where none sets them: 18 pt in the theme's
+  minor fonts, single spacing (100%), no space before or after, no margins, tab stops every 914,400
+  EMU. A value that isn't one its attribute's type allows counts as unset, so the next in order
+  applies, and one past its type's range is held to it (tab sizes and stops to 0 and above). A
+  typeface `+mj-lt` or `+mn-lt` (and `-ea`, `-cs`) is the theme's major or minor font, and fonts
+  resolve as §3 says.
 - **Lines.** A paragraph's lines run from its left margin (`marL`) to the box's right inset, its
   first line from `marL` + `indent`. A bullet or number sits at the start of the first line, and the
   text then starts at `marL` or right after it, whichever is further right: a bullet character is as

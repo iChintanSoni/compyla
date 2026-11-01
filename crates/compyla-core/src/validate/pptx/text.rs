@@ -31,7 +31,7 @@ impl Rect {
 
 /// A template's text model, resolved as compose asks for it (§8.6): a template can hold far more
 /// layouts and placeholders than a deck uses, so a box is read only when it is measured. `layout`
-/// indexes `TemplateLayouts`; one past them is the defaults.
+/// indexes `TemplateLayouts`; past them, a box is §8.6's defaults alone, nothing from the template.
 pub trait TemplateText {
     /// The box a slide's title is set in: the layout's title placeholder, or on a layout without
     /// one, the master's title placeholder, which a title of its own is placed over (§8.8).

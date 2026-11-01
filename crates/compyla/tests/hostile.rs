@@ -642,4 +642,49 @@ fn masters_sharing_a_large_theme_read_it_once() {
         assert_eq!(model.title(layout).levels[0].run.latin, "Brand Display");
     }
     assert!(started.elapsed() < BOUND, "{:?}", started.elapsed());
+    // One theme part, read once: counted, so a build of any speed would show a second read.
+    assert_eq!(model.themes_read(), 1);
+}
+
+#[test]
+fn many_slots_of_a_large_layout_are_read_in_linear_time() {
+    use compyla_core::validate::pptx::text::TemplateText;
+    let _serial = serial();
+    // A layout of 30,000 content placeholders, each asked for: the layout is read once into what
+    // each placeholder sets, so each slot is found at once, not by reading the layout again
+    // (§8.6, §12.1).
+    const BRAND: &[u8] =
+        include_bytes!("../../../spec/conformance/lint/139-pptx-template-binding/brand.potx");
+    const SLOTS: usize = 30_000;
+    let contents: String = (0..SLOTS)
+        .map(|i| {
+            format!(
+                r#"<p:sp><p:nvSpPr><p:cNvPr id="{}" name=""/><p:cNvSpPr/><p:nvPr><p:ph idx="{}"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p/></p:txBody></p:sp>"#,
+                100 + i,
+                100 + i
+            )
+        })
+        .collect();
+    let bytes = edited(BRAND, |name, data| {
+        let text = String::from_utf8(data).unwrap();
+        match name {
+            "ppt/slideLayouts/slideLayout2.xml" => {
+                text.replacen("</p:spTree>", &format!("{contents}</p:spTree>"), 1)
+            }
+            _ => text,
+        }
+        .into_bytes()
+    });
+    let template = compyla_ooxml::template::Template::read(&bytes).unwrap();
+    let layouts = compyla_ooxml::layouts::read(&template).unwrap();
+    let layout = layouts
+        .iter()
+        .position(|l| l.name == "Titel und Inhalt")
+        .unwrap();
+    let model = compyla_ooxml::text::Model::new(&template, &layouts);
+    let started = Instant::now();
+    for slot in 0..SLOTS {
+        assert!(model.content(layout, slot).is_some());
+    }
+    assert!(started.elapsed() < BOUND, "{:?}", started.elapsed());
 }

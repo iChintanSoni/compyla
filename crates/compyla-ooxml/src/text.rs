@@ -23,14 +23,61 @@ const MAX_TABS: usize = 32;
 /// Medium Style 2 – Accent 1, which output uses where the template names no table style (§8.8).
 const MEDIUM_STYLE_2: &str = "{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}";
 
-/// ST_Coordinate32's bounds, for tab stops and insets.
+/// ST_TextAutonumberScheme's values.
+const AUTONUMBER_SCHEMES: [&str; 41] = [
+    "alphaLcParenBoth",
+    "alphaUcParenBoth",
+    "alphaLcParenR",
+    "alphaUcParenR",
+    "alphaLcPeriod",
+    "alphaUcPeriod",
+    "arabicParenBoth",
+    "arabicParenR",
+    "arabicPeriod",
+    "arabicPlain",
+    "romanLcParenBoth",
+    "romanUcParenBoth",
+    "romanLcParenR",
+    "romanUcParenR",
+    "romanLcPeriod",
+    "romanUcPeriod",
+    "circleNumDbPlain",
+    "circleNumWdBlackPlain",
+    "circleNumWdWhitePlain",
+    "arabicDbPeriod",
+    "arabicDbPlain",
+    "ea1ChsPeriod",
+    "ea1ChsPlain",
+    "ea1ChtPeriod",
+    "ea1ChtPlain",
+    "ea1JpnChsDbPeriod",
+    "ea1JpnKorPlain",
+    "ea1JpnKorPeriod",
+    "arabic1Minus",
+    "arabic2Minus",
+    "hebrew2Minus",
+    "thaiAlphaPeriod",
+    "thaiAlphaParenR",
+    "thaiAlphaParenBoth",
+    "thaiNumPeriod",
+    "thaiNumParenR",
+    "thaiNumParenBoth",
+    "hindiAlphaPeriod",
+    "hindiNumPeriod",
+    "hindiNumParenR",
+    "hindiAlpha1Period",
+];
+
+/// ST_Coordinate32's bounds, for insets; tab sizes and stops are held to 0 and above.
 const COORDINATE_32: (i64, i64) = (i32::MIN as i64, i32::MAX as i64);
 
-/// A template's text model, read box by box as compose asks for it (§8.6).
+/// A template's text model, read box by box as compose asks for it (§8.6). Each layout and master
+/// part is read once, into each placeholder's type, body properties and the levels its list style
+/// sets, and each theme part once however many masters share it.
 pub struct Model<'t> {
     template: &'t Template,
     layouts: &'t [Layout],
-    default_text: PartialLevels,
+    default_text: ListStyle,
     table_header: Partial,
     table_body: Partial,
     cache: RefCell<Cache>,
@@ -39,8 +86,9 @@ pub struct Model<'t> {
 #[derive(Default)]
 struct Cache {
     themes: HashMap<String, Rc<ThemeFonts>>,
+    themes_read: usize,
     masters: HashMap<String, Rc<Master>>,
-    layouts: HashMap<usize, Rc<Element>>,
+    layouts: HashMap<usize, Rc<PartText>>,
     boxes: HashMap<(usize, Slot), Option<TextBox>>,
 }
 
@@ -50,18 +98,40 @@ enum Slot {
     Content(usize),
 }
 
-/// A master's part, its placeholders found by type and family, its text styles and its theme's
-/// fonts.
+/// What a placeholder sets for its text: its type, its body properties and its list style.
+struct ShapeText {
+    kind: String,
+    body: PartialBody,
+    levels: ListStyle,
+}
+
+impl ShapeText {
+    fn of(shape: &Element, kind: &str) -> ShapeText {
+        let text = shape.child(MAIN_P, "txBody");
+        ShapeText {
+            kind: kind.to_string(),
+            body: body(text.and_then(|t| t.child(MAIN_A, "bodyPr"))),
+            levels: levels(text.and_then(|t| t.child(MAIN_A, "lstStyle"))),
+        }
+    }
+}
+
+/// A layout's title placeholder and content placeholders, in shape order, with the geometry
+/// `layouts::read` gave each.
+struct PartText {
+    title: Option<(ShapeText, Option<Rect>)>,
+    content: Vec<(ShapeText, Option<Rect>)>,
+}
+
+/// A master's placeholders, found by type and family, its text styles and its theme's fonts.
 struct Master {
-    part: Element,
-    /// Its placeholders' positions in its shape tree, in shape order, which `index` indexes.
-    shapes: Vec<usize>,
+    placeholders: Vec<ShapeText>,
     index: Index,
-    /// Its first title placeholder's position in its shape tree.
+    /// Its first title placeholder, in `placeholders`.
     title: Option<usize>,
-    title_style: PartialLevels,
-    body_style: PartialLevels,
-    other_style: PartialLevels,
+    title_style: ListStyle,
+    body_style: ListStyle,
+    other_style: ListStyle,
     fonts: Rc<ThemeFonts>,
 }
 
@@ -95,7 +165,11 @@ impl<'t> Model<'t> {
         }
     }
 
-    /// A theme part's fonts, each part read once however many masters share it.
+    /// How many theme parts it has read: each once, however many masters share it.
+    pub fn themes_read(&self) -> usize {
+        self.cache.borrow().themes_read
+    }
+
     fn theme(&self, part: Option<String>) -> Rc<ThemeFonts> {
         let Some(part) = part else {
             return Rc::new(ThemeFonts::of(None));
@@ -106,7 +180,9 @@ impl<'t> Model<'t> {
         }
         let theme = self.template.xml(&part).ok().flatten();
         let fonts = Rc::new(ThemeFonts::of(theme.as_ref()));
-        self.cache.borrow_mut().themes.insert(key, fonts.clone());
+        let mut cache = self.cache.borrow_mut();
+        cache.themes_read += 1;
+        cache.themes.insert(key, fonts.clone());
         fonts
     }
 
@@ -116,41 +192,61 @@ impl<'t> Model<'t> {
             return master.clone();
         }
         let xml = self.template.xml(part).ok().flatten().unwrap_or_default();
-        let placeholders = layouts::placeholders(&xml);
+        let shapes = layouts::tree(&xml)
+            .map(|tree| &tree.children[..])
+            .unwrap_or_default();
+        let found = layouts::placeholders(&xml);
+        let placeholders: Vec<ShapeText> = found
+            .iter()
+            .map(|(position, p)| ShapeText::of(&shapes[*position], &p.kind))
+            .collect();
         let styles = xml.child(MAIN_P, "txStyles");
         let style = |name: &str| levels(styles.and_then(|s| s.child(MAIN_P, name)));
         // Found by its type's last segment without case, as the font check finds it (§3).
         let theme = self.template.related_by_type(part, "theme").ok().flatten();
         let master = Rc::new(Master {
-            shapes: placeholders.iter().map(|(position, _)| *position).collect(),
-            index: Index::new(placeholders.iter().map(|(_, p)| p.kind.as_str())),
-            title: placeholders
-                .iter()
-                .find(|(_, p)| p.is_title())
-                .map(|(position, _)| *position),
+            index: Index::new(found.iter().map(|(_, p)| p.kind.as_str())),
+            title: found.iter().position(|(_, p)| p.is_title()),
+            placeholders,
             title_style: style("titleStyle"),
             body_style: style("bodyStyle"),
             other_style: style("otherStyle"),
             fonts: self.theme(theme),
-            part: xml,
         });
         self.cache.borrow_mut().masters.insert(key, master.clone());
         master
     }
 
-    fn layout_part(&self, layout: usize) -> Option<Rc<Element>> {
+    /// Layout `layout`'s placeholders' text, read once.
+    fn part(&self, layout: usize, geometry: &Layout) -> Rc<PartText> {
         if let Some(part) = self.cache.borrow().layouts.get(&layout) {
-            return Some(part.clone());
+            return part.clone();
         }
-        let xml = Rc::new(
-            self.template
-                .xml(&self.layouts.get(layout)?.part)
-                .ok()
-                .flatten()
-                .unwrap_or_default(),
-        );
-        self.cache.borrow_mut().layouts.insert(layout, xml.clone());
-        Some(xml)
+        let xml = self
+            .template
+            .xml(&geometry.part)
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        let shapes = layouts::tree(&xml)
+            .map(|tree| &tree.children[..])
+            .unwrap_or_default();
+        let found = layouts::placeholders(&xml);
+        let text = |position: usize, p: &Placeholder| ShapeText::of(&shapes[position], &p.kind);
+        // Both read the same part, so its placeholders are `geometry`'s, in the same order.
+        let title = found
+            .iter()
+            .find(|(_, p)| p.is_title())
+            .map(|(position, p)| (text(*position, p), geometry.title().and_then(|t| t.rect)));
+        let content = found
+            .iter()
+            .filter(|(_, p)| p.is_content())
+            .zip(geometry.placeholders.iter().filter(|p| p.is_content()))
+            .map(|((position, p), inherited)| (text(*position, p), inherited.rect))
+            .collect();
+        let part = Rc::new(PartText { title, content });
+        self.cache.borrow_mut().layouts.insert(layout, part.clone());
+        part
     }
 
     fn resolve(&self, layout: usize, slot: Slot) -> Option<TextBox> {
@@ -168,49 +264,27 @@ impl<'t> Model<'t> {
     fn read(&self, layout: usize, slot: Slot) -> Option<TextBox> {
         let geometry = self.layouts.get(layout)?;
         let master = self.master(&geometry.master);
-        let part = self.layout_part(layout)?;
-        let own = layouts::placeholders(&part);
-        let wanted: Option<&(usize, Placeholder)> = match slot {
-            Slot::Title => own.iter().find(|(_, p)| p.is_title()),
-            Slot::Content(i) => own.iter().filter(|(_, p)| p.is_content()).nth(i),
+        let part = self.part(layout, geometry);
+        let own = match slot {
+            Slot::Title => part.title.as_ref(),
+            Slot::Content(i) => part.content.get(i),
         };
-        let shape = |part: &Element, position: usize| {
-            layouts::tree(part)
-                .and_then(|tree| tree.children.get(position))
-                .cloned()
-        };
-        match (slot, wanted) {
-            (_, Some((position, placeholder))) => {
+        match (slot, own) {
+            (_, Some((shape, rect))) => {
                 let parent = master
                     .index
-                    .of(&placeholder.kind)
-                    .and_then(|i| shape(&master.part, master.shapes[i]));
-                // The geometry `layouts::read` gave it, inherited where it has none of its own.
-                let rect = match slot {
-                    Slot::Title => geometry.title().and_then(|p| p.rect),
-                    Slot::Content(i) => geometry.content().get(i).and_then(|p| p.rect),
-                };
-                Some(self.boxed(
-                    shape(&part, *position).as_ref(),
-                    parent.as_ref(),
-                    Some(&master),
-                    &placeholder.kind,
-                    rect,
-                ))
+                    .of(&shape.kind)
+                    .map(|i| &master.placeholders[i]);
+                Some(self.boxed(Some(shape), parent, Some(&master), &shape.kind, *rect))
             }
             // A layout without a title: the master's title placeholder (§8.8).
-            (Slot::Title, None) => Some(
-                self.boxed(
-                    master
-                        .title
-                        .and_then(|position| shape(&master.part, position))
-                        .as_ref(),
-                    None,
-                    Some(&master),
-                    "title",
-                    geometry.master_title,
-                ),
-            ),
+            (Slot::Title, None) => Some(self.boxed(
+                master.title.map(|i| &master.placeholders[i]),
+                None,
+                Some(&master),
+                "title",
+                geometry.master_title,
+            )),
             (Slot::Content(_), None) => None,
         }
     }
@@ -219,32 +293,22 @@ impl<'t> Model<'t> {
     /// master's text style for its type, then the presentation's (§8.6).
     fn boxed(
         &self,
-        shape: Option<&Element>,
-        parent: Option<&Element>,
+        shape: Option<&ShapeText>,
+        parent: Option<&ShapeText>,
         master: Option<&Master>,
         kind: &str,
         rect: Option<Rect>,
     ) -> TextBox {
-        let empty = PartialLevels::default();
+        let empty = ListStyle::default();
         let style = match (master, layouts::family(kind)) {
             (Some(master), "title") => &master.title_style,
             (Some(master), "footer") => &master.other_style,
             (Some(master), _) => &master.body_style,
             (None, _) => &empty,
         };
-        let shapes: Vec<(PartialBody, PartialLevels)> = [shape, parent]
-            .into_iter()
-            .flatten()
-            .map(|shape| {
-                let text = shape.child(MAIN_P, "txBody");
-                (
-                    body(text.and_then(|t| t.child(MAIN_A, "bodyPr"))),
-                    levels(text.and_then(|t| t.child(MAIN_A, "lstStyle"))),
-                )
-            })
-            .collect();
-        let bodies: Vec<&PartialBody> = shapes.iter().map(|(body, _)| body).collect();
-        let mut lists: Vec<&PartialLevels> = shapes.iter().map(|(_, levels)| levels).collect();
+        let shapes: Vec<&ShapeText> = [shape, parent].into_iter().flatten().collect();
+        let bodies: Vec<&PartialBody> = shapes.iter().map(|s| &s.body).collect();
+        let mut lists: Vec<&ListStyle> = shapes.iter().map(|s| &s.levels).collect();
         lists.extend([style, &self.default_text]);
         let fonts = master.map_or_else(|| Rc::new(ThemeFonts::of(None)), |m| m.fonts.clone());
         TextBox {
@@ -253,19 +317,20 @@ impl<'t> Model<'t> {
             levels: resolve_levels(&lists, &fonts),
         }
     }
+}
 
-    fn fonts(&self, layout: usize) -> Rc<ThemeFonts> {
-        match self.layouts.get(layout) {
-            Some(geometry) => self.master(&geometry.master).fonts.clone(),
-            None => Rc::new(ThemeFonts::of(None)),
-        }
+/// §8.6's defaults alone, for a layout past the template's: nothing from the template.
+fn defaults() -> TextBox {
+    TextBox {
+        rect: None,
+        body: Body::default(),
+        levels: resolve_levels(&[], &ThemeFonts::of(None)),
     }
 }
 
 impl TemplateText for Model<'_> {
     fn title(&self, layout: usize) -> TextBox {
-        self.resolve(layout, Slot::Title)
-            .unwrap_or_else(|| self.boxed(None, None, None, "title", None))
+        self.resolve(layout, Slot::Title).unwrap_or_else(defaults)
     }
 
     fn content(&self, layout: usize, slot: usize) -> Option<TextBox> {
@@ -277,16 +342,31 @@ impl TemplateText for Model<'_> {
     }
 
     fn text_box(&self, layout: usize) -> Levels {
-        resolve_levels(&[&self.default_text], &self.fonts(layout))
+        match self.layouts.get(layout) {
+            Some(geometry) => {
+                resolve_levels(&[&self.default_text], &self.master(&geometry.master).fonts)
+            }
+            None => defaults().levels,
+        }
     }
 
     fn table(&self, layout: usize) -> (Level, Level) {
-        let empty = PartialLevels::default();
-        let master = self.layouts.get(layout).map(|l| self.master(&l.master));
-        let other = master.as_ref().map_or(&empty, |m| &m.other_style);
-        let fonts = self.fonts(layout);
-        let level =
-            |text: &Partial| resolve_level(&[text, &other[0], &self.default_text[0]], &fonts);
+        let Some(geometry) = self.layouts.get(layout) else {
+            let [level, ..] = defaults().levels;
+            return (level.clone(), level);
+        };
+        let master = self.master(&geometry.master);
+        let level = |text: &Partial| {
+            let chain: Vec<&Partial> = [
+                Some(text),
+                master.other_style.get(0),
+                self.default_text.get(0),
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
+            resolve_level(&chain, &master.fonts)
+        };
         (level(&self.table_header), level(&self.table_body))
     }
 }
@@ -317,16 +397,31 @@ struct Partial {
     spacing: Option<i64>,
 }
 
-type PartialLevels = [Partial; 9];
+/// The levels a list style sets, each with its index (0 for `a:lvl1pPr`): only those it has, so a
+/// placeholder that sets none costs nothing.
+#[derive(Debug, Clone, Default)]
+struct ListStyle(Vec<(usize, Partial)>);
+
+impl ListStyle {
+    fn get(&self, level: usize) -> Option<&Partial> {
+        self.0.iter().find(|(i, _)| *i == level).map(|(_, p)| p)
+    }
+}
 
 /// The levels a list style sets (`a:lstStyle`, a master's `p:titleStyle` and siblings,
 /// `p:defaultTextStyle`): only its `a:lvlNpPr`, as PowerPoint ignores `a:defPPr` (§8.6).
-fn levels(list: Option<&Element>) -> PartialLevels {
-    std::array::from_fn(|i| {
-        list.and_then(|list| list.child(MAIN_A, &format!("lvl{}pPr", i + 1)))
-            .map(level)
-            .unwrap_or_default()
-    })
+fn levels(list: Option<&Element>) -> ListStyle {
+    let Some(list) = list else {
+        return ListStyle::default();
+    };
+    ListStyle(
+        (0..9)
+            .filter_map(|i| {
+                list.child(MAIN_A, &format!("lvl{}pPr", i + 1))
+                    .map(|pr| (i, level(pr)))
+            })
+            .collect(),
+    )
 }
 
 fn level(pr: &Element) -> Partial {
@@ -359,11 +454,18 @@ fn level(pr: &Element) -> Partial {
                     child.attr("char").unwrap_or_default().to_string(),
                 ))
             }
+            // A scheme ST_TextAutonumberScheme doesn't have leaves the bullet unset.
             "buAutoNum" => {
-                level.bullet = Some(Bullet::Number {
-                    scheme: child.attr("type").unwrap_or("arabicPeriod").to_string(),
-                    start: number(child.attr("startAt"), 1, 32_767).unwrap_or(1),
-                })
+                if let Some(scheme) = child
+                    .attr("type")
+                    .map(str::trim)
+                    .filter(|scheme| AUTONUMBER_SCHEMES.contains(scheme))
+                {
+                    level.bullet = Some(Bullet::Number {
+                        scheme: scheme.to_string(),
+                        start: number(child.attr("startAt"), 1, 32_767).unwrap_or(1),
+                    });
+                }
             }
             "buFont" => level.bullet_font = Some(child.attr("typeface").map(str::to_string)),
             "buFontTx" => level.bullet_font = Some(None),
@@ -637,9 +739,9 @@ fn resolve_level(chain: &[&Partial], theme: &ThemeFonts) -> Level {
 }
 
 /// Each level resolved along `chain`.
-fn resolve_levels(chain: &[&PartialLevels], theme: &ThemeFonts) -> Levels {
+fn resolve_levels(chain: &[&ListStyle], theme: &ThemeFonts) -> Levels {
     std::array::from_fn(|i| {
-        let levels: Vec<&Partial> = chain.iter().map(|levels| &levels[i]).collect();
+        let levels: Vec<&Partial> = chain.iter().filter_map(|style| style.get(i)).collect();
         resolve_level(&levels, theme)
     })
 }
@@ -751,9 +853,10 @@ mod tests {
             r#"<a:lvl1pPr marL="99999999999" indent="-5" defTabSz="100" latinLnBrk="1">"#,
             r#"<a:lnSpc><a:spcPts val="3600"/></a:lnSpc><a:spcBef><a:spcPct val="50%"/></a:spcBef>"#,
             r#"<a:buFontTx/><a:buSzPts val="1400"/><a:buAutoNum type="romanUcPeriod" startAt="3"/>"#,
-            r#"<a:tabLst><a:tab pos="300"/><a:tab pos="x"/><a:tab pos="900"/></a:tabLst>"#,
+            r#"<a:tabLst><a:tab pos="900"/><a:tab pos="x"/><a:tab pos="300"/><a:tab pos="900"/></a:tabLst>"#,
             r#"<a:defRPr sz="1" b="1" i="0" cap="small" kern="1200" spc="-50"><a:latin typeface="+mj-lt"/><a:ea typeface="Brand Mincho"/></a:defRPr>"#,
             r#"</a:lvl1pPr><a:lvl2pPr><a:buFont typeface="+mn-lt"/><a:buSzPct val="80000"/><a:buChar char="-"/></a:lvl2pPr>"#,
+            r#"<a:lvl3pPr><a:buBlip><a:blip/></a:buBlip></a:lvl3pPr><a:lvl4pPr><a:buAutoNum type="bogus"/></a:lvl4pPr>"#,
         ));
         let theme = ThemeFonts {
             major: ["Major".into(), "Major EA".into(), String::new()],
@@ -796,15 +899,24 @@ mod tests {
         assert_eq!(second.bullet_font.as_deref(), Some("Minor"));
         assert_eq!(second.bullet_size, BulletSize::Percent(80_000));
         assert_eq!(second.run.latin, "Minor");
+        // A picture bullet; a number of no scheme the schema has is no bullet set.
+        assert_eq!(levels[2].bullet, Bullet::Picture);
+        assert_eq!(levels[3].bullet, Bullet::None);
         // A level nothing sets is the defaults.
-        assert_eq!(levels[2].line_spacing, Spacing::Percent(100_000));
-        assert_eq!(levels[2].run.size, 1_800);
+        assert_eq!(levels[4].line_spacing, Spacing::Percent(100_000));
+        assert_eq!(levels[4].run.size, 1_800);
     }
 
     #[test]
     fn a_body_reads_wrap_columns_and_direction() {
         let body = |xml: &str| resolve_body(&[&super::body(Some(&element(xml).children[0]))]);
         assert!(!body(r#"<a:bodyPr wrap="none"/>"#).wrap);
+        // Insets are held to ST_Coordinate32.
+        let far = body(r#"<a:bodyPr lIns="99999999999" rIns="-99999999999"/>"#).insets;
+        assert_eq!(
+            (far.left, far.right),
+            (i64::from(i32::MAX), i64::from(i32::MIN))
+        );
         assert!(body(r#"<a:bodyPr wrap="square"/>"#).wrap);
         assert!(!body(r#"<a:bodyPr numCol="2"/>"#).measured);
         assert!(!body(r#"<a:bodyPr vert="eaVert"/>"#).measured);
@@ -828,6 +940,9 @@ mod tests {
         assert_eq!(percent(Some("-7.25%")), Some(-7_250));
         assert_eq!(percent(Some("99999999999999999999%")), None);
         assert_eq!(percent(Some("x%")), None);
+        for odd in ["+5%", "--5%", "5.%", ".5%", "%"] {
+            assert_eq!(percent(Some(odd)), None, "{odd}");
+        }
         assert_eq!(number(Some("99999999999999999999999"), 0, 10), Some(10));
     }
 
@@ -907,6 +1022,25 @@ mod tests {
         let subtitle = &model.content(cover, 0).unwrap().levels[0];
         assert_eq!((subtitle.run.size, subtitle.margin), (2_400, 0));
         assert_eq!(subtitle.bullet, Bullet::None);
+        // Comparison's slots in shape order: a heading, its content, a heading, its content.
+        let comparison = at("Comparison");
+        let slots: Vec<(i64, bool, Option<i64>)> = (0..4)
+            .map(|slot| {
+                let text = model.content(comparison, slot).unwrap();
+                let first = &text.levels[0];
+                (first.run.size, first.run.bold, text.rect.map(|r| r.x))
+            })
+            .collect();
+        assert_eq!(
+            slots,
+            [
+                (2_400, true, Some(839_788)),
+                (2_800, false, Some(839_788)),
+                (2_400, true, Some(6_172_200)),
+                (2_800, false, Some(6_172_200))
+            ]
+        );
+        assert!(model.content(comparison, 4).is_none());
         let blank = at("Blank");
         assert!(model.content(blank, 0).is_none());
         assert_eq!(model.title(blank).rect, title.rect);
@@ -1104,9 +1238,38 @@ mod tests {
         assert_eq!(model.title(second).levels[0].run.latin, "Second Major");
         assert_eq!(model.text_box(second)[0].run.latin, "Second Minor");
 
-        // Past the layouts: the defaults.
-        assert!(model.content(layouts.len(), 0).is_none());
-        assert_eq!(model.title(layouts.len()).levels[0].run.size, 1_800);
+        // Past the layouts: §8.6's defaults alone, nothing from the template.
+        let past = layouts.len();
+        assert!(model.content(past, 0).is_none());
+        let title = model.title(past);
+        assert_eq!(
+            (title.levels[0].run.size, title.levels[0].run.latin.as_str()),
+            (1_800, "Calibri")
+        );
+        assert_eq!(model.text_box(past)[0].run.latin, "Calibri");
+        assert!(!model.table(past).0.run.bold);
+        assert_eq!(model.master_body(past), None);
+    }
+
+    #[test]
+    fn a_part_that_isnt_a_theme_names_office_fonts() {
+        // A theme's structure under another root: not a theme, so Office's fonts.
+        let other = element(concat!(
+            r#"<a:notTheme><a:themeElements><a:fontScheme><a:majorFont><a:latin typeface="Odd"/>"#,
+            r#"</a:majorFont></a:fontScheme></a:themeElements></a:notTheme>"#
+        ));
+        let fonts = ThemeFonts::of(Some(&other.children[0]));
+        assert_eq!(fonts.resolve("+mj-lt"), "Calibri Light");
+        assert_eq!(fonts.resolve("+mn-lt"), "Calibri");
+        // The same under `a:theme` is read.
+        let theme = element(concat!(
+            r#"<a:theme><a:themeElements><a:fontScheme><a:majorFont><a:latin typeface="Odd"/>"#,
+            r#"</a:majorFont></a:fontScheme></a:themeElements></a:theme>"#
+        ));
+        assert_eq!(
+            ThemeFonts::of(Some(&theme.children[0])).resolve("+mj-lt"),
+            "Odd"
+        );
     }
 
     #[test]
@@ -1137,6 +1300,11 @@ mod tests {
         assert!(!header.run.bold);
         assert_eq!(cell.run.latin, "Brand Table");
         assert_eq!(model.text_box(0)[0].run.latin, "Brand Default");
+        // Past the layouts, nothing from the template: not its default text style or table style.
+        let past = layouts.len();
+        assert_eq!(model.text_box(past)[0].run.latin, "Calibri");
+        assert_eq!(model.title(past).levels[0].run.latin, "Calibri");
+        assert_eq!(model.table(past).1.run.latin, "Calibri");
 
         // A built-in default style the part doesn't define is measured as Medium Style 2.
         let builtin = edited(
