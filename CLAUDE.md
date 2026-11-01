@@ -135,7 +135,8 @@ The layering is strict (D8): **core crates → the `compyla` facade → hosts**.
 - **`compyla-fonts`** reads font faces safely from bytes and measures text (§3, C62, D14). It does
   no I/O either: font bytes come from the font resolver or a template. It bundles Carlito, the
   stand-in for Calibri, unmodified under the OFL (`fonts/README.md`), and its Unicode tables come
-  from `unicode/make_tables.py`. Its committed widths (`tests/golden.rs`) must hold natively and on
+  from `unicode/make_tables.py`. Line breaks and grapheme clusters come from `icu_segmenter`, as in
+  Typst. A `Measurer` keeps the faces it parses across a document's runs. Its committed widths (`tests/golden.rs`) must hold natively and on
   wasm32 alike.
 - **`compyla-ooxml`** provides:
   - the deterministic zip writer (fixed timestamps and order, pure-Rust DEFLATE);

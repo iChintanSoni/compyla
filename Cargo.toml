@@ -30,6 +30,8 @@ rustybuzz = "0.20.1"
 ttf-parser = "0.25.1"
 unicode-bidi = "0.3.18"
 unicode-script = "0.5.8"
+# Line breaks (UAX #14) and grapheme clusters (UAX #29), as the pinned typst finds them (D14).
+icu_segmenter = { version = "2.4.0", default-features = false, features = ["compiled_data"] }
 comrak = { version = "0.59", default-features = false }
 saphyr-parser = "0.3"
 serde = { version = "1", features = ["derive"] }

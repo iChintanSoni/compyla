@@ -23,7 +23,18 @@ pub enum Font<'a> {
     Consolas,
 }
 
+/// Consolas's `usWinAscent` and `usWinDescent` (§3), for the stand-in without a font.
+const CONSOLAS_ASCENT_DESCENT: (u32, u32) = (1884, 514);
+
 impl Font<'_> {
+    /// Its ascent and descent in its units, for a last line's height (§3, §8.6).
+    pub fn ascent_descent(&self) -> (u32, u32) {
+        match self {
+            Font::Face(face) => face.ascent_descent(),
+            Font::Consolas => CONSOLAS_ASCENT_DESCENT,
+        }
+    }
+
     fn same(&self, other: &Font<'_>) -> bool {
         match (self, other) {
             (Font::Face(a), Font::Face(b)) => std::ptr::eq(*a, *b),
@@ -98,7 +109,8 @@ impl Pick<'_> {
     }
 }
 
-/// The faces one measurement shapes with, each parsed once.
+/// The faces measurements shape with, each parsed once.
+#[derive(Default)]
 struct Shapers<'a> {
     faces: Vec<(&'a Face, rustybuzz::Face<'a>)>,
 }
@@ -159,8 +171,30 @@ fn class_font<'a>(run: &Run<'a>, class: Class) -> Font<'a> {
     }
 }
 
-/// The width of `run` in EMU (§3).
+/// Measures runs, keeping each face it parses for shaping for the next: a document's runs share
+/// their faces, so each is parsed once rather than once a run (§3).
+#[derive(Default)]
+pub struct Measurer<'a> {
+    shapers: Shapers<'a>,
+}
+
+impl<'a> Measurer<'a> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The width of `run` in EMU (§3), as [`measure`] gives it.
+    pub fn measure(&mut self, run: &Run<'a>) -> i64 {
+        width(&mut self.shapers, run)
+    }
+}
+
+/// The width of `run` in EMU (§3), with faces parsed for it alone: a [`Measurer`] keeps them.
 pub fn measure<'a>(run: &Run<'a>) -> i64 {
+    Measurer::new().measure(run)
+}
+
+fn width<'a>(shapers: &mut Shapers<'a>, run: &Run<'a>) -> i64 {
     let chars: Vec<(usize, char)> = run.text.char_indices().collect();
     if chars.is_empty() {
         return 0;
@@ -171,12 +205,11 @@ pub fn measure<'a>(run: &Run<'a>) -> i64 {
     let scripts = chars::scripts(&plain);
     let levels = levels(run);
 
-    let mut shapers = Shapers { faces: Vec::new() };
     // A mark is measured with the face its base is measured with (§3).
     let mut picks: Vec<Pick<'a>> = plain
         .iter()
         .zip(&classes)
-        .map(|(&c, &class)| pick(&mut shapers, run, c, class))
+        .map(|(&c, &class)| pick(shapers, run, c, class))
         .collect();
     for (i, &base) in bases.iter().enumerate() {
         if base != i {

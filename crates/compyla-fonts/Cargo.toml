@@ -11,6 +11,7 @@ publish.workspace = true
 include = ["src/**", "fonts/**", "unicode/**", "Cargo.toml"]
 
 [dependencies]
+icu_segmenter.workspace = true
 rustybuzz.workspace = true
 ttf-parser.workspace = true
 unicode-bidi.workspace = true

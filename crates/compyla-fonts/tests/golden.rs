@@ -2,7 +2,7 @@
 //! and the test runs natively and on wasm32 (`wasm32-wasip1`, under Node's WASI), so a host that
 //! measured differently would fail here.
 
-use compyla_fonts::{Features, Font, Fonts, Ligatures, Run, Style, carlito, measure};
+use compyla_fonts::{Features, Font, Fonts, Ligatures, Measurer, Run, Style, carlito, measure};
 
 const PT: i64 = 12_700;
 
@@ -170,4 +170,21 @@ fn measurement_matches_the_committed_widths() {
         .map(|(width, name)| format!("    {width}, // {name}\n"))
         .collect();
     assert_eq!(got, EXPECTED, "\nwidths now:\n{listing}");
+}
+
+#[test]
+fn a_measurer_keeps_its_faces_and_measures_alike() {
+    // One measurer across every case, in order and then in reverse, gives the committed widths:
+    // the faces it keeps from one run don't change the next.
+    let cases = cases();
+    let mut measurer = Measurer::new();
+    let forward: Vec<i64> = cases.iter().map(|(_, run)| measurer.measure(run)).collect();
+    assert_eq!(forward, EXPECTED);
+    let mut backward: Vec<i64> = cases
+        .iter()
+        .rev()
+        .map(|(_, run)| measurer.measure(run))
+        .collect();
+    backward.reverse();
+    assert_eq!(backward, EXPECTED);
 }
